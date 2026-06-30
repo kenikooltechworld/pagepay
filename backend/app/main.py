@@ -4,13 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
-from app.database import engine
+from app.database import AsyncSessionLocal, engine
 from app.limiter import limiter
 from app.models import Base
 from app.routers import auth, content, sessions, health, wallet, progress, ads
 from app.routers.payouts import router as payouts_router
 from app.routers.admin import router as admin_router
+from app.routers.config import router as config_router
+from app.seed import run_all_seeds
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -25,6 +28,17 @@ async def lifespan(app: FastAPI):
         # create_all is idempotent for matching tables, but stale schemas crash
         # the worker. Log and continue so the API still serves requests.
         logger.warning("Skipping create_all on startup: %s", exc)
+
+    # Phase 2 ad-infrastructure seed. Runs in its own session so a
+    # transactional error here doesn't poison the create_all pool.
+    try:
+        async with AsyncSessionLocal() as session:
+            counts = await run_all_seeds(session)
+            if any(counts.values()):
+                logger.info("Phase 2 seed inserted: %s", counts)
+    except Exception as exc:  # noqa: BLE001 — startup seed; best-effort
+        logger.warning("Phase 2 seed failed: %s", exc)
+
     yield
 
 
@@ -66,3 +80,4 @@ app.include_router(admin_router, prefix=API_PREFIX)
 app.include_router(progress.router, prefix=API_PREFIX)
 app.include_router(ads.router, prefix=API_PREFIX)
 app.include_router(payouts_router, prefix=API_PREFIX)
+app.include_router(config_router, prefix=API_PREFIX)

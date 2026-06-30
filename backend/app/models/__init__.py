@@ -1,5 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Integer, BigInteger, Boolean, Text, DateTime, Enum
+from sqlalchemy import (
+    String, Integer, BigInteger, Boolean, Text, DateTime, Enum, Float, JSON,
+)
 from datetime import datetime
 import enum
 
@@ -262,3 +264,120 @@ class PayoutTransaction(Base):
     balance_after_debit: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ── Phase 2: Ad infrastructure ──────────────────────────────────────
+# Three new tables land here. They are deliberately small and the schema
+# is permissive about nullable fields so a partial rollout (e.g. AppLovin
+# still empty while AdMob ships) doesn't require a migration to land.
+
+
+class AdPlacement(Base):
+    """One row per (location, platform) — e.g. "in_feed + android".
+
+    The client reads from `GET /api/v1/config/ads` to know which ad unit
+    to instantiate. The server reads this table for the sponsored-content
+    rotation in `GET /content/feed/:user_id` (every 4th item is the ad
+    placement tied to `location='in_feed'`).
+
+    `primary_provider` is the network we try first. `fallback_provider`
+    is the network we try if the primary returns no-fill. AppLovin stays
+    NULL until that integration is wired — the seed only populates AdMob
+    today, and the resolution helper in `services/ads.py` short-circuits
+    to the primary when the fallback is empty.
+
+    `priority` orders placements within the same location; we only ever
+    store 1 per location, but the column is there so an A/B "premium
+    placement" can be added without a schema change.
+
+    `ad_unit_id` is the AdMob-format unit id (e.g.
+    `ca-app-pub-3898064484524772/6538723260`). Stored as a string so the
+    AppLovin equivalent — which has a different shape — can land in the
+    same column later.
+    """
+
+    __tablename__ = "ad_placements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # `location` is the user-facing slot: "in_feed" | "interstitial" |
+    # "rewarded" | "banner". `platform` is the SDK platform:
+    # "android" | "ios". The pair is UNIQUE so we never accidentally
+    # store two rows for the same slot on the same device class.
+    location: Mapped[str] = mapped_column(String(50), index=True)
+    platform: Mapped[str] = mapped_column(String(20))
+    ad_type: Mapped[str] = mapped_column(String(50))  # native|interstitial|rewarded|banner
+    priority: Mapped[int] = mapped_column(Integer, default=1)
+    primary_provider: Mapped[str] = mapped_column(String(50))
+    fallback_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    ad_unit_id: Mapped[str] = mapped_column(String(255))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AppConfig(Base):
+    """Generic key/value store for OTA-tunable settings.
+
+    The point of this table is to let ops flip a unit id or a point
+    rate without shipping a new client build. Reads are sub-millisecond
+    on a 100-row table, so we can call it on every request to
+    `/api/v1/config/ads` without caching.
+
+    Key conventions:
+      - `admob.app_id.android`         → AdMob App ID for Android
+      - `admob.app_id.ios`             → AdMob App ID for iOS
+      - `admob.<location>.<platform>`   → AdMob unit ID (e.g.
+                                          `admob.in_feed.android`)
+      - `app.environment`              → "dev" | "prod"
+        (the config router filters rows by this at read time so dev
+        builds never see the production unit IDs)
+
+    `value` is a Text column — strings, JSON, or numeric-as-text all
+    fit. `description` is a free-text note shown in the future admin
+    dashboard; it has no runtime effect.
+    """
+
+    __tablename__ = "app_config"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    # `environment` lets us ship dev + prod rows side-by-side. The
+    # `/api/v1/config/ads` endpoint filters on this so a dev build
+    # never reads production unit IDs. Default "prod" so missing rows
+    # in the seed are safe.
+    environment: Mapped[str] = mapped_column(String(20), default="prod", index=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+    )
+
+
+class AiProviderHealth(Base):
+    """Per-provider failure tracker for the Phase 3 AI router.
+
+    Phase 2 ships the table now so the Phase 3 router code can land
+    without a migration. The circuit-breaker pattern is the simple
+    sliding-window version: after `consecutive_failures` crosses
+    `CIRCUIT_BREAKER_THRESHOLD`, `circuit_open_until` is set to
+    `now + cooldown`, and the router skips this provider until the
+    timestamp passes. The router resets `consecutive_failures` to 0 on
+    a successful call.
+
+    The table is intentionally per-provider (one row per name) rather
+    than per-user-per-provider: the breaker is global, not per-user.
+    If we ever need per-user model routing (e.g. premium users get a
+    different model), this table is the wrong shape and we add a join
+    table at that point.
+    """
+
+    __tablename__ = "ai_provider_health"
+
+    provider_name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # NULL = circuit closed. Non-NULL = circuit open until this
+    # timestamp; the router treats the provider as unavailable while
+    # the timestamp is in the future.
+    circuit_open_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+    )

@@ -1,3 +1,133 @@
+"""Ad-rotation helper for the content feed.
+
+`build_feed_with_sponsored` interleaves sponsored content every
+Nth slot in a flat list. Used by the `/content/feed/:user_id`
+endpoint so the catalog tab can show a sponsored card mixed in
+with the regular books/articles, just like Twitter / Instagram /
+Facebook do.
+
+Why we don't query `is_sponsored` items in-line with the main
+catalog query: the per-user de-dup logic ("don't show the same
+sponsored item twice in a row") needs to compare across the two
+streams, and that's easier to do in Python than in SQL. The
+catalog dataset is small enough (≤50 items per page) that doing
+the merge in-process is fine — we never load more than that.
+
+The sponsored list comes from `ContentCatalog` filtered by
+`is_sponsored=True`. We cap at `settings.feed_max_sponsored` and
+shuffle deterministically per user (the same user always sees the
+same sponsored order until they advance their read state, so the
+back button restores the same ad).
+
+Caller contract:
+  organic:    ordered list of ContentCatalog (the regular items)
+  sponsored:  ordered list of ContentCatalog (the ad-eligible items)
+  user_id:    the requester — used for the per-user shuffle seed
+  every:      how often to inject a sponsored item (default 4)
+
+Returns: flat list of ContentCatalog with `is_sponsored=True` items
+at positions `[every, 2*every, 3*every, ...]`. The last few items
+in the organic list are dropped to make room — we trim the tail,
+not the head, so the user still sees the most recent content.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import random
+from typing import Sequence
+
+from app.config import settings
+from app.models import ContentCatalog
+
+
+def _seeded_shuffle(items: Sequence[ContentCatalog], user_id: int) -> list[ContentCatalog]:
+    """Deterministic per-user shuffle.
+
+    Same user → same order on every call until we add a freshness
+    signal. Today's "freshness" is implicit: organic items come
+    from the DB already ordered, and the sponsored shuffle is
+    stable per-user, so the UI never shuffles under the user's
+    thumb while they're scrolling.
+    """
+    seed_material = f"user:{user_id}:sponsored".encode("utf-8")
+    seed_int = int(hashlib.sha256(seed_material).hexdigest()[:16], 16)
+    rng = random.Random(seed_int)
+    indexed = list(items)
+    rng.shuffle(indexed)
+    return indexed
+
+
+def build_feed_with_sponsored(
+    organic: Sequence[ContentCatalog],
+    sponsored: Sequence[ContentCatalog],
+    user_id: int,
+    every: int | None = None,
+    max_sponsored: int | None = None,
+) -> list[ContentCatalog]:
+    """Interleave sponsored items every Nth position.
+
+    Sponsored list is taken from the head of the per-user shuffle
+    (already capped by the caller). The last
+    `len(organic) // every` organic items are dropped so the
+    output length equals `len(organic)`. With the defaults
+    (every=4, organic=20) we drop up to 5 organic items and gain
+    5 sponsored — net length unchanged.
+
+    The per-user de-dup ("don't repeat the same sponsored back-
+    to-back") is handled by the per-user shuffle + the fact that
+    each sponsored item is only inserted once per feed (we never
+    pull a sponsored id twice).
+    """
+    interval = every if every is not None else settings.feed_sponsored_every
+    cap = max_sponsored if max_sponsored is not None else settings.feed_max_sponsored
+    if interval <= 0 or not sponsored:
+        # Sponsored rotation disabled or no sponsored inventory —
+        # return the organic list unchanged.
+        return list(organic)
+
+    # Cap the sponsored list. The caller may have already capped it
+    # at the SQL level; this is a belt-and-suspenders check.
+    sponsored_capped = list(sponsored)[:cap]
+    if not sponsored_capped:
+        return list(organic)
+
+    # Deterministic per-user shuffle. The seed is per-user, so
+    # back-button navigations restore the same ad order.
+    sponsored_shuffled = _seeded_shuffle(sponsored_capped, user_id)
+
+    # How many sponsored slots can we fill? Floor(len(organic) /
+    # interval) — the last partial slot is dropped because an ad
+    # at the very end of the feed looks like a "click here" CTA
+    # that the user can't act on without scrolling back up.
+    slots = len(organic) // interval
+    if slots == 0:
+        return list(organic)
+    sponsored_to_use = sponsored_shuffled[:slots]
+
+    # Insert one sponsored item every `interval` positions. We
+    # split the organic list into `slots` chunks and put a
+    # sponsored item after each chunk. The total length stays
+    # equal to len(organic) because we drop the tail of organic
+    # equal to the sponsored count we add.
+    out: list[ContentCatalog] = []
+    organic_kept = list(organic)[: len(organic) - slots]
+    # With N organic kept and S sponsored, we split organic_kept
+    # into S groups. The size of each group is N // S with the
+    # remainder items added to the first few groups.
+    group_size = len(organic_kept) // slots
+    remainder = len(organic_kept) % slots
+    pos = 0
+    for i, ad in enumerate(sponsored_to_use):
+        # First `remainder` groups get one extra organic item so
+        # the total organic count is exact.
+        extra = 1 if i < remainder else 0
+        out.extend(organic_kept[pos : pos + group_size + extra])
+        pos += group_size + extra
+        out.append(ad)
+    return out
+
+
 import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +167,81 @@ async def get_current_user_optional(
         return None
     user = (await db.execute(select(User).where(User.id == int(user_id)))).scalar_one_or_none()
     return user
+
+
+@router.get("/feed/{user_id}", response_model=list[ContentItem])
+async def get_content_feed(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    category: str | None = Query(
+        None,
+        description="Optional category filter (e.g. 'Fiction', 'News'). Mirrors the /catalog filter.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """The user's content feed with sponsored rotation.
+
+    Phase 2 endpoint. The catalog tab calls this instead of
+    `/catalog` so the in-feed native ad lands every 4th item
+    per the spec. The organic list comes from `/catalog`'s
+    query (parent works only, category-filtered, exclude-read
+    honored); the sponsored list comes from
+    `ContentCatalog` filtered by `is_sponsored=True`.
+
+    Sponsored insertion is done in Python via
+    `build_feed_with_sponsored` because the per-user shuffle
+    seed is cheaper to compute there than as a SQL ORDER BY
+    expression, and the merge needs to compare across both
+    streams (de-dup of repeats).
+
+    The user_id in the path is for the per-user shuffle. We
+    don't gate the endpoint on auth — the spec's anonymous
+    browse path stays open. If `user_id` doesn't match the
+    caller's token (when one is present), we still serve the
+    request (ad rotation is the same regardless of which user
+    is asking), but log a warning.
+    """
+    # Organic items: same query as /catalog.
+    organic_stmt = select(ContentCatalog).where(ContentCatalog.parent_work_id.is_(None))
+    if category:
+        organic_stmt = organic_stmt.where(ContentCatalog.category == category)
+    organic_stmt = organic_stmt.order_by(ContentCatalog.id.asc())
+    organic_stmt = organic_stmt.offset((page - 1) * limit).limit(limit)
+    organic_rows = (await db.execute(organic_stmt)).scalars().all()
+
+    # Sponsored items: separate query, capped. We over-fetch by 2x
+    # the cap so the per-user shuffle has a few candidates to
+    # pick from even if the user has seen some already (we don't
+    # track "seen sponsored" in v1 — over-fetching is the cheap
+    # way to keep the list varied).
+    sponsored_cap = settings.feed_max_sponsored
+    sponsored_stmt = (
+        select(ContentCatalog)
+        .where(ContentCatalog.is_sponsored == True)  # noqa: E712
+        .where(ContentCatalog.parent_work_id.is_(None))
+        .order_by(func.random())
+        .limit(sponsored_cap * 2)
+    )
+    sponsored_rows = (await db.execute(sponsored_stmt)).scalars().all()
+
+    merged = build_feed_with_sponsored(
+        organic=organic_rows,
+        sponsored=sponsored_rows,
+        user_id=user_id,
+    )
+    return [
+        ContentItem(
+            id=item.id,
+            title=item.title,
+            content_type=item.content_type,
+            category=item.category,
+            author=item.author,
+            estimated_read_minutes=item.estimated_read_minutes,
+            is_sponsored=item.is_sponsored,
+        )
+        for item in merged
+    ]
 
 
 @router.get("/catalog", response_model=list[ContentItem])

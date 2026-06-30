@@ -203,6 +203,101 @@ class AdCreditResponse(BaseModel):
     credit_status: Literal["credited", "rejected_low_value", "duplicate"]
 
 
+# ── Phase 2: impression + reward-claim ──────────────────────────────
+# Split the legacy single-call "ad watched → credit" into two
+# steps: impression (logged at load time, no credit) and
+# reward-claim (logged at SDK revenue callback time, credits the
+# wallet). The split lets analytics answer "how many ads were
+# shown vs watched" and lets the SSV webhook (which fires
+# server-side, no client roundtrip) tie back to the same
+# AdEvent row.
+
+
+class AdImpressionRequest(BaseModel):
+    """POST /ads/impression body.
+
+    The client calls this the moment an ad slot finishes loading
+    (the SDK's `onAdLoaded` / equivalent). At this point we don't
+    have a `transaction_id` or `revenue_usd` — those arrive later
+    via the SDK's revenue callback. We just want a load-time row so
+    the reward-claim can link back via `ad_event_id`.
+    """
+    ad_type: Literal["banner", "native", "interstitial", "rewarded"]
+    provider: Literal["admob", "applovin_max", "mock"]
+    ad_unit: str = Field(min_length=1, max_length=100)
+    # The active reading session id, if any. Stored so the wallet
+    # transaction list can group ad revenue with the read that
+    # triggered it. Optional because banner ads fire on screens
+    # without an open session (e.g. the catalog tab).
+    session_id: int | None = None
+
+
+class AdImpressionResponse(BaseModel):
+    """Returned by POST /ads/impression.
+
+    `ad_event_id` is the link the client sends to /ads/reward-claim
+    to upgrade this load-time row to "watched" + credited. We do
+    not return the AdEvent row itself — the client only needs the
+    id, and the rest is server-side audit data.
+    """
+    ad_event_id: int
+
+
+class AdRewardClaimRequest(BaseModel):
+    """POST /ads/reward-claim body.
+
+    Called when the SDK's revenue callback fires (AdMob `onAdPaid`,
+    AppLovin postback). The client passes the same `transaction_id`
+    the SDK reported, plus the USD revenue amount. We credit the
+    wallet using the same 80/20 share as the legacy /ads/credit
+    path and link back to the impression row via `ad_event_id` if
+    one was logged.
+    """
+    ad_event_id: int | None = None
+    ad_type: Literal["banner", "native", "interstitial", "rewarded"]
+    provider: Literal["admob", "applovin_max", "mock"]
+    ad_unit: str = Field(min_length=1, max_length=100)
+    revenue_usd: float = Field(ge=0)
+    # SSV-style transaction id. Unique per impression. Replays are
+    # no-ops. Same contract as the legacy /ads/credit endpoint.
+    transaction_id: str = Field(min_length=1, max_length=255)
+
+
+class AdRewardClaimResponse(BaseModel):
+    """Returned by POST /ads/reward-claim.
+
+    Mirrors the legacy /ads/credit response shape so the client's
+    existing "credit succeeded" branch works without a code
+    change. `ad_event_id` is the load-time row this credit is
+    linked to (the same id the client sent in the request, or a
+    fresh one if the claim arrived without an impression log).
+    """
+    ad_event_id: int
+    points_credited: int
+    new_balance: int
+    fx_rate_used: float
+    user_share_ngn: float
+    credit_status: Literal["credited", "rejected_low_value", "duplicate"]
+
+
+class AdSsvCallbackRequest(BaseModel):
+    """Internal Pydantic shape for the AdMob SSV webhook body.
+
+    The actual on-the-wire body is parsed in the handler (AdMob
+    sometimes sends form-urlencoded, sometimes JSON). This schema
+    is what the parsed payload must conform to before we proceed
+    with the credit math. `custom_data` is the dict the client
+    SDK attached to the reward event before forwarding to AdMob
+    — it carries `user_id` and any other routing we need.
+    """
+    transaction_id: str = Field(min_length=1, max_length=255)
+    ad_unit_id: str = Field(min_length=1, max_length=255)
+    # AdMob's reward field is a float; in newer versions it's
+    # renamed to `revenue_amount`. The handler reads both.
+    reward_amount: float = Field(ge=0)
+    custom_data: dict = Field(default_factory=dict)
+
+
 # ── Profile / Settings schemas ───────────────────────────────────────
 # Powers the v1 Profile tab and the payouts placeholder (Paystack
 # integration lands in Phase 4 — Payments).

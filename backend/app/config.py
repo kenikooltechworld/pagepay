@@ -71,6 +71,27 @@ class Settings(BaseSettings):
     admob_app_id_android: str | None = None
     admob_app_id_ios: str | None = None
     applovin_sdk_key: str | None = None
+    # Shared secret for AdMob Server-Side Verification webhooks.
+    # AdMob signs each callback with this value via HMAC-SHA256; we
+    # verify in `routers/ads.py:admob_ssv_callback` and return 401
+    # on mismatch. Configure in the AdMob dashboard under
+    # "SSV settings" — must match this value exactly.
+    admob_webhook_secret: str | None = None
+    # AppLovin SSV shared secret. The AppLovin webhook handler
+    # returns 501 until this is set (the rest of the AppLovin
+    # integration lands when the spec calls for it).
+    applovin_webhook_secret: str | None = None
+
+    # ── Content feed ──────────────────────────────────────────────
+    # Every Nth item in the catalog feed is a sponsored slot. The
+    # spec's default is 4 (in-feed native every 4th item). Set to
+    # 0 to disable sponsored rotation entirely (rare — only for
+    # diagnosing ad-funnel issues).
+    feed_sponsored_every: int = 4
+    # Maximum number of sponsored items returned per feed request.
+    # Bounds the response size and prevents a sparse catalog from
+    # returning a wall of ads.
+    feed_max_sponsored: int = 5
 
     # Shared secret required by X-Admin-Token on /admin/* endpoints. The
     # cron container and any operator script must send the same value.
