@@ -1,0 +1,54 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: pagepay
+      MYSQL_USER: pagepay
+      MYSQL_PASSWORD: pagepass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Without this, `depends_on: db` only waits for the container to start —
+    # not for MySQL to actually accept connections. The api/cron workers
+    # then boot before mysqld is ready, their first DB call raises 2003,
+    # and the entrypoint logs fill with "Skipping create_all" warnings.
+    # `mysqladmin ping` returns 0 only when the server is ready for auth.
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpass"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql+aiomysql://pagepay:pagepass@db:3306/pagepay
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      CORS_ORIGINS: http://localhost:8081
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    depends_on:
+      db:
+        condition: service_healthy
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile.cron
+    environment:
+      DATABASE_URL: mysql+aiomysql://pagepay:pagepass@db:3306/pagepay
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      GNEWS_API_KEY: ${GNEWS_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    # run once every 6h. `depends_on: service_healthy` guarantees the first
+    # invocation sees a live DB; the `|| true` keeps the loop alive across
+    # later transient errors so we don't get a container restart storm.
+    command: ["sh", "-c", "while true; do python -m app.services.cron || true; sleep 21600; done"]
+volumes:
+  mysql_data:

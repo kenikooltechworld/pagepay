@@ -1,0 +1,22 @@
+# Dependencies
+backend/.venv/
+frontend/node_modules/
+
+# Build outputs
+frontend/.expo/
+frontend/dist/
+
+# Environment
+backend/.env
+frontend/.env
+
+# IDE
+.vscode/
+.idea/
+.env
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+backend/mysql_data/

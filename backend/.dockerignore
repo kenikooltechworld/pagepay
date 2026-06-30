@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.git
+.env
+.env.*
+!.env.example
+alembic/versions/*.py
+.venv/
+node_modules/
+frontend/

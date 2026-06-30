@@ -1,0 +1,92 @@
+"""Background job runner for content re-imports.
+
+We don't want a full Celery/Redis dependency for a single daily job, so
+this module exposes a `run_once()` function that:
+  1. Imports a fresh batch from Gutendex (page 1, 50 books)
+  2. Imports from GNews if an API key is configured
+  3. Slices any newly-imported parents
+
+It's designed to be called either:
+  - From a one-shot docker-compose service on a schedule, OR
+  - From an external cron / k8s CronJob hitting `python -m app.services.cron`
+
+Idempotent: re-running with the same source_url will be a no-op, so
+crashing mid-run and restarting is safe.
+"""
+
+import asyncio
+import logging
+
+from app.database import AsyncSessionLocal
+from app.services.content.gutendex import import_gutendex
+from app.services.content.gnews import import_gnews
+from app.services.content.slicing import slice_all_books
+
+logger = logging.getLogger("uvicorn.error")
+
+
+async def run_once(
+    gutendex_page: int = 1,
+    gutendex_limit: int = 50,
+    gnews_page: int = 1,
+    gnews_limit: int = 50,
+) -> dict:
+    """Run a single re-import + slice pass. Returns a summary dict.
+
+    Caller controls the pagination cursors so each invocation advances
+    forward — by default we walk from page 1, but a real scheduler would
+    persist the cursor (or just reset to 1 since the importer is
+    idempotent).
+    """
+    summary: dict = {
+        "gutendex_imported": 0,
+        "gnews_imported": 0,
+        "sliced": 0,
+        "children_added": 0,
+        "skipped_existing": 0,
+    }
+
+    async with AsyncSessionLocal() as db:
+        # Import first so we have parents to slice.
+        try:
+            summary["gutendex_imported"] = await import_gutendex(
+                db, limit=gutendex_limit, start_page=gutendex_page
+            )
+        except Exception as exc:
+            # Network blip on Gutendex shouldn't kill the whole run.
+            logger.warning("Gutendex import failed: %s", exc)
+
+        try:
+            summary["gnews_imported"] = await import_gnews(
+                db, limit=gnews_limit, start_page=gnews_page
+            )
+        except Exception as exc:
+            logger.warning("GNews import failed: %s", exc)
+
+        # Slice anything that doesn't yet have children.
+        try:
+            slice_summary = await slice_all_books(db)
+            summary["sliced"] = slice_summary.get("sliced", 0)
+            summary["children_added"] = slice_summary.get("children_added", 0)
+            summary["skipped_existing"] = slice_summary.get("skipped_existing", 0)
+        except Exception as exc:
+            logger.error("Slicing failed: %s", exc)
+
+    logger.info(
+        "Cron run done: gutenberg=%d gnews=%d sliced=%d children_added=%d",
+        summary["gutendex_imported"],
+        summary["gnews_imported"],
+        summary["sliced"],
+        summary["children_added"],
+    )
+    return summary
+
+
+def main() -> None:
+    """CLI entry: `python -m app.services.cron`."""
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(run_once())
+
+
+if __name__ == "__main__":
+    main()
