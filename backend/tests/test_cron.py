@@ -1,8 +1,8 @@
 """Cover the cron entrypoint.
 
-The cron module's job is to run imports + slicing on a schedule. We
-mock the importers (they hit the network) and verify the orchestrator
-sequences them correctly.
+The cron module's job is to run imports + slicing + maintenance on a
+schedule. We mock the importers (they hit the network) and verify the
+orchestrator sequences them correctly.
 """
 
 import pytest
@@ -61,10 +61,13 @@ async def test_run_once_summary_has_all_keys(db_session):
          patch("app.services.cron.import_gnews", new=AsyncMock(return_value=0)), \
          patch("app.services.cron.slice_all_books", new=AsyncMock(return_value={
              "sliced": 0, "children_added": 0, "skipped_existing": 0,
-         })):
+         })), \
+         patch("app.services.cron.sync_hive_posts", new=AsyncMock(return_value=0)), \
+         patch("app.services.cron.reset_daily_referral_caps", new=AsyncMock(return_value=0)):
         summary = await run_once()
 
     assert set(summary.keys()) == {
-        "gutendex_imported", "gnews_imported",
+        "gutendex_imported", "gnews_imported", "hive_imported",
         "sliced", "children_added", "skipped_existing",
+        "subscriptions_expired", "referral_caps_reset",
     }

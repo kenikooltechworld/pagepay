@@ -263,6 +263,7 @@ async def run_all_seeds(db: AsyncSession) -> dict[str, int]:
         ("ad_placements", seed_ad_placements),
         ("app_config", seed_app_config),
         ("ai_provider_health", seed_ai_provider_health),
+        ("app_config_streak", seed_streak_config),
     ):
         try:
             counts[name] = await fn(db)
@@ -270,3 +271,27 @@ async def run_all_seeds(db: AsyncSession) -> dict[str, int]:
             logger.warning("Seed %s failed: %s", name, exc)
             counts[name] = 0
     return counts
+
+
+async def seed_streak_config(db: AsyncSession) -> int:
+    """Insert streak bonus multiplier config rows into app_config."""
+    from app.models import AppConfig
+
+    rows: list[dict] = [
+        {"key": "streak.bonus_7d_multiplier", "value": "1.2", "description": "Multiplier for 7-day streak", "environment": "prod"},
+        {"key": "streak.bonus_30d_multiplier", "value": "1.5", "description": "Multiplier for 30-day streak", "environment": "prod"},
+        {"key": "streak.bonus_7d_label", "value": "7-day streak (+20%)", "description": "Label for 7-day streak bonus", "environment": "prod"},
+        {"key": "streak.bonus_30d_label", "value": "30-day legend (+50%)", "description": "Label for 30-day streak bonus", "environment": "prod"},
+    ]
+
+    inserted = 0
+    for row in rows:
+        existing = (
+            await db.execute(select(AppConfig).where(AppConfig.key == row["key"]))
+        ).scalar_one_or_none()
+        if existing is None:
+            db.add(AppConfig(**row))
+            inserted += 1
+    if inserted:
+        await db.commit()
+    return inserted

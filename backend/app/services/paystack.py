@@ -319,6 +319,44 @@ class PaystackClient:
             raise PaystackError(f"Paystack /transferrecipient returned no recipient_code: {body!r}")
         return code
 
+    # ── Balance ────────────────────────────────────────────────────
+
+    async def get_balance(self) -> int:
+        """Return the available Paystack balance in kobo.
+
+        Calls `GET /balance` and returns the `balance` field (in kobo).
+        Raises `PaystackError` on network failure or non-2xx response.
+        """
+        url = f"{PAYSTACK_BASE_URL}/balance"
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+                resp = await client.get(
+                    url,
+                    headers=_auth_headers(self._secret_key),
+                )
+        except httpx.HTTPError as exc:
+            raise PaystackError(f"Paystack request failed: {exc}") from exc
+
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise PaystackError(
+                f"Paystack returned HTTP {resp.status_code} for GET /balance: {resp.text[:500]}"
+            )
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise PaystackError("Paystack returned non-JSON for GET /balance") from exc
+        if not isinstance(body, dict) or body.get("status") is not True:
+            raise PaystackError(f"Paystack status != true for GET /balance: {body!r}")
+        data = body.get("data") or []
+        if not isinstance(data, list) or not data:
+            raise PaystackError(f"Paystack /balance data was not a list: {body!r}")
+        # The balance endpoint returns an array of currencies. We only care about NGN.
+        for item in data:
+            if isinstance(item, dict) and item.get("currency") == "NGN":
+                balance_kobo = item.get("balance", 0)
+                return int(balance_kobo) if isinstance(balance_kobo, (int, float)) else 0
+        raise PaystackError("Paystack /balance did not return NGN currency balance")
+
     # ── Transfer ───────────────────────────────────────────────────
 
     async def initiate_transfer(

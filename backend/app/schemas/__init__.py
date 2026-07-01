@@ -7,6 +7,7 @@ class UserRegister(BaseModel):
     email: EmailStr | None = None
     phone: str | None = None
     password: str = Field(min_length=8)
+    referral_code: str | None = Field(default=None, max_length=12, description="6-char referral code from inviter")
 
 
 class UserLogin(BaseModel):

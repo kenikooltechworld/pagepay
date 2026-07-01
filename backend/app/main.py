@@ -11,6 +11,10 @@ from app.limiter import limiter
 from app.models import Base
 from app.routers import auth, content, sessions, health, wallet, progress, ads, study
 from app.routers.ai import router as ai_router
+from app.routers.referral import router as referral_router
+from app.routers.community import router as community_router
+from app.routers.streak import router as streak_router
+from app.routers.analytics import router as analytics_router
 from app.routers.payouts import router as payouts_router
 from app.routers.payments import router as payments_router
 from app.routers.admin import router as admin_router
@@ -86,3 +90,7 @@ app.include_router(payments_router, prefix=API_PREFIX)
 app.include_router(config_router, prefix=API_PREFIX)
 app.include_router(study.router, prefix=API_PREFIX)
 app.include_router(ai_router, prefix=API_PREFIX)
+app.include_router(referral_router, prefix=API_PREFIX)
+app.include_router(community_router, prefix=API_PREFIX)
+app.include_router(streak_router, prefix=API_PREFIX)
+app.include_router(analytics_router, prefix=API_PREFIX)

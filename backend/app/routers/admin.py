@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import hmac
+import logging
 from app.config import settings
 from app.database import get_db
 from app.services.content.gutendex import import_gutendex
 from app.services.content.gnews import import_gnews
 from app.services.content.slicing import slice_all_books, slice_and_persist, force_reslice_all
+from app.services.paystack import get_client as get_paystack_client, PaystackError
 from app.models import ContentCatalog
 from sqlalchemy import select
 
+logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/admin/content", tags=["admin"])
 
 
@@ -84,3 +87,34 @@ async def reslice_all(db: AsyncSession = Depends(get_db)):
     """
     summary = await force_reslice_all(db)
     return summary
+
+
+# ── Platform balance monitoring ──────────────────────────────────────
+
+@router.get("/platform-balance", dependencies=[Depends(require_admin_token)])
+async def get_platform_balance():
+    """Return the current Paystack balance in kobo.
+
+    Used by admin dashboard to monitor available balance and detect
+    when auto-settlement has drained the account (which blocks
+    user withdrawals). Returns 503 if Paystack is unconfigured or
+    unreachable.
+    """
+    if not settings.paystack_secret_key:
+        raise HTTPException(
+            status_code=503,
+            detail="PAYSTACK_SECRET_KEY is not configured",
+        )
+    try:
+        balance_kobo = await get_paystack_client().get_balance()
+    except PaystackError as exc:
+        logger.error("Failed to fetch Paystack balance: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to fetch Paystack balance",
+        ) from exc
+    return {
+        "balance_kobo": balance_kobo,
+        "balance_ngn": balance_kobo / 100,
+        "currency": "NGN",
+    }

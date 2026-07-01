@@ -450,6 +450,36 @@ async def withdraw(
     fee_kobo = compute_withdrawal_fee(payload.amount_kobo)
     total_debit_kobo = payload.amount_kobo + fee_kobo
 
+    # Check Paystack balance BEFORE debiting the user's wallet. If
+    # Paystack has insufficient balance (because of auto-settlement),
+    # return 503 so the client can show "temporarily unavailable".
+    try:
+        platform_balance_kobo = await get_paystack_client().get_balance()
+    except PaystackError as exc:
+        logger.error(
+            "Failed to fetch Paystack balance for user=%s: %s",
+            user_row.id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to check platform balance. Please try again later.",
+        ) from exc
+
+    # The NET amount we send to Paystack is just the withdrawal (the fee
+    # stays in our balance). If Paystack's balance < net amount, block.
+    if platform_balance_kobo < payload.amount_kobo:
+        logger.warning(
+            "Insufficient Paystack balance: have=%d, need=%d for user=%s",
+            platform_balance_kobo,
+            payload.amount_kobo,
+            user_row.id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Withdrawals temporarily unavailable. Please try again later.",
+        )
+
     if user_row.points_balance < total_debit_kobo:
         # Surface the exact shortfall so the client can show
         # "you need ₦X more to cover the fee" instead of a generic

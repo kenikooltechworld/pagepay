@@ -1,4 +1,6 @@
 import logging
+import secrets
+import string
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +15,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger("uvicorn.error")
 
 
+def _generate_referral_code() -> str:
+    """Generate a unique 6-char alphanumeric referral code."""
+    alphabet = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(6))
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
     if not payload.email and not payload.phone:
@@ -25,12 +33,25 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="User already exists")
 
+    referred_by_code = payload.referral_code
+
     user = User(
         email=payload.email,
         phone=payload.phone,
         password_hash=hash_password(payload.password),
+        referred_by=referred_by_code,
     )
     db.add(user)
+    await db.flush()
+
+    if not user.referral_code:
+        user.referral_code = _generate_referral_code()
+        while True:
+            exists = await db.execute(select(User).where(User.referral_code == user.referral_code))
+            if not exists.scalar_one_or_none():
+                break
+            user.referral_code = _generate_referral_code()
+
     await db.commit()
     await db.refresh(user)
     token = create_access_token(user.id)
