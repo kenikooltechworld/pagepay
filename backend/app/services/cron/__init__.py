@@ -1,10 +1,11 @@
-"""Background job runner for content re-imports.
+"""Background job runner for content re-imports + subscription management.
 
 We don't want a full Celery/Redis dependency for a single daily job, so
 this module exposes a `run_once()` function that:
   1. Imports a fresh batch from Gutendex (page 1, 50 books)
   2. Imports from GNews if an API key is configured
   3. Slices any newly-imported parents
+  4. Expires subscriptions past their end date
 
 It's designed to be called either:
   - From a one-shot docker-compose service on a schedule, OR
@@ -16,13 +17,42 @@ crashing mid-run and restarting is safe.
 
 import asyncio
 import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
+from app.models import User, UserTier
 from app.services.content.gutendex import import_gutendex
 from app.services.content.gnews import import_gnews
 from app.services.content.slicing import slice_all_books
 
 logger = logging.getLogger("uvicorn.error")
+
+
+async def expire_subscriptions(db: AsyncSession) -> int:
+    """Revert expired premium subscriptions back to free tier.
+    
+    Called daily to check if any user's subscription_expires_at has passed.
+    """
+    now = datetime.now(timezone.utc)
+    
+    result = await db.execute(
+        update(User)
+        .where(
+            (User.tier != UserTier.FREE) &
+            (User.subscription_expires_at <= now)
+        )
+        .values(tier=UserTier.FREE)
+    )
+    
+    count = result.rowcount
+    if count > 0:
+        await db.commit()
+        logger.info("Expired %d premium subscriptions", count)
+    
+    return count
 
 
 async def run_once(
@@ -31,7 +61,7 @@ async def run_once(
     gnews_page: int = 1,
     gnews_limit: int = 50,
 ) -> dict:
-    """Run a single re-import + slice pass. Returns a summary dict.
+    """Run a single re-import + slice + expiry pass. Returns a summary dict.
 
     Caller controls the pagination cursors so each invocation advances
     forward — by default we walk from page 1, but a real scheduler would
@@ -44,6 +74,7 @@ async def run_once(
         "sliced": 0,
         "children_added": 0,
         "skipped_existing": 0,
+        "subscriptions_expired": 0,
     }
 
     async with AsyncSessionLocal() as db:
@@ -71,13 +102,20 @@ async def run_once(
             summary["skipped_existing"] = slice_summary.get("skipped_existing", 0)
         except Exception as exc:
             logger.error("Slicing failed: %s", exc)
+        
+        # Expire any premium subscriptions past their end date.
+        try:
+            summary["subscriptions_expired"] = await expire_subscriptions(db)
+        except Exception as exc:
+            logger.error("Subscription expiry failed: %s", exc)
 
     logger.info(
-        "Cron run done: gutenberg=%d gnews=%d sliced=%d children_added=%d",
+        "Cron run done: gutenberg=%d gnews=%d sliced=%d children_added=%d subscriptions_expired=%d",
         summary["gutendex_imported"],
         summary["gnews_imported"],
         summary["sliced"],
         summary["children_added"],
+        summary["subscriptions_expired"],
     )
     return summary
 

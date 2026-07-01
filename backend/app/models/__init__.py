@@ -1,6 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, BigInteger, Boolean, Text, DateTime, Enum, Float, JSON,
+    String, Integer, BigInteger, Boolean, Text, DateTime, Enum,
 )
 from datetime import datetime
 import enum
@@ -27,6 +27,9 @@ class User(Base):
     tier: Mapped[UserTier] = mapped_column(Enum(UserTier), default=UserTier.FREE)
     referral_code: Mapped[str | None] = mapped_column(String(12), unique=True)
     referred_by: Mapped[str | None] = mapped_column(String(12), index=True)
+    referrals_today_count: Mapped[int] = mapped_column(Integer, default=0)
+    referrals_today_reset_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    role: Mapped[str] = mapped_column(String(20), default="user")  # user | admin
     subscription_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -352,32 +355,206 @@ class AppConfig(Base):
 
 
 class AiProviderHealth(Base):
-    """Per-provider failure tracker for the Phase 3 AI router.
-
-    Phase 2 ships the table now so the Phase 3 router code can land
-    without a migration. The circuit-breaker pattern is the simple
-    sliding-window version: after `consecutive_failures` crosses
-    `CIRCUIT_BREAKER_THRESHOLD`, `circuit_open_until` is set to
-    `now + cooldown`, and the router skips this provider until the
-    timestamp passes. The router resets `consecutive_failures` to 0 on
-    a successful call.
-
-    The table is intentionally per-provider (one row per name) rather
-    than per-user-per-provider: the breaker is global, not per-user.
-    If we ever need per-user model routing (e.g. premium users get a
-    different model), this table is the wrong shape and we add a join
-    table at that point.
-    """
+    """Per-provider failure tracker for the Phase 3 AI router."""
 
     __tablename__ = "ai_provider_health"
 
     provider_name: Mapped[str] = mapped_column(String(100), primary_key=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # NULL = circuit closed. Non-NULL = circuit open until this
-    # timestamp; the router treats the provider as unavailable while
-    # the timestamp is in the future.
     circuit_open_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
     )
+
+
+# ── Phase 3: Study / AI Exam Prep ────────────────────────────────────
+
+
+class StudyMaterial(Base):
+    """One row per uploaded scheme-of-work or syllabus.
+
+    `raw_input` stores whatever the user sent (image path, raw text,
+    extracted OCR text). `parsed_structure` is the JSON the AI router
+    returned after parsing the raw input into topics/subtopics. If the
+    AI call fails, `parsed_structure` is NULL and the client surfaces
+    a retry CTA.
+    """
+
+    __tablename__ = "study_materials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    raw_input: Mapped[str] = mapped_column(Text)
+    parsed_structure: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_model_used: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class QuizSession(Base):
+    """One row per study quiz / flashcard / essay attempt.
+
+    The `questions` column stores the full asset payload the AI returned
+    (MCQ options, flashcard fronts/backs, essay prompts). `user_answers`
+    stores what the user selected / typed so the result screen can show
+    a review. `score` is 0-100 percentage; NULL means the session was
+    abandoned before completion.
+    """
+
+    __tablename__ = "quiz_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    material_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    asset_type: Mapped[str] = mapped_column(String(50))  # mcq|flashcard|essay
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    points_earned: Mapped[int] = mapped_column(BigInteger, default=0)
+    questions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_answers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class StudyAsset(Base):
+    """One generated asset tied to a StudyMaterial.
+
+    `content_json` is the full AI-generated payload (MCQ array, flashcard
+    array, or essay prompt array). `points_to_unlock` is how many points
+    the user must spend (or an ad watch must confirm) before the server
+    will return `content_json` to the client. Assets default to 50 pts.
+
+    Unlocking is tracked in `StudyTransaction` so the wallet history
+    shows "Spent 50 pts to unlock MCQs".
+    """
+
+    __tablename__ = "study_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    material_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    asset_type: Mapped[str] = mapped_column(String(50))  # mcq|flashcard|essay
+    content_json: Mapped[str] = mapped_column(Text)
+    points_to_unlock: Mapped[int] = mapped_column(Integer, default=50)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class StudyTransaction(Base):
+    """One spend-or-earn event on a study asset.
+
+    `method` is either `points` (user spent wallet points) or `ad`
+    (user watched a rewarded ad). `points_spent` is non-zero only for
+    the `points` method. `reward_granted` tracks whether the backend
+    actually unlocked the content — if false, the client should show
+    an error and retry.
+    """
+
+    __tablename__ = "study_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    asset_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    method: Mapped[str] = mapped_column(String(50))  # points | ad
+    points_spent: Mapped[int] = mapped_column(Integer, default=0)
+    reward_granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+# ── Phase 4: Payments (Premium Subscription) ─────────────────────────────
+
+
+class Payment(Base):
+    """Premium subscription payment transaction.
+    
+    Records incoming payments for tier upgrades. Linked to user + tier type.
+    Status progresses: pending → success | failed.
+    On success, user.tier + subscription_expires_at are updated via webhook.
+    """
+    
+    __tablename__ = "payments"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    tier: Mapped[str] = mapped_column(String(50))  # premium_monthly | premium_yearly
+    amount_kobo: Mapped[int] = mapped_column(BigInteger)  # ₦500 = 50000 kobo
+    provider: Mapped[str] = mapped_column(String(50))  # paystack | flutterwave
+    provider_tx_ref: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(50), default="pending")  # pending | success | failed
+    webhook_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# ── Phase 5: Referrals & Community ─────────────────────────────────────
+
+
+class Referral(Base):
+    """One row per successful referral link usage.
+
+    `referrer_id` is the user who shared the code. `referee_id` is the
+    new user who signed up. `code` is the 6-char alphanumeric string
+    they used. `referee_completed_first_session` flips to True once the
+    referee has a verified reading session ≥ 2 minutes. `reward_granted`
+    tracks whether the points were actually credited — set by the
+    validate endpoint.
+    """
+
+    __tablename__ = "referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    referrer_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    referee_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    code: Mapped[str] = mapped_column(String(12), index=True)
+    referee_completed_first_session: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CommunityNote(Base):
+    """A study note posted by a user to the community feed.
+
+    `status` is `pending` by default for moderation. The feed endpoint
+    only returns `approved` rows. `course_code` and `university` are
+    optional filters.
+    """
+
+    __tablename__ = "community_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    content: Mapped[str] = mapped_column(Text)
+    course_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    university: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | approved | rejected
+    likes_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CommunityLike(Base):
+    """One row per (user, note) like. UNIQUE constraint prevents double-likes."""
+
+    __tablename__ = "community_likes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    note_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserStreak(Base):
+    """Consecutive-day reading streak for a user.
+
+    `current_streak` is the active consecutive-day count. `longest_streak`
+    is the all-time best. `last_activity_date` is the ISO date string
+    (YYYY-MM-DD) of the most recent verified reading session. The streak
+    logic compares `last_activity_date` to today's date to determine if
+    the streak continues, resets, or is lost.
+    """
+
+    __tablename__ = "user_streaks"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    current_streak: Mapped[int] = mapped_column(Integer, default=0)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0)
+    last_activity_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -406,21 +406,245 @@ class WithdrawalRequest(BaseModel):
 
 
 class WithdrawalResponse(BaseModel):
-    """Returned by POST /payouts/withdraw.
-
-    `transfer_reference` is the UUID we passed as `reference` to
-    Paystack. We persist it on the `payout_transactions` row so the
-    webhook handler can join on it when Paystack reports settlement.
-    `new_balance_points` reflects the wallet AFTER the debit (which
-    includes the fee, not just the withdrawal amount).
-
-    `fee_kobo` is the flat fee the user paid for this withdrawal,
-    computed from `settings.withdrawal_fee_tiers`. `amount_kobo +
-    fee_kobo` is the total debit; the user receives the full
-    `amount_kobo` via Paystack.
-    """
     transfer_reference: str
     status: Literal["pending", "success", "failed"]
     new_balance_points: int
     fee_kobo: int
     amount_kobo: int
+
+
+# ── Phase 3: Study / AI Exam Prep ────────────────────────────────────
+
+
+class SowUploadRequest(BaseModel):
+    text: str = Field(min_length=10, description="SOW or syllabus text to parse")
+
+
+class SowUploadResponse(BaseModel):
+    material_id: int
+    title: str
+    parsed_structure: dict | None = None
+
+
+class MaterialSummary(BaseModel):
+    id: int
+    title: str
+    asset_types: list[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MaterialDetail(BaseModel):
+    id: int
+    title: str
+    parsed_structure: dict | None
+    assets: list[dict]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GenerateAssetRequest(BaseModel):
+    material_id: int
+    asset_type: Literal["mcq", "flashcard", "essay"] = "mcq"
+    count: int = Field(default=5, ge=1, le=20)
+
+
+class GenerateAssetResponse(BaseModel):
+    assets: list[dict]
+
+
+class ChatRequest(BaseModel):
+    material_id: int
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class ChatResponse(BaseModel):
+    response: str
+    provider: str
+    model: str
+
+
+class UnlockRequest(BaseModel):
+    asset_id: int
+    method: Literal["points", "ad"] = "points"
+
+
+class UnlockResponse(BaseModel):
+    unlocked: bool
+    content: dict | None = None
+    new_balance: int
+    method: str
+    points_spent: int = 0
+
+
+class StudyTransaction(BaseModel):
+    id: int
+    asset_id: int | None
+    method: str
+    points_spent: int
+    reward_granted: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class QuizCompleteRequest(BaseModel):
+    asset_id: int
+    score: int = Field(ge=0, le=100, description="Percentage score 0-100")
+
+
+class QuizCompleteResponse(BaseModel):
+    bonus_awarded: bool
+    bonus_points: int
+    new_balance: int
+    message: str
+
+
+# ── Phase 3: AI Route Endpoint ───────────────────────────────────────
+
+
+class AiRouteRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=8000)
+    task_type: Literal["heavy", "fast", "chat"] = "fast"
+    max_tokens: int = Field(default=4000, ge=1, le=32000)
+
+
+class AiRouteResponse(BaseModel):
+    response: str
+    provider: str
+    model: str
+
+# ── Phase 4: Payments (Premium Subscription) ─────────────────────────────
+
+
+class PaymentInitiateRequest(BaseModel):
+    """POST /api/v1/payments/initiate body.
+    
+    User selects a tier and initiates checkout. Backend returns
+    the payment provider's checkout URL.
+    """
+    tier: Literal["premium_monthly", "premium_yearly"] = "premium_monthly"
+    provider: Literal["paystack", "flutterwave"] = "paystack"
+
+
+class PaymentInitiateResponse(BaseModel):
+    """Checkout response with provider-specific URL."""
+    payment_url: str
+    provider_tx_ref: str
+    provider: str
+    amount_kobo: int
+    tier: str
+
+
+class PaymentWebhookRequest(BaseModel):
+    """Paystack webhook body shape (loose — actual schema varies by event)."""
+    event: str
+    data: dict
+
+
+class PaymentWebhookResponse(BaseModel):
+    status: str
+    message: str
+
+
+class TierInfo(BaseModel):
+    """Public tier pricing info (OTA-configurable via admin)."""
+    tier: str
+    display_name: str
+    price_kobo: int
+    duration_days: int
+    benefits: list[str]
+
+
+class UserTierInfo(BaseModel):
+    """User's current tier + expiry."""
+    current_tier: str
+    subscription_expires_at: datetime | None
+    is_premium: bool
+    days_remaining: int | None
+
+    model_config = {"from_attributes": True}
+
+
+# ── Phase 5: Referrals & Community ───────────────────────────────────
+
+
+class ReferralGenerateResponse(BaseModel):
+    code: str
+    link: str
+
+
+class ReferralStats(BaseModel):
+    code: str
+    clicks: int
+    signups: int
+    pending_rewards: int
+    claimed_rewards: int
+
+
+class ReferralValidateResponse(BaseModel):
+    rewarded: bool
+    referrer_points: int
+    referee_points: int
+    message: str
+
+
+class CommunityNoteCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=500)
+    content: str = Field(min_length=10)
+    course_code: str | None = None
+    university: str | None = None
+
+
+class CommunityNoteOut(BaseModel):
+    id: int
+    user_id: int
+    title: str
+    content: str
+    course_code: str | None
+    university: str | None
+    status: str
+    likes_count: int
+    created_at: datetime
+    author_name: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class CommunityFeedItem(BaseModel):
+    id: int
+    title: str
+    content: str
+    course_code: str | None
+    university: str | None
+    likes_count: int
+    created_at: datetime
+    author_name: str | None = None
+    is_liked: bool = False
+
+
+class StreakResponse(BaseModel):
+    current_streak: int
+    longest_streak: int
+    last_activity_date: str | None
+    bonus_multiplier: float
+    bonus_label: str
+
+
+class DailyActiveUsers(BaseModel):
+    date: str
+    count: int
+
+
+class RetentionCohort(BaseModel):
+    signup_date: str
+    day_1: int
+    day_7: int
+
+
+class ContentPerformanceItem(BaseModel):
+    content_id: int
+    title: str
+    reading_sessions: int

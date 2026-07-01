@@ -9,8 +9,10 @@ from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.limiter import limiter
 from app.models import Base
-from app.routers import auth, content, sessions, health, wallet, progress, ads
+from app.routers import auth, content, sessions, health, wallet, progress, ads, study
+from app.routers.ai import router as ai_router
 from app.routers.payouts import router as payouts_router
+from app.routers.payments import router as payments_router
 from app.routers.admin import router as admin_router
 from app.routers.config import router as config_router
 from app.seed import run_all_seeds
@@ -80,4 +82,7 @@ app.include_router(admin_router, prefix=API_PREFIX)
 app.include_router(progress.router, prefix=API_PREFIX)
 app.include_router(ads.router, prefix=API_PREFIX)
 app.include_router(payouts_router, prefix=API_PREFIX)
+app.include_router(payments_router, prefix=API_PREFIX)
 app.include_router(config_router, prefix=API_PREFIX)
+app.include_router(study.router, prefix=API_PREFIX)
+app.include_router(ai_router, prefix=API_PREFIX)

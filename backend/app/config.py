@@ -82,6 +82,15 @@ class Settings(BaseSettings):
     # integration lands when the spec calls for it).
     applovin_webhook_secret: str | None = None
 
+    # ── Phase 3: AI providers ────────────────────────────────────────
+    # Free-tier keys for the multi-provider router. All three are
+    # optional: if a key is missing the router simply skips that
+    # provider and falls through to the next one in the priority list.
+    # Never commit real keys — use env vars or a secrets manager.
+    gemini_api_key: str | None = None
+    groq_api_key: str | None = None
+    openrouter_api_key: str | None = None
+
     # ── Content feed ──────────────────────────────────────────────
     # Every Nth item in the catalog feed is a sponsored slot. The
     # spec's default is 4 (in-feed native every 4th item). Set to
