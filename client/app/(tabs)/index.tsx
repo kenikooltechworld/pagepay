@@ -1,0 +1,457 @@
+import { useCallback, useMemo } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { apiFetch } from '@/src/shared/api/client';
+import { useCatalogFilter } from '@/src/shared/lib/catalog-filter';
+import { displayName } from '@/src/shared/lib/display-name';
+import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { useStreak } from '@/src/features/community/hooks/use-community';
+import { PageMark } from '@/components/PageMark';
+import { CategoryChip } from '@/components/CategoryChip';
+import { ContentCard, ContentItem } from '@/components/ContentCard';
+import { ResumeCard } from '@/components/ResumeCard';
+import { PagePay } from '@/constants/theme';
+
+const CATEGORIES = ['Fiction', 'Classics', 'News', 'Study'] as const;
+
+type UserMe = {
+  id: number;
+  email: string | null;
+  phone: string | null;
+  points_balance: number;
+  tier: string;
+};
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const scheme = useEffectiveScheme();
+  const tokens = PagePay[scheme];
+
+  const setCatalogCategory = useCatalogFilter((s) => s.setCategory);
+
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/auth/me');
+      if (!res.ok) throw new Error('Failed to load profile');
+      return (await res.json()) as UserMe;
+    },
+  });
+
+  const feedQuery = useQuery({
+    queryKey: ['feed', 'featured', meQuery.data?.id ?? 0],
+    queryFn: async () => {
+      // Phase 2: use the feed endpoint so the featured strip
+      // includes the same per-user sponsored rotation the
+      // catalog tab does. Anonymous users fall back to id=0
+      // (the server treats 0 as a stable anonymous bucket).
+      const userId = meQuery.data?.id ?? 0;
+      const res = await apiFetch(`/api/v1/content/feed/${userId}?limit=10`);
+      if (!res.ok) throw new Error('Failed to load feed');
+      return (await res.json()) as ContentItem[];
+    },
+  });
+
+  const streakQuery = useStreak();
+
+  const onCategoryPress = useCallback(
+    (category: string) => {
+      setCatalogCategory(category);
+      router.push('/(tabs)/catalog');
+    },
+    [router, setCatalogCategory],
+  );
+
+  const onCardPress = useCallback(
+    (id: number) => {
+      router.push(`/book/${id}` as never);
+    },
+    [router],
+  );
+
+  // Keep Reading section. We render a LIST of every in-progress work —
+  // GET /api/v1/progress returns one WorkProgress row per unfinished work.
+  // The user's progress is preserved per work, not collapsed to a single
+  // "current book" that gets replaced when they switch.
+  type ResumePayload = {
+    workId: number;
+    sliceId: number;
+    title: string;
+    author: string | null;
+    progress: number;  // 0..1
+    minutesLeft: number;
+  };
+
+  const inProgressQuery = useQuery({
+    queryKey: ['progress', 'in-progress'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/progress');
+      if (!res.ok) throw new Error('Failed to load in-progress works');
+      const data = (await res.json()) as Array<{
+        work_id: number;
+        work_title: string;
+        slice_title: string;
+        slice_order: number;
+        total_slices: number;
+        slices_completed: number;
+        percent_complete: number;
+        is_finished: boolean;
+        last_read_at: string | null;
+      }>;
+      return data.filter((w) => !w.is_finished);
+    },
+  });
+
+  // Derive the resume payloads. Each card navigates to its work's
+  // current slice — `/reader/{sliceId}` — so the user lands in the
+  // exact slice they left off.
+  const resumes: ResumePayload[] = useMemo(() => {
+    const list = inProgressQuery.data ?? [];
+    return list.map((w) => {
+      const remainingSlices = Math.max(1, w.total_slices - w.slices_completed);
+      // The current slice id isn't in /progress — it's in /progress/continue
+      // for one row at a time. As a fallback, point the user at the book
+      // detail screen so they can pick up via the slice list.
+      return {
+        workId: w.work_id,
+        sliceId: w.slice_order, // unused; we navigate to book detail instead
+        title: w.work_title,
+        author: null,
+        progress: w.percent_complete / 100,
+        minutesLeft: remainingSlices, // 1 min per slice by contract
+      };
+    });
+  }, [inProgressQuery.data]);
+
+  const onRefresh = useCallback(async () => {
+    await Promise.all([meQuery.refetch(), feedQuery.refetch(), inProgressQuery.refetch()]);
+  }, [meQuery, feedQuery, inProgressQuery]);
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5) return 'Still up?';
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    if (h < 21) return 'Good evening';
+    return 'Burning the midnight oil?';
+  }, []);
+
+  const points = meQuery.data?.points_balance ?? 0;
+  const name = displayName(meQuery.data);
+  const items = feedQuery.data ?? [];
+  const streakData = streakQuery.data as { current_streak: number } | undefined;
+
+  return (
+    <SafeAreaView edges={['top']} style={[styles.root, { backgroundColor: tokens.paper }]}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={meQuery.isFetching || feedQuery.isFetching || inProgressQuery.isFetching}
+            onRefresh={onRefresh}
+            tintColor={tokens.mint}
+          />
+        }
+      >
+        {/* Top row: greeting + balance chip */}
+        <View style={styles.topRow}>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={[styles.greeting, { color: tokens.inkMuted, fontFamily: 'SpaceGrotesk_500Medium' }]}
+            >
+              {greeting},
+            </Text>
+            <Text
+              style={[styles.name, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
+            >
+              {name}.
+            </Text>
+          </View>
+
+          {streakData && streakData.current_streak > 0 && (
+            <View style={[styles.streakBadge, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
+              <Text style={styles.streakEmoji}>🔥</Text>
+              <Text style={[styles.streakText, { color: tokens.mint }]}>
+                {streakData.current_streak}d
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/wallet')}
+            accessibilityRole="button"
+            accessibilityLabel={`View wallet, current balance ${points} points`}
+            style={[styles.balanceChip, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.balanceDot, { backgroundColor: tokens.mint }]} />
+            <Text
+              style={[
+                styles.balanceAmount,
+                { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' },
+              ]}
+            >
+              {meQuery.isLoading ? '—' : points.toLocaleString()}
+            </Text>
+            <Text style={[styles.balanceLabel, { color: tokens.inkMuted }]}>pts</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Brand mark */}
+        <View style={styles.markRow}>
+          <PageMark />
+        </View>
+
+        {/* Resume slot */}
+        {resumes.length > 0 ? (
+          <View style={styles.section}>
+            <Text
+              style={[styles.sectionTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
+            >
+              Keep reading
+            </Text>
+            {/* Horizontal carousel — swipe through in-progress books. The
+                first card is anchored to the screen edge so it's clear
+                that there's more to scroll; padding-right gives the last
+                card breathing room from the edge. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingRight: 16 }}
+              decelerationRate="fast"
+              snapToInterval={272}
+              snapToAlignment="start"
+            >
+              {resumes.map((r) => (
+                <ResumeCard
+                  key={r.workId}
+                  title={r.title}
+                  author={r.author}
+                  progress={r.progress}
+                  minutesLeft={r.minutesLeft}
+                  // Tap goes to the book detail screen so the user
+                  // sees their position in the slice list and chooses
+                  // which slice to continue. Reading stays per-work,
+                  // not per-app.
+                  onPress={() => router.push(`/book/${r.workId}` as never)}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {/* Browse by category */}
+        <View style={styles.section}>
+          <Text
+            style={[styles.sectionTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
+          >
+            Browse
+          </Text>
+          <View style={styles.chipsRow}>
+            {CATEGORIES.map((c) => (
+              <CategoryChip key={c} label={c} onPress={() => onCategoryPress(c)} />
+            ))}
+          </View>
+        </View>
+
+        {/* Trending today */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[styles.sectionTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
+            >
+              Trending today
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setCatalogCategory(null);
+                router.push('/(tabs)/catalog');
+              }}
+              hitSlop={6}
+              accessibilityRole="link"
+              accessibilityLabel="See all content in catalog"
+            >
+              <Text style={[styles.seeAll, { color: tokens.mint }]}>See all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {feedQuery.isLoading && items.length === 0 ? (
+            <View style={[styles.stateBlock, { borderColor: tokens.border }]}>
+              <ActivityIndicator color={tokens.mint} />
+              <Text style={[styles.stateText, { color: tokens.inkMuted }]}>
+                Loading your feed…
+              </Text>
+            </View>
+          ) : feedQuery.isError ? (
+            <View style={[styles.stateBlock, { borderColor: tokens.signal }]}>
+              <Ionicons name="cloud-offline-outline" size={20} color={tokens.signal} />
+              <Text style={[styles.stateText, { color: tokens.signal }]}>
+                Couldn&apos;t load your feed.
+              </Text>
+              <TouchableOpacity
+                onPress={() => feedQuery.refetch()}
+                style={[styles.retry, { borderColor: tokens.signal }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.retryText, { color: tokens.signal }]}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : items.length === 0 ? (
+            <View style={[styles.stateBlock, { borderColor: tokens.border }]}>
+              <Text style={[styles.stateText, { color: tokens.inkMuted }]}>
+                Nothing here yet. New reads drop daily.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.feed}>
+              {items.map((item) => (
+                <ContentCard
+                  key={item.id}
+                  item={item}
+                  onPress={() => onCardPress(item.id)}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={{ height: 24 }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  scroll: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 24,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 4,
+  },
+  greeting: {
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.2,
+  },
+  name: {
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: -0.4,
+    marginTop: 2,
+  },
+  balanceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  balanceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  balanceAmount: {
+    fontSize: 15,
+    lineHeight: 18,
+    letterSpacing: -0.2,
+  },
+  balanceLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  markRow: {
+    marginTop: -8,
+  },
+  section: {
+    gap: 12,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    letterSpacing: -0.2,
+  },
+  seeAll: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  feed: {
+    gap: 12,
+  },
+  stateBlock: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  stateText: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  retry: {
+    marginTop: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  retryText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  streakEmoji: {
+    fontSize: 14,
+  },
+  streakText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+});
