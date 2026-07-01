@@ -649,3 +649,119 @@ class ContentPerformanceItem(BaseModel):
     content_id: int
     title: str
     reading_sessions: int
+
+
+# ── Admin System ─────────────────────────────────────────────────────
+
+
+class AdminLoginRequest(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=8)
+
+
+class AdminLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+    permissions: list[str]
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: str
+    role: str
+    is_active: bool
+    last_login_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUserCreate(BaseModel):
+    email: str = Field(min_length=3)
+    password: str = Field(min_length=8)
+    role: str = Field(default="support", pattern="^(super_admin|finance|moderator|support)$")
+    permissions: list[str] | None = None
+
+
+class AdminAuditLogOut(BaseModel):
+    id: int
+    admin_email: str | None
+    action: str
+    target_type: str
+    target_id: int | None
+    changes: str | None
+    ip_address: str | None
+    result: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FraudFlagOut(BaseModel):
+    id: int
+    user_id: int | None
+    session_id: int | None
+    flag_type: str
+    severity: str
+    details: str
+    status: str
+    reviewed_by: int | None
+    review_notes: str | None
+    created_at: datetime
+    reviewed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class ContentImportLogOut(BaseModel):
+    id: int
+    source: str
+    admin_id: int | None
+    count_imported: int
+    start_page: int | None
+    limit: int | None
+    status: str
+    error_message: str | None
+    duration_seconds: int | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DashboardStats(BaseModel):
+    total_users: int
+    active_users_today: int
+    total_revenue_ngn: int
+    pending_payouts: int
+    pending_notes: int
+    high_severity_fraud_flags: int
+
+
+class RevenueSummary(BaseModel):
+    total_revenue_ngn: int
+    ad_revenue_ngn: int
+    premium_revenue_ngn: int
+    gross_profit_ngn: int
+    period_start: str
+    period_end: str
+
+
+class ConfigItem(BaseModel):
+    key: str
+    value: str
+    environment: str
+    description: str | None
+    updated_at: datetime | None
+
+
+class ConfigUpdateRequest(BaseModel):
+    value: str
+    description: str | None = None
+
+
+class UserListResponse(BaseModel):
+    items: list[dict]
+    total: int
+    page: int
+    limit: int

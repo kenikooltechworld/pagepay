@@ -1,120 +1,631 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-import hmac
+"""Admin API router.
+
+Covers dashboard, users, finance, content, fraud, AI, config, and logs.
+All endpoints require Bearer JWT issued by POST /api/v1/admin/auth/login.
+"""
+
 import logging
+from datetime import date, datetime, timedelta, timezone
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import select, func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
+import json as json
+
 from app.config import settings
 from app.database import get_db
-from app.services.content.gutendex import import_gutendex
-from app.services.content.gnews import import_gnews
-from app.services.content.slicing import slice_all_books, slice_and_persist, force_reslice_all
-from app.services.paystack import get_client as get_paystack_client, PaystackError
-from app.models import ContentCatalog
-from sqlalchemy import select
+from app.models import (
+    User, ReadingSession, ContentCatalog, AdEvent, PayoutTransaction,
+    Payment, AdminAuditLog, FraudFlag, ContentImportLog, AdminUser,
+    StudyMaterial, StudyAsset, Referral, CommunityNote, AiProviderHealth, AppConfig,
+)
+from app.schemas import (
+    AdminLoginRequest, AdminLoginResponse, AdminUserOut, AdminAuditLogOut,
+    FraudFlagOut, ContentImportLogOut, DashboardStats, RevenueSummary,
+    ConfigItem, ConfigUpdateRequest, UserListResponse,
+)
+from app.services.admin_auth import (
+    get_current_admin, require_permission, create_admin_token, hash_password, verify_password,
+)
 
 logger = logging.getLogger("uvicorn.error")
-router = APIRouter(prefix="/admin/content", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-async def require_admin_token(x_admin_token: str | None = Header(default=None)) -> None:
-    """Gate admin endpoints behind X-Admin-Token.
-
-    Returns 401 if the header is missing or doesn't match settings.admin_token.
-    We use a shared secret (not user JWTs) because admin callers are
-    scripts and the cron container, not humans. Constant-time compare
-    avoids a token-length side channel.
-    """
-    expected = settings.admin_token
-    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing X-Admin-Token",
-            headers={"WWW-Authenticate": "X-Admin-Token"},
-        )
+# ── Helpers ─────────────────────────────────────────────────────────
 
 
-@router.post("/import", dependencies=[Depends(require_admin_token)])
-async def import_content(
-    source: str = Query("gutenberg"),
-    limit: int = Query(50, ge=1, le=500),
-    start_page: int = Query(1, ge=1, description="1-indexed page; advance each cron run"),
-    db: AsyncSession = Depends(get_db),
-):
-    if source == "gutenberg":
-        count = await import_gutendex(db, limit=limit, start_page=start_page)
-        return {"imported": count, "source": source, "start_page": start_page}
-    if source == "gnews":
-        count = await import_gnews(db, limit=limit, start_page=start_page)
-        return {"imported": count, "source": source, "start_page": start_page}
-    raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
+def _log_admin_action(admin_id: int | None, action: str, target_type: str, target_id: int | None,
+                      changes: dict | None, ip: str | None, result: str = "success",
+                      error: str | None = None):
+    return AdminAuditLog(
+        admin_id=admin_id,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        changes=_json_dumps(changes) if changes else None,
+        ip_address=ip,
+        result=result,
+        error_message=error,
+    )
 
 
-@router.post("/slice", dependencies=[Depends(require_admin_token)])
-async def slice_existing(
-    work_id: int | None = Query(None, description="Slice one work by id; omit to slice all"),
-    db: AsyncSession = Depends(get_db),
-):
-    """Slice long content rows into 2-minute child reads.
-
-    If `work_id` is given, slices only that parent (re-runs are idempotent).
-    If omitted, slices every parent book in the catalog that doesn't already
-    have children. Returns a summary of what was sliced and skipped.
-    """
-    if work_id is not None:
-        row = await db.execute(select(ContentCatalog).where(ContentCatalog.id == work_id))
-        parent = row.scalar_one_or_none()
-        if not parent:
-            raise HTTPException(status_code=404, detail=f"Work {work_id} not found")
-        n = await slice_and_persist(db, parent)
-        return {"sliced": 1, "children_added": n, "work_id": work_id}
-
-    summary = await slice_all_books(db)
-    return summary
-
-
-@router.post("/reslice", dependencies=[Depends(require_admin_token)])
-async def reslice_all(db: AsyncSession = Depends(get_db)):
-    """Wipe every slice and re-slice every parent from scratch.
-
-    Use this when the catalog has books that were imported before slicing
-    was wired in (so they sit as 30-minute or 1-hour monoliths) or when
-    the slicer config changes. Active `reading_session` rows are not
-    touched; `reading_progress` rows have their `current_slice_id`
-    cleared so the next resume points at slice 1 of the user's current
-    work. Idempotent — safe to call repeatedly.
-
-    Distinct from /slice which is non-destructive (skips parents that
-    already have children). This one is destructive by design.
-    """
-    summary = await force_reslice_all(db)
-    return summary
-
-
-# ── Platform balance monitoring ──────────────────────────────────────
-
-@router.get("/platform-balance", dependencies=[Depends(require_admin_token)])
-async def get_platform_balance():
-    """Return the current Paystack balance in kobo.
-
-    Used by admin dashboard to monitor available balance and detect
-    when auto-settlement has drained the account (which blocks
-    user withdrawals). Returns 503 if Paystack is unconfigured or
-    unreachable.
-    """
-    if not settings.paystack_secret_key:
-        raise HTTPException(
-            status_code=503,
-            detail="PAYSTACK_SECRET_KEY is not configured",
-        )
+def _json_dumps(value) -> str | None:
+    import json
     try:
-        balance_kobo = await get_paystack_client().get_balance()
-    except PaystackError as exc:
-        logger.error("Failed to fetch Paystack balance: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail="Unable to fetch Paystack balance",
-        ) from exc
+        return json.dumps(value, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+# ── Admin Auth ──────────────────────────────────────────────────────
+
+
+@router.post("/auth/login", response_model=AdminLoginResponse)
+async def admin_login(payload: AdminLoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(AdminUser).where(AdminUser.email == payload.email.lower()))
+    admin = result.scalar_one_or_none()
+    if not admin or not verify_password(payload.password, admin.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not admin.is_active:
+        raise HTTPException(status_code=403, detail="Admin account is disabled")
+
+    admin.last_login_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    perms = []
+    if admin.permissions:
+        import json
+        try:
+            perms = json.loads(admin.permissions)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    token = create_admin_token(admin.id, admin.role)
+    return AdminLoginResponse(access_token=token, token_type="bearer", role=admin.role, permissions=perms)
+
+
+@router.get("/auth/me", response_model=AdminUserOut)
+async def admin_me(current_admin: AdminUser = Depends(get_current_admin)):
+    return AdminUserOut(
+        id=current_admin.id,
+        email=current_admin.email,
+        role=current_admin.role,
+        is_active=current_admin.is_active,
+        last_login_at=current_admin.last_login_at,
+        created_at=current_admin.created_at,
+    )
+
+
+# ── Dashboard ───────────────────────────────────────────────────────
+
+
+@router.get("/dashboard/stats", response_model=DashboardStats)
+async def dashboard_stats(
+    current_admin: AdminUser = Depends(require_permission("dashboard.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
+
+    total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
+    active_today = (await db.execute(
+        select(func.count(func.distinct(ReadingSession.user_id))).where(ReadingSession.start_time >= today_start)
+    )).scalar_one()
+    pending_payouts = (await db.execute(
+        select(func.count(PayoutTransaction.id)).where(PayoutTransaction.status == "pending")
+    )).scalar_one()
+    pending_notes = (await db.execute(
+        select(func.count(CommunityNote.id)).where(CommunityNote.status == "pending")
+    )).scalar_one()
+    high_fraud = (await db.execute(
+        select(func.count(FraudFlag.id)).where(
+            FraudFlag.severity == "high", FraudFlag.status == "pending"
+        )
+    )).scalar_one()
+
+    ad_revenue = (await db.execute(
+        select(func.sum(AdEvent.impression_revenue_usd)).where(AdEvent.start_time >= today_start)
+    )).scalar_one() or 0
+    premium_revenue = (await db.execute(
+        select(func.sum(Payment.amount_kobo)).where(
+            Payment.status == "success", Payment.created_at >= today_start
+        )
+    )).scalar_one() or 0
+
+    return DashboardStats(
+        total_users=int(total_users),
+        active_users_today=int(active_today),
+        total_revenue_ngn=int(ad_revenue) + int(premium_revenue),
+        pending_payouts=int(pending_payouts),
+        pending_notes=int(pending_notes),
+        high_severity_fraud_flags=int(high_fraud),
+    )
+
+
+# ── User Management ─────────────────────────────────────────────────
+
+
+@router.get("/users", response_model=UserListResponse)
+async def list_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    tier: str | None = Query(None),
+    status: str | None = Query(None),
+    search: str | None = Query(None),
+    current_admin: AdminUser = Depends(require_permission("users.view")),
+    db: AsyncSession = Depends(get_db),
+    x_admin_token: str | None = Header(default=None),
+):
+    query = select(User)
+    if tier:
+        query = query.where(User.tier == tier)
+    if status:
+        query = query.where(User.status == status)
+    if search:
+        query = query.where(
+            (User.email.ilike(f"%{search}%")) | (User.phone.ilike(f"%{search}%"))
+        )
+    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    rows = await db.execute(query.order_by(User.created_at.desc()).limit(limit).offset((page - 1) * limit))
+    items = []
+    for u in rows.scalars().all():
+        items.append({
+            "id": u.id,
+            "email": u.email,
+            "phone": u.phone,
+            "tier": u.tier.value if hasattr(u.tier, "value") else str(u.tier),
+            "status": u.status,
+            "points_balance": u.points_balance,
+            "referral_code": u.referral_code,
+            "created_at": u.created_at.isoformat(),
+            "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
+        })
+    return UserListResponse(items=items, total=int(total), page=page, limit=limit)
+
+
+@router.get("/users/{user_id}")
+async def get_user_detail(
+    user_id: int,
+    current_admin: AdminUser = Depends(require_permission("users.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     return {
-        "balance_kobo": balance_kobo,
-        "balance_ngn": balance_kobo / 100,
-        "currency": "NGN",
+        "id": user.id,
+        "email": user.email,
+        "phone": user.phone,
+        "tier": user.tier.value if hasattr(user.tier, "value") else str(user.tier),
+        "status": user.status,
+        "points_balance": user.points_balance,
+        "referral_code": user.referral_code,
+        "referred_by": user.referred_by,
+        "subscription_expires_at": user.subscription_expires_at.isoformat() if user.subscription_expires_at else None,
+        "created_at": user.created_at.isoformat(),
+        "last_active_at": user.last_active_at.isoformat() if user.last_active_at else None,
     }
+
+
+@router.post("/users/{user_id}/ban")
+async def ban_user(
+    user_id: int,
+    reason: str = Query(...),
+    current_admin: AdminUser = Depends(require_permission("users.ban")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.status = "banned"
+    user.banned_at = datetime.now(timezone.utc)
+    user.ban_reason = reason
+    user.banned_by = current_admin.id
+    db.add(_log_admin_action(current_admin.id, "ban_user", "user", user_id,
+                             {"status": {"from": "active", "to": "banned"}, "reason": reason}, None))
+    await db.commit()
+    return {"success": True}
+
+
+@router.post("/users/{user_id}/unban")
+async def unban_user(
+    user_id: int,
+    current_admin: AdminUser = Depends(require_permission("users.ban")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.status = "active"
+    user.banned_at = None
+    user.ban_reason = None
+    user.banned_by = None
+    db.add(_log_admin_action(current_admin.id, "unban_user", "user", user_id,
+                             {"status": {"from": "banned", "to": "active"}}, None))
+    await db.commit()
+    return {"success": True}
+
+
+@router.post("/users/{user_id}/adjust-balance")
+async def adjust_balance(
+    user_id: int,
+    amount: int = Query(...),
+    reason: str = Query(...),
+    current_admin: AdminUser = Depends(require_permission("users.adjust_balance")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    old_balance = user.points_balance
+    user.points_balance = max(0, old_balance + amount)
+    db.add(_log_admin_action(current_admin.id, "adjust_balance", "user", user_id,
+                             {"points": {"from": old_balance, "to": user.points_balance}, "reason": reason}, None))
+    await db.commit()
+    return {"success": True, "new_balance": user.points_balance}
+
+
+@router.get("/users/{user_id}/sessions")
+async def get_user_sessions(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    current_admin: AdminUser = Depends(require_permission("users.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(ReadingSession).where(ReadingSession.user_id == user_id).order_by(ReadingSession.start_time.desc())
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = await db.execute(q.limit(limit).offset((page - 1) * limit))
+    items = [{"id": s.id, "content_id": s.content_id, "start_time": s.start_time.isoformat(),
+               "duration_seconds": s.duration_seconds, "verified": s.verified, "points_earned": s.points_earned}
+              for s in rows.scalars().all()]
+    return {"items": items, "total": int(total), "page": page, "limit": limit}
+
+
+@router.get("/users/{user_id}/transactions")
+async def get_user_transactions(
+    user_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    current_admin: AdminUser = Depends(require_permission("users.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models import PayoutTransaction, Payment, StudyTransaction
+    payout_q = select(PayoutTransaction).where(PayoutTransaction.user_id == user_id)
+    payment_q = select(Payment).where(Payment.user_id == user_id)
+    study_q = select(StudyTransaction).where(StudyTransaction.user_id == user_id)
+    # simplified: return all as items
+    items = []
+    for q in [payout_q, payment_q, study_q]:
+        rows = await db.execute(q.limit(limit).offset((page - 1) * limit))
+        for r in rows.scalars().all():
+            items.append({"type": type(r).__name__, "id": r.id, "created_at": r.created_at.isoformat()})
+    return {"items": items, "total": len(items), "page": page, "limit": limit}
+
+
+# ── Finance ─────────────────────────────────────────────────────────
+
+
+@router.get("/revenue/summary")
+async def revenue_summary(
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    current_admin: AdminUser = Depends(require_permission("finance.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=30)
+    if start_date:
+        start = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
+    if end_date:
+        end = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+
+    ad_rev = (await db.execute(
+        select(func.sum(AdEvent.impression_revenue_usd)).where(
+            AdEvent.start_time >= start, AdEvent.start_time <= end
+        )
+    )).scalar_one() or 0
+    prem_rev = (await db.execute(
+        select(func.sum(Payment.amount_kobo)).where(
+            Payment.status == "success", Payment.created_at >= start, Payment.created_at <= end
+        )
+    )).scalar_one() or 0
+    return RevenueSummary(
+        total_revenue_ngn=int(ad_rev) + int(prem_rev),
+        ad_revenue_ngn=int(ad_rev),
+        premium_revenue_ngn=int(prem_rev),
+        gross_profit_ngn=int(ad_rev) + int(prem_rev),
+        period_start=start.isoformat(),
+        period_end=end.isoformat(),
+    )
+
+
+@router.get("/payouts")
+async def list_payouts(
+    status_filter: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    current_admin: AdminUser = Depends(require_permission("finance.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(PayoutTransaction)
+    if status_filter:
+        q = q.where(PayoutTransaction.status == status_filter)
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = await db.execute(q.order_by(PayoutTransaction.created_at.desc()).limit(limit).offset((page - 1) * limit))
+    items = [{"id": p.id, "user_id": p.user_id, "amount_kobo": p.amount_kobo, "fee_kobo": p.fee_kobo,
+               "status": p.status, "recipient_code": p.recipient_code, "created_at": p.created_at.isoformat()}
+              for p in rows.scalars().all()]
+    return {"items": items, "total": int(total), "page": page, "limit": limit}
+
+
+@router.post("/payouts/{payout_id}/approve")
+async def approve_payout(
+    payout_id: int,
+    current_admin: AdminUser = Depends(require_permission("finance.approve")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(PayoutTransaction).where(PayoutTransaction.id == payout_id))
+    payout = result.scalar_one_or_none()
+    if not payout:
+        raise HTTPException(status_code=404, detail="Payout not found")
+    payout.status = "success"
+    db.add(_log_admin_action(current_admin.id, "approve_payout", "payout", payout_id, {}, None))
+    await db.commit()
+    return {"success": True}
+
+
+@router.post("/payouts/{payout_id}/reject")
+async def reject_payout(
+    payout_id: int,
+    reason: str = Query(...),
+    current_admin: AdminUser = Depends(require_permission("finance.approve")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(PayoutTransaction).where(PayoutTransaction.id == payout_id))
+    payout = result.scalar_one_or_none()
+    if not payout:
+        raise HTTPException(status_code=404, detail="Payout not found")
+    payout.status = "failed"
+    payout.reason = reason
+    db.add(_log_admin_action(current_admin.id, "reject_payout", "payout", payout_id, {"reason": reason}, None))
+    await db.commit()
+    return {"success": True}
+
+
+# ── Content ─────────────────────────────────────────────────────────
+
+
+@router.get("/content")
+async def list_content(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    content_type: str | None = Query(None),
+    category: str | None = Query(None),
+    search: str | None = Query(None),
+    current_admin: AdminUser = Depends(require_permission("content.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(ContentCatalog)
+    if content_type:
+        q = q.where(ContentCatalog.content_type == content_type)
+    if category:
+        q = q.where(ContentCatalog.category == category)
+    if search:
+        q = q.where(ContentCatalog.title.ilike(f"%{search}%"))
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = await db.execute(q.order_by(ContentCatalog.created_at.desc()).limit(limit).offset((page - 1) * limit))
+    items = [{"id": c.id, "title": c.title, "content_type": c.content_type, "category": c.category,
+               "author": c.author, "created_at": c.created_at.isoformat()}
+              for c in rows.scalars().all()]
+    return {"items": items, "total": int(total), "page": page, "limit": limit}
+
+
+@router.delete("/content/{content_id}")
+async def delete_content(
+    content_id: int,
+    current_admin: AdminUser = Depends(require_permission("content.delete")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(ContentCatalog).where(ContentCatalog.id == content_id))
+    content = result.scalar_one_or_none()
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    await db.delete(content)
+    db.add(_log_admin_action(current_admin.id, "delete_content", "content", content_id,
+                             {"title": content.title}, None))
+    await db.commit()
+    return {"success": True}
+
+
+# ── Fraud Detection ─────────────────────────────────────────────────
+
+
+@router.get("/fraud/sessions")
+async def list_fraud_sessions(
+    severity: str | None = Query(None),
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    current_admin: AdminUser = Depends(require_permission("fraud.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(FraudFlag).where(FraudFlag.flag_type == "suspicious_session")
+    if severity:
+        q = q.where(FraudFlag.severity == severity)
+    if status:
+        q = q.where(FraudFlag.status == status)
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = await db.execute(q.order_by(FraudFlag.created_at.desc()).limit(limit).offset((page - 1) * limit))
+    items = [ FraudFlagOut.model_validate(f).model_dump() for f in rows.scalars().all()]
+    return {"items": items, "total": int(total), "page": page, "limit": limit}
+
+
+@router.get("/fraud/duplicates")
+async def list_fraud_duplicates(
+    current_admin: AdminUser = Depends(require_permission("fraud.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await db.execute(
+        select(FraudFlag).where(FraudFlag.flag_type == "duplicate_account")
+        .order_by(FraudFlag.created_at.desc()).limit(50)
+    )
+    items = [ FraudFlagOut.model_validate(f).model_dump() for f in rows.scalars().all()]
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/fraud/referrals")
+async def list_fraud_referrals(
+    current_admin: AdminUser = Depends(require_permission("fraud.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await db.execute(
+        select(FraudFlag).where(FraudFlag.flag_type == "referral_abuse")
+        .order_by(FraudFlag.created_at.desc()).limit(50)
+    )
+    items = [ FraudFlagOut.model_validate(f).model_dump() for f in rows.scalars().all()]
+    return {"items": items, "total": len(items)}
+
+
+# ── AI Monitoring ──────────────────────────────────────────────────
+
+
+@router.get("/ai/health")
+async def ai_health(
+    current_admin: AdminUser = Depends(require_permission("ai.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await db.execute(select(AiProviderHealth).order_by(AiProviderHealth.provider_name))
+    return [{"provider": h.provider_name, "consecutive_failures": h.consecutive_failures,
+             "circuit_open_until": h.circuit_open_until.isoformat() if h.circuit_open_until else None,
+             "last_failure_at": h.last_failure_at.isoformat() if h.last_failure_at else None}
+            for h in rows.scalars().all()]
+
+
+# ── Config ──────────────────────────────────────────────────────────
+
+
+@router.get("/config")
+async def list_config(
+    current_admin: AdminUser = Depends(require_permission("config.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await db.execute(select(AppConfig).order_by(AppConfig.key))
+    return [ConfigItem(key=c.key, value=c.value, environment=c.environment,
+                       description=c.description, updated_at=c.updated_at).model_dump()
+            for c in rows.scalars().all()]
+
+
+@router.put("/config/{key}")
+async def update_config(
+    key: str,
+    payload: ConfigUpdateRequest,
+    current_admin: AdminUser = Depends(require_permission("config.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(AppConfig).where(AppConfig.key == key))
+    config = result.scalar_one_or_none()
+    if not config:
+        raise HTTPException(status_code=404, detail="Config key not found")
+    old = config.value
+    config.value = payload.value
+    if payload.description is not None:
+        config.description = payload.description
+    db.add(_log_admin_action(current_admin.id, "update_config", "config", None,
+                             {"key": key, "old": old, "new": payload.value}, None))
+    await db.commit()
+    return {"success": True}
+
+
+# ── Audit Logs ──────────────────────────────────────────────────────
+
+
+@router.get("/logs", response_model=list[AdminAuditLogOut])
+async def list_audit_logs(
+    action: str | None = Query(None),
+    target_type: str | None = Query(None),
+    admin_id: int | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    current_admin: AdminUser = Depends(require_permission("logs.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(AdminAuditLog)
+    if action:
+        q = q.where(AdminAuditLog.action == action)
+    if target_type:
+        q = q.where(AdminAuditLog.target_type == target_type)
+    if admin_id:
+        q = q.where(AdminAuditLog.admin_id == admin_id)
+    if start_date:
+        q = q.where(AdminAuditLog.created_at >= datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc))
+    if end_date:
+        q = q.where(AdminAuditLog.created_at <= datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc))
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = await db.execute(q.order_by(AdminAuditLog.created_at.desc()).limit(limit).offset((page - 1) * limit))
+    items = [AdminAuditLogOut.model_validate(r).model_dump() for r in rows.scalars().all()]
+    return items
+
+
+# ── Analytics (wraps existing) ─────────────────────────────────────
+
+
+@router.get("/analytics/dau")
+async def admin_dau(
+    days: int = Query(7, ge=1, le=90),
+    x_admin_token: str | None = Header(default=None),
+    current_admin: AdminUser | None = Depends(require_permission("analytics.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = await db.execute(
+        select(func.date(ReadingSession.start_time).label("day"), func.count(func.distinct(ReadingSession.user_id)).label("count"))
+        .where(ReadingSession.start_time >= cutoff)
+        .group_by(func.date(ReadingSession.start_time)).order_by(func.date(ReadingSession.start_time).desc())
+    )
+    return [{"date": str(r.day), "count": int(r.count)} for r in rows.all()]
+
+
+@router.get("/analytics/retention")
+async def admin_retention(
+    x_admin_token: str | None = Header(default=None),
+    current_admin: AdminUser | None = Depends(require_permission("analytics.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    cutoff_7 = datetime.now(timezone.utc) - timedelta(days=7)
+    users = {r.id: r.created_at for r in (await db.execute(select(User.id, User.created_at).where(User.created_at >= cutoff_7))).all()}
+    sessions: dict[int, set[str]] = {}
+    for uid, day in (await db.execute(select(ReadingSession.user_id, func.date(ReadingSession.start_time)).where(ReadingSession.start_time >= cutoff_7))).all():
+        sessions.setdefault(uid, set()).add(str(day))
+    cohorts: dict[str, dict] = {}
+    for uid, created in users.items():
+        key = created.date().isoformat()
+        cohorts.setdefault(key, {"day_1": 0, "day_7": 0})
+        signup_day = created.date()
+        if any(d == (signup_day + timedelta(days=1)).isoformat() for d in sessions.get(uid, set())):
+            cohorts[key]["day_1"] += 1
+        if any(d == (signup_day + timedelta(days=7)).isoformat() for d in sessions.get(uid, set())):
+            cohorts[key]["day_7"] += 1
+    return [{"signup_date": k, "day_1": v["day_1"], "day_7": v["day_7"]} for k, v in sorted(cohorts.items())]
+
+
+@router.get("/analytics/content-performance")
+async def admin_content_performance(
+    limit: int = Query(20, ge=1, le=100),
+    x_admin_token: str | None = Header(default=None),
+    current_admin: AdminUser | None = Depends(require_permission("analytics.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await db.execute(
+        select(ContentCatalog.id, ContentCatalog.title, func.count(ReadingSession.id).label("reading_sessions"))
+        .join(ReadingSession, ReadingSession.content_id == ContentCatalog.id)
+        .group_by(ContentCatalog.id, ContentCatalog.title)
+        .order_by(desc(func.count(ReadingSession.id))).limit(limit)
+    )
+    return [{"content_id": r.id, "title": r.title, "reading_sessions": int(r.reading_sessions)} for r in rows.all()]

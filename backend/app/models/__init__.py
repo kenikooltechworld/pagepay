@@ -30,6 +30,10 @@ class User(Base):
     referrals_today_count: Mapped[int] = mapped_column(Integer, default=0)
     referrals_today_reset_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     role: Mapped[str] = mapped_column(String(20), default="user")  # user | admin
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)  # active | banned | suspended
+    banned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ban_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    banned_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     subscription_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -558,3 +562,77 @@ class UserStreak(Base):
     last_activity_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ── Admin System ──────────────────────────────────────────────────────
+
+
+class AdminUser(Base):
+    """Admin user with role-based access control."""
+
+    __tablename__ = "admin_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(50), default="support")  # super_admin | finance | moderator | support
+    permissions: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class AdminAuditLog(Base):
+    """Immutable audit trail for admin actions."""
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    admin_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
+    admin_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action: Mapped[str] = mapped_column(String(100), index=True)
+    target_type: Mapped[str] = mapped_column(String(50))
+    target_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    changes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    result: Mapped[str] = mapped_column(String(20), default="success")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class FraudFlag(Base):
+    """Fraud detection flags for users or sessions."""
+
+    __tablename__ = "fraud_flags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
+    session_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    flag_type: Mapped[str] = mapped_column(String(50), index=True)
+    severity: Mapped[str] = mapped_column(String(20))  # low | medium | high
+    details: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ContentImportLog(Base):
+    """Log of content imports for audit and debugging."""
+
+    __tablename__ = "content_import_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(50))
+    admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    count_imported: Mapped[int] = mapped_column(Integer, default=0)
+    start_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20))
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
