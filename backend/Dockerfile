@@ -2,7 +2,8 @@ FROM python:3.11
 RUN useradd --create-home appuser
 WORKDIR /app
 COPY requirements.txt requirements-dev.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --retries 10 -r requirements.txt -r requirements-dev.txt
 COPY . .
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

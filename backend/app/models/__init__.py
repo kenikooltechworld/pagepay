@@ -37,6 +37,25 @@ class User(Base):
     subscription_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    # ── Phase 7: Social Tasks ─────────────────────────────────────────
+    is_worker: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_sponsor: Mapped[bool] = mapped_column(Boolean, default=False)
+    sponsor_wallet_balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    sponsor_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    sponsor_kyc_status: Mapped[str] = mapped_column(String(20), default="none")
+    sponsor_kyc_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sponsor_kyc_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sponsor_kyc_reviewer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    business_registration_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sponsor_auto_approve_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date_of_birth: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str] = mapped_column(String(50), default="Nigeria")
+    languages: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ReadingSession(Base):
@@ -564,6 +583,72 @@ class UserStreak(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# ══════════════════════════════════════════════════════════════════════
+# PHASE 7: SOCIAL TASKS MARKETPLACE
+# ══════════════════════════════════════════════════════════════════════
+
+
+class Task(Base):
+    """Main task table - one row per task posted by sponsor."""
+    __tablename__ = "tasks"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    sponsor_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    instructions: Mapped[str] = mapped_column(Text)
+    
+    task_type: Mapped[str] = mapped_column(String(50), index=True)
+    platform: Mapped[str] = mapped_column(String(50), index=True)
+    category: Mapped[str] = mapped_column(String(50), default="social_media", index=True)
+    
+    target_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    
+    proof_type: Mapped[str] = mapped_column(String(50))
+    proof_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    reward_amount: Mapped[int] = mapped_column(BigInteger)
+    max_completions: Mapped[int] = mapped_column(Integer)
+    completed_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    approved_count: Mapped[int] = mapped_column(Integer, default=0)
+    rejected_count: Mapped[int] = mapped_column(Integer, default=0)
+    pending_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    total_escrowed: Mapped[int] = mapped_column(BigInteger)
+    platform_fee_percent: Mapped[int] = mapped_column(Integer, default=15)
+    platform_fee_amount: Mapped[int] = mapped_column(BigInteger)
+    
+    target_countries: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_cities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_age_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_age_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_languages: Mapped[str | None] = mapped_column(Text, nullable=True)
+    min_worker_level: Mapped[int] = mapped_column(Integer, default=1)
+    min_approval_rate: Mapped[float] = mapped_column(BigInteger, default=0.0)
+    require_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    require_premium: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    visibility: Mapped[str] = mapped_column(String(20), default="public")
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    featured: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    time_limit_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    ai_verification_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_auto_approve_threshold: Mapped[float] = mapped_column(BigInteger, default=0.9)
+    manual_review_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 # ── Admin System ──────────────────────────────────────────────────────
 
 
@@ -636,3 +721,152 @@ class ContentImportLog(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+
+class TaskSubmission(Base):
+    """Worker's submission for a task - one row per user per task."""
+    __tablename__ = "task_submissions"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    worker_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    
+    proof_type: Mapped[str] = mapped_column(String(50))
+    proof_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    proof_image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    proof_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proof_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proof_image_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    
+    ai_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_confidence: Mapped[float | None] = mapped_column(BigInteger, nullable=True)
+    ai_verification_details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    auto_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    reward_paid: Mapped[int] = mapped_column(BigInteger, default=0)
+    payment_status: Mapped[str] = mapped_column(String(20), default="pending")
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    fraud_score: Mapped[float] = mapped_column(BigInteger, default=0.0)
+    flagged_for_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    duplicate_screenshot_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    completion_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    device_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+
+class UserReputation(Base):
+    """Tracks worker/sponsor reputation scores and gamification stats."""
+    __tablename__ = "user_reputations"
+    
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    
+    worker_level: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    worker_xp: Mapped[int] = mapped_column(Integer, default=0)
+    worker_xp_to_next_level: Mapped[int] = mapped_column(Integer, default=100)
+    
+    tasks_viewed: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_started: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_completed: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_approved: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_rejected: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_disputed: Mapped[int] = mapped_column(Integer, default=0)
+    
+    approval_rate: Mapped[float] = mapped_column(BigInteger, default=0.0)
+    completion_rate: Mapped[float] = mapped_column(BigInteger, default=0.0)
+    
+    avg_completion_time_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    fastest_completion_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_earnings: Mapped[int] = mapped_column(BigInteger, default=0)
+    
+    quality_score: Mapped[float] = mapped_column(BigInteger, default=5.0)
+    badges: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    current_streak_days: Mapped[int] = mapped_column(Integer, default=0)
+    longest_streak_days: Mapped[int] = mapped_column(Integer, default=0)
+    last_task_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    sponsor_rating: Mapped[float] = mapped_column(BigInteger, default=5.0)
+    sponsor_rating_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    tasks_posted: Mapped[int] = mapped_column(Integer, default=0)
+    tasks_completed_as_sponsor: Mapped[int] = mapped_column(Integer, default=0)
+    total_spent: Mapped[int] = mapped_column(BigInteger, default=0)
+    
+    submissions_reviewed: Mapped[int] = mapped_column(Integer, default=0)
+    submissions_approved: Mapped[int] = mapped_column(Integer, default=0)
+    submissions_rejected: Mapped[int] = mapped_column(Integer, default=0)
+    sponsor_approval_rate: Mapped[float] = mapped_column(BigInteger, default=100.0)
+    
+    avg_review_time_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    trusted_sponsor: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SponsorWalletTransaction(Base):
+    """Transaction log for sponsor wallet - separate from worker points_balance."""
+    __tablename__ = "sponsor_wallet_transactions"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sponsor_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    
+    type: Mapped[str] = mapped_column(String(50), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    balance_before: Mapped[int] = mapped_column(BigInteger)
+    balance_after: Mapped[int] = mapped_column(BigInteger)
+    
+    task_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    submission_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    meta_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SponsorKYC(Base):
+    """Sponsor KYC document storage - one row per sponsor."""
+    __tablename__ = "sponsor_kyc"
+    
+    sponsor_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    
+    business_name: Mapped[str] = mapped_column(String(255))
+    business_registration_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    business_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    business_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_website: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    business_social_media: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    id_document_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    id_document_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    id_document_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    business_document_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    
+    contact_person_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_person_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    contact_person_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

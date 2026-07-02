@@ -1,15 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 import bcrypt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Cookie, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models import AdminUser
 from app.config import settings
-
-admin_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/admin/login")
 
 
 def hash_password(password: str) -> str:
@@ -33,14 +30,21 @@ def create_admin_token(admin_id: int, role: str) -> str:
 
 
 async def get_current_admin(
-    token: str = Depends(admin_oauth2_scheme),
+    request: Request,
+    admin_session: str | None = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ) -> AdminUser:
+    """Extract admin from httpOnly cookie instead of Authorization header."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate admin credentials",
-        headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # Get token from cookie
+    token = admin_session
+    if not token:
+        raise credentials_exception
+    
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         admin_id = payload.get("sub")

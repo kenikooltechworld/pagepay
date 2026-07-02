@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,13 +20,22 @@ from app.routers.payouts import router as payouts_router
 from app.routers.payments import router as payments_router
 from app.routers.admin import router as admin_router
 from app.routers.config import router as config_router
+from app.routers.tasks import router as tasks_router
+from app.routers.sponsor import router as sponsor_router
 from app.seed import run_all_seeds
+from app.services.task_processor import task_processor
+from app.services.ai_verification import verification_service
 
 logger = logging.getLogger("uvicorn.error")
+
+# Background task processor
+processor_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global processor_task
+    
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -44,8 +54,25 @@ async def lifespan(app: FastAPI):
                 logger.info("Phase 2 seed inserted: %s", counts)
     except Exception as exc:  # noqa: BLE001 — startup seed; best-effort
         logger.warning("Phase 2 seed failed: %s", exc)
+    
+    # Start Phase 7 background task processor
+    logger.info("Starting Phase 7 task processor...")
+    processor_task = asyncio.create_task(task_processor.start())
 
     yield
+    
+    # Shutdown: stop background processor
+    logger.info("Stopping Phase 7 task processor...")
+    task_processor.stop()
+    if processor_task:
+        processor_task.cancel()
+        try:
+            await processor_task
+        except asyncio.CancelledError:
+            pass
+    
+    # Close AI verification service HTTP client
+    await verification_service.close()
 
 
 app = FastAPI(title="PagePay API", lifespan=lifespan)
@@ -94,3 +121,7 @@ app.include_router(referral_router, prefix=API_PREFIX)
 app.include_router(community_router, prefix=API_PREFIX)
 app.include_router(streak_router, prefix=API_PREFIX)
 app.include_router(analytics_router, prefix=API_PREFIX)
+
+# Phase 7: Social Tasks
+app.include_router(tasks_router, prefix=API_PREFIX)
+app.include_router(sponsor_router, prefix=API_PREFIX)

@@ -30,6 +30,8 @@ from app.schemas import (
     GenerateAssetResponse,
     MaterialDetail,
     MaterialSummary,
+    QuizCompleteRequest,
+    QuizCompleteResponse,
     SowUploadRequest,
     SowUploadResponse,
     UnlockRequest,

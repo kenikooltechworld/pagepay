@@ -765,3 +765,205 @@ class UserListResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+
+# ══════════════════════════════════════════════════════════════════════
+# PHASE 7: SOCIAL TASKS MARKETPLACE
+# ══════════════════════════════════════════════════════════════════════
+
+
+class SponsorRegisterRequest(BaseModel):
+    """POST /sponsor/register - Sponsor registration.
+    
+    Anyone can be a sponsor - individuals, influencers, businesses, brands.
+    Business information is completely optional.
+    """
+    email: EmailStr
+    phone: str | None = None
+    password: str = Field(min_length=8)
+    display_name: str = Field(min_length=2, max_length=255, description="Your name or brand name")
+    business_name: str | None = Field(default=None, max_length=255, description="Optional: Company name if representing a business")
+    business_registration_number: str | None = None
+
+
+class SponsorKYCSubmitRequest(BaseModel):
+    """PUT /sponsor/kyc - Submit KYC documents.
+    
+    Simplified KYC for individuals and businesses. Only ID is required.
+    Business documents are optional for companies.
+    """
+    # Personal/Individual info
+    full_name: str = Field(min_length=2, max_length=255)
+    id_document_type: Literal["nin", "drivers_license", "passport", "voters_card"] = "nin"
+    id_document_number: str = Field(min_length=5, max_length=100)
+    phone_number: str = Field(min_length=10, max_length=20)
+    
+    # Optional business info (only if sponsor is a company)
+    business_type: Literal["individual", "sole_proprietorship", "partnership", "limited_company", "ngo", "other"] | None = "individual"
+    business_address: str | None = None
+    business_website: str | None = None
+
+
+class SponsorKYCResponse(BaseModel):
+    """Sponsor KYC status response."""
+    status: Literal["none", "pending", "approved", "rejected"]
+    submitted_at: datetime | None
+    reviewed_at: datetime | None
+    rejection_reason: str | None = None
+    
+    model_config = {"from_attributes": True}
+
+
+class SponsorWalletDepositRequest(BaseModel):
+    """POST /sponsor/wallet/deposit - Initiate Paystack deposit."""
+    amount_kobo: int = Field(ge=500000, description="Minimum ₦5,000")
+
+
+class SponsorWalletDepositResponse(BaseModel):
+    """Paystack checkout URL response."""
+    payment_url: str
+    reference: str
+    amount_kobo: int
+
+
+class TaskCreateRequest(BaseModel):
+    """POST /sponsor/tasks - Create new task (draft)."""
+    title: str = Field(min_length=5, max_length=255)
+    description: str = Field(min_length=20)
+    instructions: str = Field(min_length=20)
+    task_type: Literal[
+        "twitter_follow", "instagram_follow", "tiktok_follow", "youtube_subscribe",
+        "twitter_like", "instagram_like", "twitter_retweet", "instagram_comment",
+        "website_visit", "website_signup", "app_download", "app_review",
+        "photo_upload", "video_upload", "written_review", "survey", "custom"
+    ]
+    platform: Literal["twitter", "instagram", "tiktok", "youtube", "facebook", "linkedin", "web", "android", "ios", "custom"]
+    category: Literal["social_media", "engagement", "website", "app", "content_creation", "surveys", "data_collection", "other"] = "social_media"
+    target_url: str | None = None
+    proof_type: Literal["screenshot", "link", "text", "photo", "video", "none"]
+    proof_instructions: str | None = None
+    reward_amount: int = Field(ge=5000, le=5000000, description="₦50 - ₦50,000")
+    max_completions: int = Field(ge=1, le=10000)
+    expires_at: datetime
+    time_limit_minutes: int | None = Field(default=None, ge=5, le=1440)
+    target_countries: list[str] | None = None
+    target_cities: list[str] | None = None
+    target_gender: Literal["male", "female", "any"] | None = "any"
+    target_age_min: int | None = Field(default=None, ge=13, le=100)
+    target_age_max: int | None = Field(default=None, ge=13, le=100)
+    min_worker_level: int = Field(default=1, ge=1, le=50)
+    min_approval_rate: float = Field(default=0.0, ge=0, le=100)
+
+
+class TaskResponse(BaseModel):
+    """Task detail response."""
+    id: int
+    sponsor_id: int
+    title: str
+    description: str
+    instructions: str
+    task_type: str
+    platform: str
+    category: str
+    target_url: str | None
+    proof_type: str
+    proof_instructions: str | None
+    reward_amount: int
+    max_completions: int
+    completed_count: int
+    approved_count: int
+    rejected_count: int
+    pending_count: int
+    total_escrowed: int
+    platform_fee_amount: int
+    status: str
+    expires_at: datetime
+    time_limit_minutes: int | None
+    min_worker_level: int
+    min_approval_rate: float
+    created_at: datetime
+    published_at: datetime | None
+    
+    model_config = {"from_attributes": True}
+
+
+class TaskListItem(BaseModel):
+    """Shortened task for list views."""
+    id: int
+    title: str
+    task_type: str
+    platform: str
+    reward_amount: int
+    max_completions: int
+    completed_count: int
+    expires_at: datetime
+    sponsor_business_name: str | None
+    time_estimate_minutes: int
+    
+    model_config = {"from_attributes": True}
+
+
+class TaskPublishRequest(BaseModel):
+    """POST /sponsor/tasks/{id}/publish - Lock escrow and make task live."""
+    confirm_escrow: bool = Field(default=True, description="Acknowledge funds will be locked")
+
+
+class TaskSubmitRequest(BaseModel):
+    """POST /tasks/{id}/submit - Worker submits proof."""
+    proof_url: str | None = None
+    proof_text: str | None = None
+
+
+class TaskSubmissionResponse(BaseModel):
+    """Submission detail response."""
+    id: int
+    task_id: int
+    worker_id: int
+    proof_type: str
+    proof_image_url: str | None
+    proof_url: str | None
+    proof_text: str | None
+    status: Literal["validating", "pending", "approved", "rejected"]
+    ai_verified: bool
+    ai_confidence: float | None
+    reviewed_at: datetime | None
+    rejection_reason: str | None
+    reward_paid: int
+    submitted_at: datetime
+    completion_time_seconds: int | None
+    
+    model_config = {"from_attributes": True}
+
+
+class WorkerStatsResponse(BaseModel):
+    """GET /tasks/my-stats - Worker reputation stats."""
+    level: int
+    xp: int
+    xp_to_next_level: int
+    tasks_completed: int
+    tasks_approved: int
+    approval_rate: float
+    total_earnings: int
+    current_streak_days: int
+    badges: list[str]
+    
+    model_config = {"from_attributes": True}
+
+
+class LeaderboardEntry(BaseModel):
+    """One entry in leaderboard."""
+    rank: int
+    user_id: int
+    username: str
+    level: int
+    score: float
+    avatar_url: str | None = None
+
+
+class LeaderboardResponse(BaseModel):
+    """GET /tasks/leaderboard response."""
+    entries: list[LeaderboardEntry]
+    my_rank: LeaderboardEntry | None
+    leaderboard_type: str
+    period: str

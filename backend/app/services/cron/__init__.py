@@ -97,7 +97,7 @@ async def sync_hive_posts(db: AsyncSession, limit: int = 50) -> int:
         HIVE_API = "https://api.hive.blog"
         query = """
         query GetPosts($limit: Int!) {
-          get_discussions_by_created({"limit": $limit, "tag": "pagepay"}) {
+          get_discussions_by_created(limit: $limit, tag: "pagepay") {
             title
             body
             author

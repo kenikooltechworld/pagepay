@@ -54,42 +54,54 @@
       "name": "Read-to-Earn Core",
       "duration": "Weeks 1-3",
       "status": "pending",
-      "commands": [".kilo/command/phase1-core.md"]
+      "commands": [
+        ".kilo/command/phase1-core.md"
+      ]
     },
     {
       "id": 2,
       "name": "Ad Monetization Foundation",
       "duration": "Weeks 4-6",
       "status": "pending",
-      "commands": [".kilo/command/phase2-ads.md"]
+      "commands": [
+        ".kilo/command/phase2-ads.md"
+      ]
     },
     {
       "id": 3,
       "name": "Student AI Exam Prep",
       "duration": "Weeks 7-10",
       "status": "pending",
-      "commands": [".kilo/command/phase3-study.md"]
+      "commands": [
+        ".kilo/command/phase3-study.md"
+      ]
     },
     {
       "id": 4,
       "name": "Payments & Premium Tier",
       "duration": "Weeks 11-13",
       "status": "pending",
-      "commands": [".kilo/command/phase4-payments.md"]
+      "commands": [
+        ".kilo/command/phase4-payments.md"
+      ]
     },
     {
       "id": 5,
       "name": "Referrals & Community",
       "duration": "Weeks 14-18",
       "status": "pending",
-      "commands": [".kilo/command/phase5-community.md"]
+      "commands": [
+        ".kilo/command/phase5-community.md"
+      ]
     },
     {
       "id": 6,
       "name": "Licensed Content & Scale",
       "duration": "Weeks 19+",
       "status": "pending",
-      "commands": [".kilo/command/phase6-scale.md"]
+      "commands": [
+        ".kilo/command/phase6-scale.md"
+      ]
     }
   ],
   "agents": [
@@ -117,5 +129,6 @@
       "file": ".kilo/agent/devops.md",
       "description": "Docker, EAS Build, CI/CD, deployment"
     }
-  ]
+  ],
+  "snapshot": false
 }

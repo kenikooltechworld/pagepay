@@ -13,12 +13,13 @@ column for it.
 
 from __future__ import annotations
 
+import json
 import logging
 from sqlalchemy import select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AdPlacement, AppConfig, AiProviderHealth
+from app.models import AdPlacement, AppConfig, AiProviderHealth, AdminUser
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -264,6 +265,7 @@ async def run_all_seeds(db: AsyncSession) -> dict[str, int]:
         ("app_config", seed_app_config),
         ("ai_provider_health", seed_ai_provider_health),
         ("app_config_streak", seed_streak_config),
+        ("admin_users", seed_admin_users),
     ):
         try:
             counts[name] = await fn(db)
@@ -295,3 +297,30 @@ async def seed_streak_config(db: AsyncSession) -> int:
     if inserted:
         await db.commit()
     return inserted
+
+
+async def seed_admin_users(db: AsyncSession) -> int:
+    """Create a default super_admin if the table is empty.
+
+    Email/password are env-overridable via `PAGEADMIN_EMAIL` /
+    `PAGEADMIN_PASSWORD`. Defaults to `admin@pagepay.app` / `admin123`.
+    Idempotent: skips insert when any admin row already exists.
+    """
+    from app.services.admin_auth import hash_password
+    import os
+
+    existing = (await db.execute(select(AdminUser).limit(1))).scalar_one_or_none()
+    if existing is not None:
+        return 0
+
+    email = os.getenv("PAGEADMIN_EMAIL", "admin@pagepay.app")
+    password = os.getenv("PAGEADMIN_PASSWORD", "admin123")
+    db.add(AdminUser(
+        email=email,
+        password_hash=hash_password(password),
+        role="super_admin",
+        permissions=json.dumps(["*"]),
+        is_active=True,
+    ))
+    await db.commit()
+    return 1

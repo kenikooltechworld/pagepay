@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # cron container and any operator script must send the same value.
     # In dev it's the default below; production must override via env.
     admin_token: str = "dev-admin-token"
+    
+    # ── Phase 7: Cloudinary for task proof uploads ───────────────────
+    cloudinary_cloud_name: str | None = None
+    cloudinary_api_key: str | None = None
+    cloudinary_api_secret: str | None = None
+    cloudinary_upload_folder: str = "pagepay/tasks"
 
     @property
     def cors_origins_list(self) -> list[str]:
