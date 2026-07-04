@@ -91,7 +91,7 @@ async def seed_ad_placements(db: AsyncSession) -> int:
                     (AdPlacement.platform == row["platform"])
                 )
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if existing is None:
             db.add(AdPlacement(**row))
             inserted += 1
@@ -145,7 +145,7 @@ async def seed_app_config(db: AsyncSession) -> int:
             await db.execute(
                 select(AppConfig).where(AppConfig.key == row["key"])
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if existing is None:
             db.add(AppConfig(**row))
             inserted += 1
@@ -174,7 +174,7 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
                     AiProviderHealth.provider_name == row["provider_name"]
                 )
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if existing is None:
             db.add(AiProviderHealth(**row))
             inserted += 1
