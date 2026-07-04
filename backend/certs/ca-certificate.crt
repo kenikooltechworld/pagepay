@@ -1,0 +1,13 @@
+# PASTE YOUR RENDER CA CERTIFICATE HERE
+# You can get it from:
+# 1. Go to https://dashboard.render.com
+# 2. Click PostgreSQL database (pagepay)
+# 3. Look for "SSL Certificate" or "Download Certificate" button
+# 4. Download the .pem file
+# 5. Paste its entire content below (starting with -----BEGIN CERTIFICATE-----)
+# 6. Save and commit
+
+# Example format:
+# -----BEGIN CERTIFICATE-----
+# MIIDXTCCAkWgAwIBAgIJAJ... (many lines)...
+# -----END CERTIFICATE-----
