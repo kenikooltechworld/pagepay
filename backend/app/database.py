@@ -1,3 +1,4 @@
+import ssl
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
@@ -8,19 +9,21 @@ DATABASE_URL = settings.database_url
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# For Render PostgreSQL:
-# - Internal Database URL (inside Render): uses built-in Let's Encrypt certs, ssl=True
-# - External Database URL (outside Render): append ?sslmode=require to connection string
-# Per Render docs: publicly trusted certs are built into OS/runtime, no .pem file needed
+# For Render PostgreSQL internal connections:
+# The internal URL uses self-signed certificates, so we skip verification
+# This is safe because it's within Render's private network
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 engine = create_async_engine(
     DATABASE_URL,
     pool_size=20,
     max_overflow=10,
     pool_recycle=1800,
-    # Render PostgreSQL requires SSL, uses Let's Encrypt certs in runtime
+    # Render internal PostgreSQL: skip SSL cert verification (self-signed)
     connect_args={
-        "ssl": True,
+        "ssl": ssl_context,
         "server_settings": {
             "application_name": "pagepay_backend",
         },
