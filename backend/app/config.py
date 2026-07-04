@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 10080
-    cors_origins: str = "http://localhost:8081,http://localhost:3000"
+    cors_origins: str = "http://localhost:8081,http://localhost:3000,https://pagepay.onrender.com"
 
     gnews_api_key: str | None = None
     gutendex_base_url: str = "https://gutendex.com"

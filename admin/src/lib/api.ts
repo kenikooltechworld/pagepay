@@ -1,9 +1,9 @@
 import axios from 'axios';
 import type { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 
-// When using httpOnly cookies, don't set VITE_API_URL - use proxy instead
-// The proxy in vite.config.ts forwards /api/* to http://localhost:8000
-export const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
+// Production: use Render deployment URL
+// Development: use local proxy or VITE_API_URL environment variable
+export const API_BASE = import.meta.env.VITE_API_URL || 'https://pagepay.onrender.com/api/v1';
 
 export const adminApi: AxiosInstance = axios.create({
   baseURL: API_BASE,
