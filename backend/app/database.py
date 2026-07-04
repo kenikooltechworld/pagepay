@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.engine.url import make_url
 from app.config import settings
 
 DATABASE_URL = settings.database_url
@@ -7,6 +8,13 @@ DATABASE_URL = settings.database_url
 # Convert postgresql:// to postgresql+asyncpg:// for async support
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Add SSL mode for Render PostgreSQL
+# Render requires SSL connections, so we add sslmode=require query param
+url = make_url(DATABASE_URL)
+if "sslmode" not in url.query:
+    url = url.update_query_string("sslmode=require")
+    DATABASE_URL = str(url)
 
 engine = create_async_engine(
     DATABASE_URL,
