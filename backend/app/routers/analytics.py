@@ -10,7 +10,7 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import User, ReadingSession, ContentCatalog
+from app.models import User, ReadingSession, ContentCatalog, AdminUser
 from app.services.admin_auth import require_permission
 
 logger = logging.getLogger("uvicorn.error")
