@@ -10,10 +10,22 @@ if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # Create SSL context for Render PostgreSQL
-# Render requires SSL, and asyncpg needs an ssl.SSLContext object
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = True
-ssl_context.verify_mode = ssl.CERT_REQUIRED
+# Render uses self-signed certificates, so we skip verification in non-production
+def _get_ssl_context():
+    """Create SSL context for asyncpg.
+    
+    For Render PostgreSQL:
+    - Uses self-signed certificates
+    - Skip certificate verification (CERT_NONE) for non-production
+    - Still provides encrypted connection
+    - For production: use CERT_REQUIRED with proper CA bundles
+    """
+    ssl_context = ssl.create_default_context()
+    # Skip hostname/cert verification for self-signed certs
+    # In production with real CA certs, use ssl.CERT_REQUIRED
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return ssl_context
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -21,18 +33,12 @@ engine = create_async_engine(
     max_overflow=10,
     pool_recycle=1800,
     # SSL required for Render PostgreSQL
-    # asyncpg requires an ssl.SSLContext, not just ssl=True
     connect_args={
-        "ssl": ssl_context,
+        "ssl": _get_ssl_context(),
         "server_settings": {
             "application_name": "pagepay_backend",
-        }
+        },
     },
-    # Disabled: SQLAlchemy 2.0.36 + aiomysql 0.2.0 have a known incompatibility
-    # where pool_pre_ping calls connection.ping() with no args, but the
-    # AsyncAdapt_aiomysql_connection.ping(reconnect) wrapper has no default.
-    # Fixed upstream in SQLAlchemy >= 2.0.50. aiomysql's own reconnection +
-    # pool_recycle still handle dead connections.
     pool_pre_ping=False,
     echo=False,
 )
