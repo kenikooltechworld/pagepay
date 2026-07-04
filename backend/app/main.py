@@ -33,10 +33,27 @@ logger = logging.getLogger("uvicorn.error")
 processor_task = None
 
 
+async def _seed_in_background():
+    """Run seeding in the background after app is ready.
+    
+    This allows the API to start serving requests immediately,
+    then seeds the database asynchronously. Fixes Render connection
+    pool instability during deployment.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            counts = await run_all_seeds(session)
+            if any(counts.values()):
+                logger.info("Phase 2 seed inserted: %s", counts)
+    except Exception as exc:
+        logger.error("Phase 2 background seed failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global processor_task
     
+    # Only create tables, don't seed yet
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -45,16 +62,10 @@ async def lifespan(app: FastAPI):
         # create_all is idempotent for matching tables, but stale schemas crash
         # the worker. Log and continue so the API still serves requests.
         logger.warning("Skipping create_all on startup: %s", exc)
-
-    # Phase 2 ad-infrastructure seed. Runs in its own session so a
-    # transactional error here doesn't poison the create_all pool.
-    try:
-        async with AsyncSessionLocal() as session:
-            counts = await run_all_seeds(session)
-            if any(counts.values()):
-                logger.info("Phase 2 seed inserted: %s", counts)
-    except Exception as exc:  # noqa: BLE001 — startup seed; best-effort
-        logger.warning("Phase 2 seed failed: %s", exc)
+    
+    # Start seeding in background (don't block app startup)
+    logger.info("Scheduling background seeding...")
+    asyncio.create_task(_seed_in_background())
     
     # Start Phase 7 background task processor
     # Only start if explicitly enabled via environment variable

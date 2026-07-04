@@ -255,42 +255,25 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
 
 
 async def run_all_seeds(db: AsyncSession) -> dict[str, int]:
-    """Run every seed with retry logic. Returns a count of new rows per table for
+    """Run every seed. Returns a count of new rows per table for
     startup logging. Failures are logged and swallowed so a partial
     seed (e.g. AppConfig exists but AdPlacement doesn't) doesn't
     crash the API.
-    
-    Retries up to 3 times with exponential backoff (2s, 4s, 8s) to handle
-    transient connection drops during Render deployment.
     """
-    max_retries = 3
-    delay = 2
-    
-    for attempt in range(1, max_retries + 1):
+    counts: dict[str, int] = {}
+    for name, fn in (
+        ("ad_placements", seed_ad_placements),
+        ("app_config", seed_app_config),
+        ("ai_provider_health", seed_ai_provider_health),
+        ("app_config_streak", seed_streak_config),
+        ("admin_users", seed_admin_users),
+    ):
         try:
-            counts: dict[str, int] = {}
-            for name, fn in (
-                ("ad_placements", seed_ad_placements),
-                ("app_config", seed_app_config),
-                ("ai_provider_health", seed_ai_provider_health),
-                ("app_config_streak", seed_streak_config),
-                ("admin_users", seed_admin_users),
-            ):
-                try:
-                    counts[name] = await fn(db)
-                except Exception as exc:  # noqa: BLE001 — startup seed; best-effort
-                    logger.warning("Seed %s failed: %s", name, exc)
-                    counts[name] = 0
-            return counts
-        except Exception as exc:
-            if attempt < max_retries:
-                logger.warning("Seed attempt %d/%d failed: %s. Retrying in %ds...", 
-                              attempt, max_retries, exc, delay)
-                await asyncio.sleep(delay)
-                delay *= 2  # Exponential backoff
-            else:
-                logger.error("Seed failed after %d attempts: %s", max_retries, exc)
-                return {}
+            counts[name] = await fn(db)
+        except Exception as exc:  # noqa: BLE001 — startup seed; best-effort
+            logger.warning("Seed %s failed: %s", name, exc)
+            counts[name] = 0
+    return counts
 
 
 async def seed_streak_config(db: AsyncSession) -> int:
