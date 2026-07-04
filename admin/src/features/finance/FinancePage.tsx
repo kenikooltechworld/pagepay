@@ -2,17 +2,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
 import type { RevenueSummary, PayoutListResponse } from '@/lib/types';
 import { useState } from 'react';
-import { Card, StatCard, Badge, Button, Pagination, ShimmerLoader, Container } from '@/shared/components';
+import { Card, StatCard, Badge, Button, Pagination, ShimmerLoader, Container, ConfirmModal, Tooltip } from '@/shared/components';
 import { TopHeader } from '@/shared/components/TopHeader';
 import { useLayoutContext } from '@/shared/components/Layout';
 import { useAuthStore } from '@/store/auth';
 import { CheckCircle, XCircle } from 'lucide-react';
+
+function formatNgn(kobo: number = 0) {
+  return `₦${(kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatUsd(usd: number = 0) {
+  return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export function FinancePage() {
   const { onMenuClick } = useLayoutContext();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const [tab, setTab] = useState<'revenue' | 'payouts'>('revenue');
   const [payoutPage, setPayoutPage] = useState(1);
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [selectedPayoutId, setSelectedPayoutId] = useState<number | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -38,34 +49,45 @@ export function FinancePage() {
 
   const approveMutation = useMutation({
     mutationFn: async (payoutId: number) => {
-      await adminApi.post(`/admin/payouts/${payoutId}/approve`);
+      await adminApi.post(`/payouts/${payoutId}/approve`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'finance', 'payouts'] });
+      setApproveModalOpen(false);
+      setSelectedPayoutId(null);
     },
   });
 
   const rejectMutation = useMutation({
     mutationFn: async ({ payoutId, reason }: { payoutId: number; reason: string }) => {
-      await adminApi.post(`/admin/payouts/${payoutId}/reject`, null, { params: { reason } });
+      await adminApi.post(`/payouts/${payoutId}/reject`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'finance', 'payouts'] });
+      setRejectModalOpen(false);
+      setSelectedPayoutId(null);
     },
   });
 
-  const handleApprove = (payoutId: number) => {
-    if (confirm('Approve this payout?')) {
-      approveMutation.mutate(payoutId);
+  const handleApproveClick = (payoutId: number) => {
+    setSelectedPayoutId(payoutId);
+    setApproveModalOpen(true);
+  };
+
+  const handleRejectClick = (payoutId: number) => {
+    setSelectedPayoutId(payoutId);
+    setRejectModalOpen(true);
+  };
+
+  const handleApproveConfirm = () => {
+    if (selectedPayoutId) {
+      approveMutation.mutate(selectedPayoutId);
     }
   };
 
-  const handleReject = (payoutId: number) => {
-    const reason = prompt('Rejection reason:');
-    if (reason && reason.length >= 10) {
-      rejectMutation.mutate({ payoutId, reason });
-    } else if (reason) {
-      alert('Reason must be at least 10 characters');
+  const handleRejectConfirm = (reason?: string) => {
+    if (selectedPayoutId && reason && reason.length >= 10) {
+      rejectMutation.mutate({ payoutId: selectedPayoutId, reason });
     }
   };
 
@@ -79,13 +101,13 @@ export function FinancePage() {
           <div className="flex rounded-lg border border-border">
             <button
               onClick={() => setTab('revenue')}
-              className={`px-4 py-1.5 text-sm font-semibold transition-colors ${tab === 'revenue' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-main'}`}
+              className={`cursor-pointer px-4 py-1.5 text-sm font-semibold transition-colors ${tab === 'revenue' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-main'}`}
             >
               Revenue
             </button>
             <button
               onClick={() => setTab('payouts')}
-              className={`px-4 py-1.5 text-sm font-semibold transition-colors ${tab === 'payouts' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-main'}`}
+              className={`cursor-pointer px-4 py-1.5 text-sm font-semibold transition-colors ${tab === 'payouts' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-main'}`}
             >
               Payouts
             </button>
@@ -94,18 +116,93 @@ export function FinancePage() {
       />
       <Container size="lg">
         {tab === 'revenue' && (
-        <div>
+        <div className="space-y-6">
           {revenueLoading && <ShimmerLoader lines={4} />}
           {revenue && (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard label="Total Revenue" value={`₦${revenue.total_revenue_ngn.toLocaleString()}`} />
-                <StatCard label="Ad Revenue" value={`₦${revenue.ad_revenue_ngn.toLocaleString()}`} />
-                <StatCard label="Premium Revenue" value={`₦${revenue.premium_revenue_ngn.toLocaleString()}`} />
-                <StatCard label="Gross Profit" value={`₦${revenue.gross_profit_ngn.toLocaleString()}`} />
-              </div>
-              <p className="mt-4 text-sm text-text-muted">
-                Period: {revenue.period_start} → {revenue.period_end}
+              {/* Total Revenue Overview */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Total Revenue</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Combined ad and premium revenue</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard label="Total Revenue (USD)" value={formatUsd(revenue.total_revenue_usd ?? 0)} />
+                    <StatCard label="Total Revenue (NGN)" value={formatNgn(revenue.total_revenue_ngn ?? 0)} />
+                    <StatCard label="Platform Earnings" value={formatNgn(revenue.platform_earnings_ngn ?? 0)} />
+                    <StatCard label="User Earnings" value={formatNgn(revenue.user_earnings_ngn ?? 0)} />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Ad Revenue Breakdown */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Ad Revenue (80/20 Split)</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Revenue from ads with historical FX rates</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <StatCard label="Ad Revenue (USD)" value={formatUsd(revenue.ad_revenue_usd ?? 0)} />
+                    <StatCard label="Ad Revenue (NGN)" value={formatNgn(revenue.ad_revenue_ngn ?? 0)} />
+                    <StatCard label="Total Points" value={(revenue.total_points_distributed ?? 0).toLocaleString()} />
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="rounded-lg border border-border bg-bg-muted p-4">
+                      <div className="text-xs font-semibold uppercase text-text-muted">Platform Share (20%)</div>
+                      <div className="mt-2 space-y-1">
+                        <div className="text-sm text-text-main">{formatUsd(revenue.ad_platform_share_usd ?? 0)}</div>
+                        <div className="text-sm text-text-main">{formatNgn(revenue.ad_platform_share_ngn ?? 0)}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border bg-bg-muted p-4">
+                      <div className="text-xs font-semibold uppercase text-text-muted">User Share (80%)</div>
+                      <div className="mt-2 space-y-1">
+                        <div className="text-sm text-text-main">{formatUsd(revenue.ad_user_share_usd ?? 0)}</div>
+                        <div className="text-sm text-text-main">{formatNgn(revenue.ad_user_share_ngn ?? 0)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Premium Revenue */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Premium Subscriptions</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Revenue from premium tier subscriptions</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <StatCard label="Premium Revenue (NGN)" value={formatNgn(revenue.premium_revenue_ngn ?? 0)} />
+                    <StatCard label="Premium Revenue (USD)" value={formatUsd(revenue.premium_revenue_usd ?? 0)} />
+                  </div>
+                </div>
+              </Card>
+
+              {/* FX Rate Info */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Exchange Rate Information</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Historical vs current FX rates</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <StatCard 
+                      label="Average FX Rate (Period)" 
+                      value={`1 USD = ₦${(revenue.average_fx_rate ?? 0).toFixed(2)}`} 
+                    />
+                    <StatCard 
+                      label="Current FX Rate" 
+                      value={`1 USD = ₦${(revenue.current_fx_rate ?? 0).toFixed(2)}`} 
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              <p className="text-sm text-text-muted">
+                Period: {new Date(revenue.period_start).toLocaleDateString()} → {new Date(revenue.period_end).toLocaleDateString()}
               </p>
             </>
           )}
@@ -142,12 +239,16 @@ export function FinancePage() {
                         <td className="px-4 py-3 text-sm text-text-main">
                           {hasPermission('finance.approve') && p.status === 'pending' && (
                             <div className="flex gap-2">
-                              <Button size="sm" variant="secondary" onClick={() => handleApprove(p.id)}>
-                                <CheckCircle size={14} /> Approve
-                              </Button>
-                              <Button size="sm" variant="danger" onClick={() => handleReject(p.id)}>
-                                <XCircle size={14} /> Reject
-                              </Button>
+                              <Tooltip content="Approve this payout" position="top">
+                                <Button size="sm" variant="secondary" onClick={() => handleApproveClick(p.id)}>
+                                  <CheckCircle size={14} /> Approve
+                                </Button>
+                              </Tooltip>
+                              <Tooltip content="Reject this payout" position="top">
+                                <Button size="sm" variant="danger" onClick={() => handleRejectClick(p.id)}>
+                                  <XCircle size={14} /> Reject
+                                </Button>
+                              </Tooltip>
                             </div>
                           )}
                           {p.status !== 'pending' && <span className="text-text-muted">-</span>}
@@ -165,6 +266,41 @@ export function FinancePage() {
         </div>
       )}
       </Container>
+
+      {/* Approve Payout Modal */}
+      <ConfirmModal
+        isOpen={approveModalOpen}
+        onClose={() => {
+          setApproveModalOpen(false);
+          setSelectedPayoutId(null);
+        }}
+        onConfirm={handleApproveConfirm}
+        title="Approve Payout"
+        message="Are you sure you want to approve this payout? This will initiate the bank transfer to the user."
+        confirmText="Approve Payout"
+        cancelText="Cancel"
+        variant="primary"
+        isLoading={approveMutation.isPending}
+      />
+
+      {/* Reject Payout Modal */}
+      <ConfirmModal
+        isOpen={rejectModalOpen}
+        onClose={() => {
+          setRejectModalOpen(false);
+          setSelectedPayoutId(null);
+        }}
+        onConfirm={handleRejectConfirm}
+        title="Reject Payout"
+        message="Please provide a detailed reason for rejecting this payout (minimum 10 characters). The user will be notified."
+        confirmText="Reject Payout"
+        cancelText="Cancel"
+        variant="danger"
+        requireInput={true}
+        inputLabel="Rejection Reason"
+        inputPlaceholder="Enter reason for rejection (min 10 characters)..."
+        isLoading={rejectMutation.isPending}
+      />
     </>
   );
 }

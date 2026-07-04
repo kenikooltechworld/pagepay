@@ -3,7 +3,7 @@ import { adminApi } from '@/lib/api';
 import type { ContentListResponse } from '@/lib/types';
 import { Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
-import { Card, Badge, Button, Pagination, ShimmerLoader, Container } from '@/shared/components';
+import { Card, Badge, Button, Pagination, ShimmerLoader, Container, Tooltip } from '@/shared/components';
 import { TopHeader } from '@/shared/components/TopHeader';
 import { useLayoutContext } from '@/shared/components/Layout';
 import { Input } from '@/shared/components/Input';
@@ -29,7 +29,7 @@ export function ContentPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       if (!confirm('Delete this content?')) return;
-      await adminApi.delete(`/admin/content/${id}`);
+      await adminApi.delete(`/content/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'content'] });
@@ -56,7 +56,7 @@ export function ContentPage() {
             <Select
               label="Type"
               value={typeFilter}
-              onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
+              onChange={(value) => { setTypeFilter(value); setPage(1); }}
               options={[
                 { value: '', label: 'All Types' },
                 { value: 'book', label: 'Book' },
@@ -96,9 +96,11 @@ export function ContentPage() {
                       <td className="px-4 py-3 text-sm text-text-main">{item.author || '-'}</td>
                       <td className="px-4 py-3 text-sm text-text-main">{new Date(item.created_at).toLocaleDateString()}</td>
                       <td className="px-4 py-3 text-sm text-text-main">
-                        <Button size="sm" variant="danger" onClick={() => deleteMutation.mutate(item.id)}>
-                          <Trash2 size={14} /> Delete
-                        </Button>
+                        <Tooltip content="Delete this content" position="top">
+                          <Button size="sm" variant="danger" onClick={() => deleteMutation.mutate(item.id)}>
+                            <Trash2 size={14} /> Delete
+                          </Button>
+                        </Tooltip>
                       </td>
                     </tr>
                   ))}

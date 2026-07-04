@@ -1,24 +1,24 @@
 /**
  * NativeAdBanner
  *
- * In-feed native ad card. Drop-in replacement for the
- * sponsored slot in the catalog list — same shape as
- * `ContentCard` so the FlatList doesn't have to branch.
+ * Compact native ad card that blends seamlessly with content.
+ * Renders AdMob Native Advanced in a small, non-intrusive format
+ * that matches the app's content card style.
  *
- * Renders the real AdMob Native Advanced view (via the
- * future `react-native-google-mobile-ads` binding) when
- * the unit ID is present; falls back to `AdPlaceholder`
- * for the dev / no-fill branch.
- *
- * Why a "card" shape and not a "banner" shape: the spec
- * says "native advanced unit for feed ads that shows while
- * user scroll" — AdMob's Native Advanced is a card-style
- * ad where the head/body/icon/media can each be styled.
- * The component keeps the card surface so the user can't
- * tell it apart from a regular ContentCard at a glance.
+ * Design principles:
+ * - Compact height (~100-120px) to not disrupt scrolling
+ * - Clear "Ad" label for transparency
+ * - Same border radius and shadow as ContentCard
+ * - Respects app theme (light/dark mode)
  */
 
-import { AdPlaceholder } from './AdPlaceholder';
+import { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, Platform, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+import { logAdImpression } from '@/src/shared/lib/ads';
+import { PagePay } from '@/constants/theme';
+import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
 
 export type NativeAdBannerProps = {
@@ -26,23 +26,217 @@ export type NativeAdBannerProps = {
   adUnit: string;
   /** Optional session id for impression logging. */
   sessionId?: number | null;
-  /** Optional tap handler — defaults to no-op for ad cards. */
-  onPress?: () => void;
 };
 
 
-export function NativeAdBanner({ adUnit, sessionId, onPress }: NativeAdBannerProps) {
-  // Future: branch on adUnit presence to mount
-  // <NativeAdView ref={ref} onAdPaid={...} /> from
-  // react-native-google-mobile-ads. The placeholder stays
-  // as the fallback.
-  return (
-    <AdPlaceholder
-      adType="native"
-      adUnit={adUnit}
-      sessionId={sessionId}
-      variant="inline"
-      onPress={onPress}
-    />
-  );
+export function NativeAdBanner({ adUnit, sessionId }: NativeAdBannerProps) {
+  const scheme = useEffectiveScheme();
+  const tokens = PagePay[scheme];
+  const [nativeAd, setNativeAd] = useState<any>(null);
+
+  // Load native ad
+  useEffect(() => {
+    if (!adUnit || Platform.OS === 'web') {
+      return;
+    }
+
+    let isActive = true;
+
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { NativeAd, TestIds, NativeAdEventType } = require('react-native-google-mobile-ads');
+
+        // Load ad using createForAdRequest which returns a Promise
+        const ad = await NativeAd.createForAdRequest(adUnit);
+
+        if (!isActive) {
+          ad.destroy();
+          return;
+        }
+
+        if (__DEV__) {
+          console.log('[NativeAdBanner] Ad loaded successfully');
+        }
+
+        // Set up event listeners
+        ad.addAdEventListener(NativeAdEventType.CLICKED, () => {
+          if (__DEV__) {
+            console.log('[NativeAdBanner] Ad clicked');
+          }
+        });
+
+        ad.addAdEventListener(NativeAdEventType.IMPRESSION, () => {
+          if (__DEV__) {
+            console.log('[NativeAdBanner] Ad impression');
+          }
+          // Log impression
+          logAdImpression({
+            adType: 'native',
+            provider: 'admob',
+            adUnit,
+            sessionId: sessionId ?? null,
+          }).catch(() => undefined);
+        });
+
+        setNativeAd(ad);
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[NativeAdBanner] Failed to load ad:', err);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+      if (nativeAd) {
+        nativeAd.destroy();
+      }
+    };
+  }, [adUnit, sessionId]);
+
+  // Render native ad if loaded
+  if (nativeAd && Platform.OS !== 'web') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { NativeAdView, NativeAsset, NativeMediaView, NativeAssetType } = require('react-native-google-mobile-ads');
+
+      return (
+        <View style={[styles.container, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+          {/* Ad Label */}
+          <View style={styles.adBadge}>
+            <Ionicons name="megaphone-outline" size={10} color={tokens.inkMuted} />
+            <Text style={[styles.adLabel, { color: tokens.inkMuted }]}>Ad</Text>
+          </View>
+
+          {/* Native Ad Content - Register with nativeAd prop */}
+          <NativeAdView nativeAd={nativeAd} style={styles.nativeAdContent}>
+            {/* Advertiser Info Row */}
+            <View style={styles.advertiserRow}>
+              {/* Icon - Wrap with NativeAsset */}
+              {nativeAd.icon && (
+                <NativeAsset assetType={NativeAssetType.ICON}>
+                  <View style={styles.icon}>
+                    {/* Icon will be automatically rendered by SDK */}
+                  </View>
+                </NativeAsset>
+              )}
+              
+              {/* Text Content */}
+              <View style={styles.textContent}>
+                {/* Headline - Wrap with NativeAsset */}
+                <NativeAsset assetType={NativeAssetType.HEADLINE}>
+                  <Text style={[styles.headline, { color: tokens.ink }]} numberOfLines={1}>
+                    {nativeAd.headline}
+                  </Text>
+                </NativeAsset>
+
+                {/* Body - Wrap with NativeAsset */}
+                {nativeAd.body && (
+                  <NativeAsset assetType={NativeAssetType.BODY}>
+                    <Text style={[styles.body, { color: tokens.inkMuted }]} numberOfLines={2}>
+                      {nativeAd.body}
+                    </Text>
+                  </NativeAsset>
+                )}
+              </View>
+
+              {/* CTA Button - Wrap with NativeAsset */}
+              {nativeAd.callToAction && (
+                <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
+                  <View style={[styles.cta, { backgroundColor: tokens.mint }]}>
+                    <Text style={styles.ctaText}>{nativeAd.callToAction}</Text>
+                  </View>
+                </NativeAsset>
+              )}
+            </View>
+
+            {/* Media Asset (Image/Video) */}
+            {nativeAd.mediaContent && (
+              <NativeMediaView style={styles.media} />
+            )}
+          </NativeAdView>
+        </View>
+      );
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[NativeAdBanner] Render failed:', err);
+      }
+    }
+  }
+
+  // Graceful degradation: show nothing if SDK unavailable or ad failed to load
+  // This prevents empty placeholder cards from cluttering the feed
+  return null;
 }
+
+
+const styles = StyleSheet.create({
+  container: {
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  adBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
+  adLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  nativeAdContent: {
+    flex: 1,
+  },
+  advertiserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  icon: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+  },
+  textContent: {
+    flex: 1,
+    gap: 2,
+  },
+  headline: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  body: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  cta: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  ctaText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  media: {
+    width: '100%',
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+  },
+});

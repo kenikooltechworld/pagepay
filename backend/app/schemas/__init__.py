@@ -28,7 +28,9 @@ class UserMe(BaseModel):
     points_balance: int
     tier: str
     created_at: datetime
-
+    is_worker: bool = True
+    is_sponsor: bool = False
+    
     model_config = {"from_attributes": True}
 
 
@@ -656,7 +658,7 @@ class ContentPerformanceItem(BaseModel):
 
 class AdminLoginRequest(BaseModel):
     email: str = Field(min_length=3)
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=6)
 
 
 class AdminLoginResponse(BaseModel):
@@ -673,6 +675,7 @@ class AdminUserOut(BaseModel):
     is_active: bool
     last_login_at: datetime | None
     created_at: datetime
+    permissions: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -732,17 +735,48 @@ class ContentImportLogOut(BaseModel):
 class DashboardStats(BaseModel):
     total_users: int
     active_users_today: int
-    total_revenue_ngn: int
+    # Ad Revenue breakdown
+    ad_revenue_usd: float  # Total ad revenue in USD
+    ad_revenue_ngn: int  # Total ad revenue in kobo (using historical FX rates)
+    ad_platform_share_usd: float  # 20% platform share in USD
+    ad_platform_share_ngn: int  # 20% platform share in kobo
+    ad_user_share_usd: float  # 80% user share in USD
+    ad_user_share_ngn: int  # 80% user share in kobo
+    # Premium Revenue
+    premium_revenue_ngn: int  # Premium subscriptions in kobo
+    premium_revenue_usd: float  # Premium converted to USD (current FX)
+    # Combined totals
+    total_revenue_usd: float  # Ad + Premium in USD
+    total_revenue_ngn: int  # Ad + Premium in kobo
+    platform_earnings_ngn: int  # Ad platform share + Premium in kobo
+    user_earnings_ngn: int  # Ad user share in kobo (matches points/100)
+    total_points_distributed: int  # Sum of all user_points_credited
+    # Other stats
     pending_payouts: int
     pending_notes: int
     high_severity_fraud_flags: int
 
 
 class RevenueSummary(BaseModel):
-    total_revenue_ngn: int
-    ad_revenue_ngn: int
-    premium_revenue_ngn: int
-    gross_profit_ngn: int
+    # Ad Revenue breakdown
+    ad_revenue_usd: float  # Total ad revenue in USD
+    ad_revenue_ngn: int  # Total ad revenue in kobo (using historical FX rates)
+    ad_platform_share_usd: float  # 20% platform share in USD
+    ad_platform_share_ngn: int  # 20% platform share in kobo
+    ad_user_share_usd: float  # 80% user share in USD
+    ad_user_share_ngn: int  # 80% user share in kobo
+    # Premium Revenue
+    premium_revenue_ngn: int  # Premium subscriptions in kobo
+    premium_revenue_usd: float  # Premium converted to USD (current FX)
+    # Combined totals
+    total_revenue_usd: float  # Ad + Premium in USD
+    total_revenue_ngn: int  # Ad + Premium in kobo
+    platform_earnings_ngn: int  # Ad platform share + Premium in kobo
+    user_earnings_ngn: int  # Ad user share in kobo
+    total_points_distributed: int  # Sum of all user_points_credited
+    average_fx_rate: float  # Average FX rate used during period
+    current_fx_rate: float  # Current FX rate for reference
+    # Period
     period_start: str
     period_end: str
 
@@ -798,6 +832,8 @@ class SponsorKYCSubmitRequest(BaseModel):
     id_document_type: Literal["nin", "drivers_license", "passport", "voters_card"] = "nin"
     id_document_number: str = Field(min_length=5, max_length=100)
     phone_number: str = Field(min_length=10, max_length=20)
+    id_document_base64: str | None = None
+    business_document_base64: str | None = None
     
     # Optional business info (only if sponsor is a company)
     business_type: Literal["individual", "sole_proprietorship", "partnership", "limited_company", "ngo", "other"] | None = "individual"
@@ -843,9 +879,9 @@ class TaskCreateRequest(BaseModel):
     target_url: str | None = None
     proof_type: Literal["screenshot", "link", "text", "photo", "video", "none"]
     proof_instructions: str | None = None
-    reward_amount: int = Field(ge=5000, le=5000000, description="₦50 - ₦50,000")
+    reward_amount_kobo: int = Field(ge=5000, le=5000000, description="₦50 - ₦50,000 in kobo")
     max_completions: int = Field(ge=1, le=10000)
-    expires_at: datetime
+    expires_in_days: int = Field(default=7, ge=1, le=365, description="Days from now until task expires")
     time_limit_minutes: int | None = Field(default=None, ge=5, le=1440)
     target_countries: list[str] | None = None
     target_cities: list[str] | None = None
@@ -920,6 +956,10 @@ class TaskSubmissionResponse(BaseModel):
     id: int
     task_id: int
     worker_id: int
+    task_title: str
+    task_type: str
+    platform: str
+    reward_amount: int
     proof_type: str
     proof_image_url: str | None
     proof_url: str | None
@@ -927,6 +967,7 @@ class TaskSubmissionResponse(BaseModel):
     status: Literal["validating", "pending", "approved", "rejected"]
     ai_verified: bool
     ai_confidence: float | None
+    verified_at: datetime | None
     reviewed_at: datetime | None
     rejection_reason: str | None
     reward_paid: int
@@ -938,15 +979,20 @@ class TaskSubmissionResponse(BaseModel):
 
 class WorkerStatsResponse(BaseModel):
     """GET /tasks/my-stats - Worker reputation stats."""
-    level: int
-    xp: int
+    user_id: int
+    worker_level: int
+    worker_xp: int
     xp_to_next_level: int
     tasks_completed: int
     tasks_approved: int
+    tasks_rejected: int
     approval_rate: float
-    total_earnings: int
-    current_streak_days: int
+    total_earned: int
+    current_streak: int
+    longest_streak: int
     badges: list[str]
+    created_at: datetime
+    updated_at: datetime
     
     model_config = {"from_attributes": True}
 
@@ -959,6 +1005,8 @@ class LeaderboardEntry(BaseModel):
     level: int
     score: float
     avatar_url: str | None = None
+    
+    model_config = {"from_attributes": True}
 
 
 class LeaderboardResponse(BaseModel):
@@ -967,3 +1015,64 @@ class LeaderboardResponse(BaseModel):
     my_rank: LeaderboardEntry | None
     leaderboard_type: str
     period: str
+
+
+class TaskMessageResponse(BaseModel):
+    """Task message/chat response."""
+    id: int
+    task_id: int
+    submission_id: int | None
+    sender_id: int
+    receiver_id: int
+    message: str
+    attachment_url: str | None
+    attachment_type: str | None
+    read_at: datetime | None
+    created_at: datetime
+    
+    model_config = {"from_attributes": True}
+
+
+class AchievementResponse(BaseModel):
+    """Achievement detail."""
+    id: int
+    slug: str
+    name: str
+    description: str
+    icon_emoji: str | None
+    xp_reward: int
+    points_reward: int
+    rarity: str
+    unlocked: bool
+    unlocked_at: datetime | None
+    
+    model_config = {"from_attributes": True}
+
+
+class UserAchievementResponse(BaseModel):
+    """User achievement record."""
+    id: int
+    achievement: AchievementResponse
+    unlocked_at: datetime
+    
+    model_config = {"from_attributes": True}
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request a password reset token."""
+    email: str | None = None
+    phone: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    """Reset password with a token."""
+    token: str
+    new_password: str = Field(min_length=8)
+
+
+class LegalPageResponse(BaseModel):
+    """Static legal page content."""
+    slug: str
+    title: str
+    content: str
+    updated_at: datetime

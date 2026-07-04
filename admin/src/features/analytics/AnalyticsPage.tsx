@@ -119,7 +119,7 @@ export function AnalyticsPage() {
                       <tr key={item.content_id} className="hover:bg-bg-hover">
                         <td className="px-4 py-3 text-sm text-text-main">{item.content_id}</td>
                         <td className="px-4 py-3 text-sm text-text-main">{item.title}</td>
-                        <td className="px-4 py-3 text-sm text-text-main">{item.reading_sessions.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-sm text-text-main">{(item.reading_sessions || 0).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>

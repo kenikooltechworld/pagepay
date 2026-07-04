@@ -87,12 +87,25 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <AdsBootstrapComponent />
         <Stack>
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="reader/[id]" options={{ headerShown: false }} />
-          <Stack.Screen name="book/[id]" options={{ headerShown: false, title: 'Book' }} />
-          <Stack.Screen name="study/chat/[id]" options={{ headerShown: false, title: 'Study Chat' }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="reader/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="book/[id]" options={{ headerShown: false, title: 'Book' }} />
+        <Stack.Screen name="study/chat/[id]" options={{ headerShown: false, title: 'Study Chat' }} />
+        <Stack.Screen name="tasks/[id]" options={{ headerShown: false, title: 'Task Detail' }} />
+        <Stack.Screen name="tasks/[id]/complete" options={{ headerShown: false, title: 'Submit Proof' }} />
+        <Stack.Screen name="tasks/profile" options={{ headerShown: false, title: 'Worker Profile' }} />
+        <Stack.Screen name="tasks/history" options={{ headerShown: false, title: 'Submission History' }} />
+        <Stack.Screen name="sponsor/register" options={{ headerShown: false, title: 'Become a Sponsor' }} />
+        <Stack.Screen name="sponsor/kyc" options={{ headerShown: false, title: 'KYC Verification' }} />
+        <Stack.Screen name="sponsor/dashboard" options={{ headerShown: false, title: 'Sponsor Dashboard' }} />
+        <Stack.Screen name="sponsor/tasks/create" options={{ headerShown: false, title: 'Create Task' }} />
+        <Stack.Screen name="sponsor/tasks/[id]" options={{ headerShown: false, title: 'Task Submissions' }} />
+        <Stack.Screen name="forgot-password" options={{ headerShown: false, title: 'Reset Password' }} />
+        <Stack.Screen name="reset-password" options={{ headerShown: false, title: 'New Password' }} />
+        <Stack.Screen name="terms" options={{ headerShown: false, title: 'Terms of Service' }} />
+        <Stack.Screen name="privacy" options={{ headerShown: false, title: 'Privacy Policy' }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>

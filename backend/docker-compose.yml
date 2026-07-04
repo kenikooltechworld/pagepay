@@ -50,5 +50,22 @@ services:
     # invocation sees a live DB; the `|| true` keeps the loop alive across
     # later transient errors so we don't get a container restart storm.
     command: ["sh", "-c", "while true; do python -m app.services.cron || true; sleep 21600; done"]
+  
+  ngrok:
+    image: ngrok/ngrok:latest
+    command: http api:8000
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"  # ngrok web interface
+    depends_on:
+      - api
+    networks:
+      - default
+
 volumes:
   mysql_data:
+
+networks:
+  default:
+    driver: bridge

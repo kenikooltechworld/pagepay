@@ -83,11 +83,11 @@ export default function SubmissionHistoryScreen() {
             </View>
           )}
 
-          {item.ai_confidence_score !== null && (
+          {item.ai_confidence !== null && (
             <View style={styles.confidenceRow}>
               <Ionicons name="analytics-outline" size={16} color="#6C5CE7" />
               <Text style={styles.confidenceText}>
-                AI Confidence: {(item.ai_confidence_score * 100).toFixed(1)}%
+                AI Confidence: {(item.ai_confidence * 100).toFixed(1)}%
               </Text>
             </View>
           )}

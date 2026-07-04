@@ -1,52 +1,33 @@
 /**
  * RewardedAd
  *
- * The "double earn" rewarded video slot shown after a
- * reading session completes. Parent calls `claim` (after
- * the user taps the activated claim button) and the
- * component:
- *   1. POSTs to /api/v1/ads/reward-claim with the synthetic
- *      `revenueUsd` the caller passed (or, with the real
- *      SDK, the value the SDK reported in onAdPaid).
- *   2. Returns the credit outcome to the parent so the
- *      wallet can re-fetch its balance.
- *
- * Today this is a thin wrapper around the existing
- * `MockAdModal` (Phase 1 placeholder) — the modal has the
- * same surface (`visible`, `onClaim(revenue)`, `onSkip`)
- * the real rewarded ad SDK will use, so the parent code
- * stays the same when the SDK lands. The wrapper layer
- * adds the impression + claim API calls the spec calls
- * out at `.kilo/command/phase2-ads.md` step 4.
- *
- * Why split RewardedAd from MockAdModal: the modal knows
- * how to render the "playing ad" surface; RewardedAd knows
- * how to translate a successful claim into a server-side
- * credit. When the real SDK lands, the modal body is
- * replaced with a `<RewardedAd>` from
- * `react-native-google-mobile-ads` and the wrapper code
- * (impression log, claim call) stays put.
+ * Professional AdMob rewarded ad implementation with:
+ * - Ad preloads ONLY when visible becomes true (no background loading)
+ * - State machine UI (loading → ready → showing → completed)
+ * - Single ad instance per modal open (no recreation loops)
+ * - SSV configuration for production revenue
  */
 
-import { useCallback, useRef } from 'react';
-import { Alert } from 'react-native';
+import { useCallback, useRef, useEffect, useState } from 'react';
+import { Modal, View, Text, StyleSheet, ActivityIndicator, Pressable, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-import {
-  AdProvider,
-  MockAdModal,
-  MockAdModalProps,
-} from '@/components/MockAdModal';
 import { claimAdReward, logAdImpression } from '@/src/shared/lib/ads';
+import { PagePay } from '@/constants/theme';
+import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
+type AdState = 'loading' | 'ready' | 'showing' | 'error';
 
 export type RewardedAdProps = {
   /** Whether the modal is currently shown. Parent-controlled. */
   visible: boolean;
-  /** AdMob rewarded unit ID. Empty = "use mock provider". */
+  /** AdMob rewarded unit ID. */
   adUnit: string;
+  /** Current user ID for SSV custom_data. Required for production. */
+  userId: number;
   /** Optional session id for impression + claim logging. */
   sessionId?: number | null;
-  /** Title shown above the simulated player. */
+  /** Title shown in modal. */
   title: string;
   /** Eyebrow above the title. */
   eyebrow?: string;
@@ -58,16 +39,7 @@ export type RewardedAdProps = {
   allowSkip?: boolean;
   /** Skip button label. */
   skipLabel?: string;
-  /** How long the simulated ad plays before the claim
-   *  button unlocks. Real SDK ignores this. */
-  durationSeconds?: number;
-  /** Which provider we're simulating. Real SDK ignores this. */
-  provider?: AdProvider;
-  /** Called when the user taps the activated claim button.
-   *  Receives the new wallet balance from the server (so
-   *  the parent can update the cached balance without
-   *  an extra round-trip) and the `ad_event_id` the
-   *  server logged. */
+  /** Called when the user completes the ad and earns reward. */
   onClaimed: (info: {
     adEventId: number;
     pointsCredited: number;
@@ -75,115 +47,391 @@ export type RewardedAdProps = {
   }) => void;
   /** Called when the user skips without claiming. */
   onSkipped?: () => void;
-  /** Called when the modal closes (claim, skip, or error). */
+  /** Called when the modal closes. */
   onClose: () => void;
 };
-
 
 export function RewardedAd(props: RewardedAdProps) {
   const {
     visible,
     adUnit,
+    userId,
     sessionId,
     title,
     eyebrow,
     body,
-    claimLabel,
-    allowSkip,
-    skipLabel,
-    durationSeconds,
-    provider = 'mock',
+    claimLabel = 'Watch Ad',
+    allowSkip = false,
+    skipLabel = 'Skip',
     onClaimed,
     onSkipped,
     onClose,
   } = props;
 
-  // We log the impression once per modal-open. The ref
-  // dedupes if React re-renders while the modal is up.
-  const impressionLoggedRef = useRef(false);
-  if (visible && !impressionLoggedRef.current) {
-    impressionLoggedRef.current = true;
-    logAdImpression({
+  const scheme = useEffectiveScheme();
+  const tokens = PagePay[scheme];
+  
+  const [adState, setAdState] = useState<AdState>('loading');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const rewardedRef = useRef<any>(null);
+  const rewardDataRef = useRef<{ type: string; amount: number } | null>(null);
+  const hasLoadedRef = useRef(false); // Track if we've loaded for this modal open
+
+  // Handle reward claim
+  const handleRewardClaim = useCallback(async () => {
+    const transactionId = `rewarded-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const result = await claimAdReward({
+      adEventId: null,
       adType: 'rewarded',
-      provider: adUnit ? 'admob' : 'mock',
-      adUnit: adUnit || 'mock_unit',
-      sessionId: sessionId ?? null,
-    }).catch(() => undefined);
-  }
+      provider: 'admob',
+      adUnit: adUnit || 'unknown',
+      revenueUsd: 0.01,
+      transactionId,
+    });
 
-  const handleModalClose = useCallback(() => {
-    // Reset the impression dedupe so the next open logs again.
-    impressionLoggedRef.current = false;
-    onClose();
-  }, [onClose]);
-
-  const handleClaim = useCallback(
-    async (revenueUsd: number) => {
-      // SSV-style dedupe key. Unique per claim attempt; replays
-      // are no-ops server-side. We mint a fresh id per claim
-      // so a user retrying after a network blip doesn't
-      // accidentally short-circuit to "duplicate".
-      const transactionId = `rewarded-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const result = await claimAdReward({
-        adEventId: null, // the impression log is best-effort; claim creates its own row if missing
-        adType: 'rewarded',
-        provider: adUnit ? 'admob' : 'mock',
-        adUnit: adUnit || 'mock_unit',
-        revenueUsd,
-        transactionId,
-      });
-      if (!result) {
-        Alert.alert(
-          'Couldn\'t credit your reward',
-          'The server is unreachable. Your points will land once you\'re back online.',
-        );
-        handleModalClose();
-        return;
-      }
-      if (result.creditStatus === 'rejected_low_value') {
-        Alert.alert(
-          'Reward too small to credit',
-          'This ad paid under the minimum threshold. Try another ad to earn.',
-        );
-        handleModalClose();
-        return;
-      }
-      if (result.creditStatus === 'duplicate') {
-        // We just sent a unique tx id, so this should be
-        // impossible — but the server is the source of truth.
-        // Treat as a soft no-op so the user doesn't lose
-        // their state.
-        handleModalClose();
-        return;
-      }
+    if (result && result.creditStatus === 'credited') {
       onClaimed({
         adEventId: result.adEventId,
         pointsCredited: result.pointsCredited,
         newBalance: result.newBalance,
       });
-      handleModalClose();
-    },
-    [adUnit, onClaimed, handleModalClose],
-  );
+    }
+    onClose();
+  }, [adUnit, onClaimed, onClose]);
+
+  // Load ad when modal opens
+  useEffect(() => {
+    // Only load if modal is visible AND we haven't loaded yet
+    if (!visible) {
+      // Modal closed - reset for next time
+      hasLoadedRef.current = false;
+      return;
+    }
+
+    if (Platform.OS === 'web' || !adUnit || !userId || hasLoadedRef.current) {
+      return;
+    }
+
+    // Mark as loaded for this modal session
+    hasLoadedRef.current = true;
+    setAdState('loading');
+    setErrorMessage(null);
+
+    if (__DEV__) {
+      console.log('[RewardedAd] Loading ad...');
+    }
+
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const sdk = require('react-native-google-mobile-ads');
+        const { RewardedAd: RealRewardedAd, RewardedAdEventType, AdEventType } = sdk;
+
+        const ad = RealRewardedAd.createForAdRequest(adUnit, {
+          serverSideVerificationOptions: {
+            userId: userId.toString(),
+            customData: JSON.stringify({ user_id: userId }),
+          },
+        });
+
+        // Ad loaded successfully
+        const unsubLoaded = ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+          if (__DEV__) {
+            console.log('[RewardedAd] Ad ready');
+          }
+          setAdState('ready');
+        });
+
+        // User earned reward
+        const unsubEarned = ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward: { type: string; amount: number }) => {
+          if (__DEV__) {
+            console.log('[RewardedAd] Reward earned:', reward);
+          }
+          rewardDataRef.current = reward;
+        });
+
+        // Ad closed
+        const unsubClosed = ad.addAdEventListener(AdEventType.CLOSED, async () => {
+          if (__DEV__) {
+            console.log('[RewardedAd] Ad closed');
+          }
+
+          // Cleanup listeners
+          unsubLoaded();
+          unsubEarned();
+          unsubClosed();
+
+          // Cleanup ad
+          rewardedRef.current = null;
+
+          // Handle reward or skip
+          if (rewardDataRef.current) {
+            await handleRewardClaim();
+            rewardDataRef.current = null;
+          } else {
+            onSkipped?.();
+            onClose();
+          }
+        });
+
+        rewardedRef.current = ad;
+        ad.load();
+
+      } catch (err) {
+        if (__DEV__) {
+          console.error('[RewardedAd] Load failed:', err);
+        }
+        setAdState('error');
+        setErrorMessage('Ad service unavailable');
+      }
+    })();
+  }, [visible, adUnit, userId, handleRewardClaim, onSkipped, onClose]);
+
+  const handleWatchAd = useCallback(() => {
+    if (!rewardedRef.current || adState !== 'ready') {
+      if (__DEV__) {
+        console.warn('[RewardedAd] Cannot show ad - state:', adState);
+      }
+      return;
+    }
+
+    try {
+      setAdState('showing');
+      rewardedRef.current.show();
+      
+      if (__DEV__) {
+        console.log('[RewardedAd] Ad showing');
+      }
+      
+      // Log impression
+      logAdImpression({
+        adType: 'rewarded',
+        provider: 'admob',
+        adUnit,
+        sessionId: sessionId ?? null,
+      }).catch(() => undefined);
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[RewardedAd] Failed to show ad:', err);
+      }
+      setAdState('error');
+      setErrorMessage('Failed to display ad');
+    }
+  }, [adState, adUnit, sessionId]);
 
   const handleSkip = useCallback(() => {
     onSkipped?.();
-    handleModalClose();
-  }, [onSkipped, handleModalClose]);
+    onClose();
+  }, [onSkipped, onClose]);
 
-  const modalProps: MockAdModalProps = {
-    visible,
-    title,
-    eyebrow,
-    body,
-    claimLabel,
-    allowSkip,
-    skipLabel,
-    durationSeconds,
-    provider,
-    onClaim: handleClaim,
-    onSkip: allowSkip ? handleSkip : undefined,
-  };
+  const handleRetry = useCallback(() => {
+    setErrorMessage(null);
+    hasLoadedRef.current = false; // Reset to allow retry
+    setAdState('loading');
+  }, []);
 
-  return <MockAdModal {...modalProps} />;
+  // Don't render modal when not visible or when showing fullscreen ad
+  if (!visible || adState === 'showing') {
+    return null;
+  }
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={allowSkip ? handleSkip : undefined}>
+      <View style={styles.overlay}>
+        <View style={[styles.modal, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+          {/* Eyebrow */}
+          {eyebrow && (
+            <Text style={[styles.eyebrow, { color: tokens.inkMuted }]}>
+              {eyebrow}
+            </Text>
+          )}
+
+          {/* Title */}
+          <Text style={[styles.title, { color: tokens.ink }]}>{title}</Text>
+
+          {/* Body */}
+          {body && (
+            <Text style={[styles.body, { color: tokens.inkMuted }]}>
+              {body}
+            </Text>
+          )}
+
+          {/* State-specific content */}
+          {adState === 'loading' && (
+            <View style={styles.content}>
+              <ActivityIndicator size="large" color={tokens.mint} />
+              <Text style={[styles.statusText, { color: tokens.inkMuted }]}>
+                Loading your ad...
+              </Text>
+            </View>
+          )}
+
+          {adState === 'ready' && (
+            <View style={styles.content}>
+              <View style={[styles.iconContainer, { backgroundColor: tokens.mintSoft }]}>
+                <Ionicons name="play-circle" size={48} color={tokens.mint} />
+              </View>
+              <Text style={[styles.statusText, { color: tokens.mint }]}>
+                Your ad is ready!
+              </Text>
+            </View>
+          )}
+
+          {adState === 'error' && (
+            <View style={styles.content}>
+              <View style={[styles.iconContainer, { backgroundColor: tokens.signalSoft }]}>
+                <Ionicons name="alert-circle" size={48} color={tokens.signal} />
+              </View>
+              <Text style={[styles.statusText, { color: tokens.signal }]}>
+                {errorMessage || 'Ad temporarily unavailable'}
+              </Text>
+            </View>
+          )}
+
+          {/* Actions */}
+          <View style={styles.actions}>
+            {/* Loading state - show disabled button */}
+            {adState === 'loading' && (
+              <View style={[styles.button, styles.primaryButton, { backgroundColor: tokens.inkMuted, opacity: 0.5 }]}>
+                <ActivityIndicator size="small" color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.buttonText}>Loading ad...</Text>
+              </View>
+            )}
+
+            {/* Ready state - show enabled button */}
+            {adState === 'ready' && (
+              <Pressable
+                onPress={handleWatchAd}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.primaryButton,
+                  { backgroundColor: tokens.mint, opacity: pressed ? 0.8 : 1 },
+                ]}
+              >
+                <Ionicons name="play" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.buttonText}>{claimLabel}</Text>
+              </Pressable>
+            )}
+
+            {/* Error state - show retry button */}
+            {adState === 'error' && (
+              <Pressable
+                onPress={handleRetry}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.primaryButton,
+                  { backgroundColor: tokens.mint, opacity: pressed ? 0.8 : 1 },
+                ]}
+              >
+                <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.buttonText}>Try Again</Text>
+              </Pressable>
+            )}
+
+            {/* Skip button - always available */}
+            {allowSkip && (
+              <Pressable
+                onPress={handleSkip}
+                style={({ pressed }) => [
+                  styles.button,
+                  styles.secondaryButton,
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Text style={[styles.secondaryButtonText, { color: tokens.inkMuted }]}>
+                  {skipLabel}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modal: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  body: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  content: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    gap: 16,
+  },
+  iconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  actions: {
+    gap: 12,
+    marginTop: 8,
+  },
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  primaryButton: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    backgroundColor: 'transparent',
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+});

@@ -101,15 +101,12 @@ async def get_kyc_status(
 @router.put("/kyc", response_model=SponsorKYCResponse)
 async def submit_kyc(
     payload: SponsorKYCSubmitRequest,
-    id_document_base64: str,
-    business_document_base64: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Submit KYC documents for review.
     
     Only ID document is required. Business documents are optional for companies.
-    Individuals just need to verify their identity.
     """
     if not current_user.is_sponsor:
         raise HTTPException(status_code=403, detail="Not a sponsor")
@@ -117,9 +114,12 @@ async def submit_kyc(
     # Upload ID document to Cloudinary (required)
     from app.services.cloudinary import upload_base64_image
     
+    if not payload.id_document_base64:
+        raise HTTPException(status_code=400, detail="ID document is required")
+    
     try:
         id_doc_result = await upload_base64_image(
-            id_document_base64,
+            payload.id_document_base64,
             f"kyc/sponsor_{current_user.id}_id_{int(datetime.now().timestamp())}"
         )
         id_document_url = id_doc_result["secure_url"]
@@ -129,10 +129,10 @@ async def submit_kyc(
     
     # Upload business document (optional, only if provided)
     business_document_url = None
-    if business_document_base64:
+    if payload.business_document_base64:
         try:
             bus_doc_result = await upload_base64_image(
-                business_document_base64,
+                payload.business_document_base64,
                 f"kyc/sponsor_{current_user.id}_business_{int(datetime.now().timestamp())}"
             )
             business_document_url = bus_doc_result["secure_url"]
@@ -241,9 +241,11 @@ async def create_task(
 ):
     """Create new task (draft status)."""
     # Calculate escrow
-    worker_rewards_total = payload.reward_amount * payload.max_completions
+    worker_rewards_total = payload.reward_amount_kobo * payload.max_completions
     platform_fee = int(worker_rewards_total * 0.15)  # 15% platform fee
     total_escrowed = worker_rewards_total + platform_fee
+    
+    expires_at = datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)
     
     # Create task
     task = Task(
@@ -257,11 +259,11 @@ async def create_task(
         target_url=payload.target_url,
         proof_type=payload.proof_type,
         proof_instructions=payload.proof_instructions,
-        reward_amount=payload.reward_amount,
+        reward_amount=payload.reward_amount_kobo,
         max_completions=payload.max_completions,
         total_escrowed=total_escrowed,
         platform_fee_amount=platform_fee,
-        expires_at=payload.expires_at,
+        expires_at=expires_at,
         time_limit_minutes=payload.time_limit_minutes,
         target_countries=json.dumps(payload.target_countries) if payload.target_countries else None,
         target_cities=json.dumps(payload.target_cities) if payload.target_cities else None,
@@ -383,7 +385,31 @@ async def get_task_submissions(
     result = await db.execute(query)
     submissions = result.scalars().all()
     
-    return [TaskSubmissionResponse.model_validate(s) for s in submissions]
+    return [
+        TaskSubmissionResponse(
+            id=s.id,
+            task_id=s.task_id,
+            worker_id=s.worker_id,
+            task_title=task.title,
+            task_type=task.task_type,
+            platform=task.platform,
+            reward_amount=task.reward_amount,
+            proof_type=s.proof_type,
+            proof_image_url=s.proof_image_url,
+            proof_url=s.proof_url,
+            proof_text=s.proof_text,
+            status=s.status,
+            ai_verified=s.ai_verified,
+            ai_confidence=s.ai_confidence,
+            verified_at=s.reviewed_at,
+            reviewed_at=s.reviewed_at,
+            rejection_reason=s.rejection_reason,
+            reward_paid=s.reward_paid,
+            submitted_at=s.submitted_at,
+            completion_time_seconds=s.completion_time_seconds
+        )
+        for s in submissions
+    ]
 
 
 

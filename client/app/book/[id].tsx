@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiFetch } from '@/src/shared/api/client';
+import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
@@ -67,6 +69,25 @@ export default function BookDetailScreen() {
   const tokens = PagePay[scheme];
 
   const workId = Number(id);
+
+  // Fetch ad config for native unit
+  const [nativeAdUnit, setNativeAdUnit] = useState('');
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = Platform.OS;
+      const unitKey = platform === 'android' ? 'in_feed_android' : 'in_feed_ios';
+      setNativeAdUnit(adConfig[unitKey] || '');
+    }
+  }, [adConfig]);
 
   const bookQuery = useQuery({
     queryKey: ['book', workId],
@@ -226,78 +247,89 @@ export default function BookDetailScreen() {
             const isCurrent =
               !resumeQuery.data?.is_finished &&
               resumeQuery.data?.current_slice_id === slice.id;
+            
+            // Show native ad every 4th slice
+            const shouldShowAd = (idx + 1) % 4 === 0 && nativeAdUnit;
 
             return (
-              <TouchableOpacity
-                key={slice.id}
-                activeOpacity={unlocked ? 0.7 : 1}
-                disabled={!unlocked}
-                onPress={() => onSlicePress(slice)}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  unlocked
-                    ? `Session ${slice.read_order} of ${slice.total_slices}, ${slice.estimated_read_minutes} minute${slice.estimated_read_minutes === 1 ? '' : 's'}`
-                    : `Locked session ${slice.read_order}. Finish the previous session to unlock.`
-                }
-                style={[
-                  styles.sliceCard,
-                  {
-                    backgroundColor: unlocked ? tokens.card : tokens.mintSoft,
-                    borderColor: isCurrent ? tokens.mint : tokens.border,
-                    borderWidth: isCurrent ? 2 : 1,
-                  },
-                ]}
-              >
-                <View style={styles.sliceRow}>
-                  <View
-                    style={[
-                      styles.sliceIndex,
-                      {
-                        backgroundColor: unlocked ? tokens.mint : tokens.border,
-                      },
-                    ]}
-                  >
-                    {completed ? (
-                      <Ionicons name="checkmark" size={14} color="#fff" />
-                    ) : unlocked ? (
-                      <Text style={styles.sliceIndexText}>{slice.read_order}</Text>
-                    ) : (
-                      <Ionicons name="lock-closed" size={12} color={tokens.inkMuted} />
-                    )}
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      numberOfLines={2}
+              <View key={`slice-${slice.id}`}>
+                <TouchableOpacity
+                  activeOpacity={unlocked ? 0.7 : 1}
+                  disabled={!unlocked}
+                  onPress={() => onSlicePress(slice)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    unlocked
+                      ? `Session ${slice.read_order} of ${slice.total_slices}, ${slice.estimated_read_minutes} minute${slice.estimated_read_minutes === 1 ? '' : 's'}`
+                      : `Locked session ${slice.read_order}. Finish the previous session to unlock.`
+                  }
+                  style={[
+                    styles.sliceCard,
+                    {
+                      backgroundColor: unlocked ? tokens.card : tokens.mintSoft,
+                      borderColor: isCurrent ? tokens.mint : tokens.border,
+                      borderWidth: isCurrent ? 2 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.sliceRow}>
+                    <View
                       style={[
-                        styles.sliceTitle,
+                        styles.sliceIndex,
                         {
-                          color: unlocked ? tokens.ink : tokens.inkMuted,
-                          fontFamily: unlocked ? 'SpaceGrotesk_700Bold' : undefined,
+                          backgroundColor: unlocked ? tokens.mint : tokens.border,
                         },
                       ]}
                     >
-                      {slice.title}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.sliceSub,
-                        { color: tokens.inkMuted },
-                      ]}
-                    >
-                      {unlocked
-                        ? `${slice.estimated_read_minutes} min read · Session ${slice.read_order} of ${slice.total_slices}`
-                        : isCurrent
-                        ? 'Continue here'
-                        : `Unlocks after session ${Math.max(1, slice.read_order - 1)}`}
-                    </Text>
-                  </View>
+                      {completed ? (
+                        <Ionicons name="checkmark" size={14} color="#fff" />
+                      ) : unlocked ? (
+                        <Text style={styles.sliceIndexText}>{slice.read_order}</Text>
+                      ) : (
+                        <Ionicons name="lock-closed" size={12} color={tokens.inkMuted} />
+                      )}
+                    </View>
 
-                  {unlocked ? (
-                    <Ionicons name="chevron-forward" size={18} color={tokens.mint} />
-                  ) : null}
-                </View>
-              </TouchableOpacity>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        numberOfLines={2}
+                        style={[
+                          styles.sliceTitle,
+                          {
+                            color: unlocked ? tokens.ink : tokens.inkMuted,
+                            fontFamily: unlocked ? 'SpaceGrotesk_700Bold' : undefined,
+                          },
+                        ]}
+                      >
+                        {slice.title}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.sliceSub,
+                          { color: tokens.inkMuted },
+                        ]}
+                      >
+                        {unlocked
+                          ? `${slice.estimated_read_minutes} min read · Session ${slice.read_order} of ${slice.total_slices}`
+                          : isCurrent
+                          ? 'Continue here'
+                          : `Unlocks after session ${Math.max(1, slice.read_order - 1)}`}
+                      </Text>
+                    </View>
+
+                    {unlocked ? (
+                      <Ionicons name="chevron-forward" size={18} color={tokens.mint} />
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+                
+                {shouldShowAd && (
+                  <NativeAdBanner
+                    adUnit={nativeAdUnit}
+                    sessionId={null}
+                  />
+                )}
+              </View>
             );
           })}
 

@@ -1,9 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
 import type { UserDetail, UserSessionsResponse, UserTransactionsResponse } from '@/lib/types';
-import { Modal, Badge, Button, ShimmerLoader } from '@/shared/components';
+import { Modal, Badge, Button, ShimmerLoader, ConfirmModal, Input } from '@/shared/components';
 import { useAuthStore } from '@/store/auth';
-import { DollarSign, Activity, Receipt, Calendar, User as UserIcon } from 'lucide-react';
+import { DollarSign, Activity, Receipt, Calendar, User as UserIcon, Shield, Ban } from 'lucide-react';
 import React from 'react';
 
 interface UserDetailModalProps {
@@ -15,6 +15,11 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
   const queryClient = useQueryClient();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const [activeTab, setActiveTab] = React.useState<'details' | 'sessions' | 'transactions'>('details');
+  const [adjustBalanceModalOpen, setAdjustBalanceModalOpen] = React.useState(false);
+  const [banModalOpen, setBanModalOpen] = React.useState(false);
+  const [unbanModalOpen, setUnbanModalOpen] = React.useState(false);
+  const [balanceAmount, setBalanceAmount] = React.useState('');
+  const [balanceReason, setBalanceReason] = React.useState('');
 
   const { data: user, isLoading: userLoading } = useQuery({
     queryKey: ['admin', 'users', userId],
@@ -55,27 +60,53 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
 
   const adjustBalanceMutation = useMutation({
     mutationFn: async ({ userId, amount, reason }: { userId: number; amount: number; reason: string }) => {
-      await adminApi.post(`/admin/users/${userId}/adjust-balance`, null, {
+      await adminApi.post(`/users/${userId}/adjust-balance`, null, {
         params: { amount, reason },
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setAdjustBalanceModalOpen(false);
+      setBalanceAmount('');
+      setBalanceReason('');
     },
   });
 
-  const handleAdjustBalance = () => {
+  const banMutation = useMutation({
+    mutationFn: async ({ userId, reason }: { userId: number; reason: string }) => {
+      await adminApi.post(`/users/${userId}/ban`, null, { params: { reason } });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setBanModalOpen(false);
+    },
+  });
+
+  const unbanMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      await adminApi.post(`/users/${userId}/unban`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setUnbanModalOpen(false);
+    },
+  });
+
+  const handleAdjustBalanceConfirm = () => {
+    if (!userId || !balanceAmount || !balanceReason) return;
+    const amount = parseInt(balanceAmount, 10);
+    if (isNaN(amount)) return;
+    adjustBalanceMutation.mutate({ userId, amount, reason: balanceReason });
+  };
+
+  const handleBanConfirm = (reason?: string) => {
+    if (!userId || !reason) return;
+    banMutation.mutate({ userId, reason });
+  };
+
+  const handleUnbanConfirm = () => {
     if (!userId) return;
-    const amountStr = prompt('Enter amount to adjust (positive to add, negative to subtract):');
-    if (!amountStr) return;
-    const amount = parseInt(amountStr, 10);
-    if (isNaN(amount)) {
-      alert('Invalid amount');
-      return;
-    }
-    const reason = prompt('Reason for adjustment:');
-    if (!reason) return;
-    adjustBalanceMutation.mutate({ userId, amount, reason });
+    unbanMutation.mutate(userId);
   };
 
   if (!userId) return null;
@@ -91,7 +122,7 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
         <div className="flex gap-2 border-b border-border">
           <button
             onClick={() => setActiveTab('details')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
+            className={`cursor-pointer px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === 'details'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-text-muted hover:text-text-main'
@@ -102,7 +133,7 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
           </button>
           <button
             onClick={() => setActiveTab('sessions')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
+            className={`cursor-pointer px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === 'sessions'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-text-muted hover:text-text-main'
@@ -113,7 +144,7 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
           </button>
           <button
             onClick={() => setActiveTab('transactions')}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
+            className={`cursor-pointer px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === 'transactions'
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-text-muted hover:text-text-main'
@@ -191,15 +222,35 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
                 </div>
 
                 {hasPermission('users.adjust_balance') && (
-                  <div className="mt-4 flex justify-end">
+                  <div className="mt-4 flex justify-end gap-2">
                     <Button
-                      onClick={handleAdjustBalance}
+                      onClick={() => setAdjustBalanceModalOpen(true)}
                       variant="secondary"
                       disabled={adjustBalanceMutation.isPending}
                     >
                       <DollarSign size={16} />
-                      {adjustBalanceMutation.isPending ? 'Adjusting...' : 'Adjust Balance'}
+                      Adjust Balance
                     </Button>
+                    {hasPermission('users.ban') && user.status === 'active' && (
+                      <Button
+                        onClick={() => setBanModalOpen(true)}
+                        variant="danger"
+                        disabled={banMutation.isPending}
+                      >
+                        <Shield size={16} />
+                        Ban User
+                      </Button>
+                    )}
+                    {hasPermission('users.ban') && user.status === 'banned' && (
+                      <Button
+                        onClick={() => setUnbanModalOpen(true)}
+                        variant="secondary"
+                        disabled={unbanMutation.isPending}
+                      >
+                        <Ban size={16} />
+                        Unban User
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -285,6 +336,85 @@ export function UserDetailModal({ userId, onClose }: UserDetailModalProps) {
           </>
         )}
       </div>
+
+      {/* Adjust Balance Modal */}
+      <Modal
+        isOpen={adjustBalanceModalOpen}
+        onClose={() => {
+          setAdjustBalanceModalOpen(false);
+          setBalanceAmount('');
+          setBalanceReason('');
+        }}
+        title="Adjust User Balance"
+      >
+        <div className="space-y-4">
+          <p className="text-text-main">Enter the amount to adjust (positive to add, negative to subtract) and provide a reason.</p>
+          <Input
+            label="Amount"
+            type="number"
+            placeholder="e.g., 100 or -50"
+            value={balanceAmount}
+            onChange={(e) => setBalanceAmount(e.target.value)}
+            autoFocus
+          />
+          <Input
+            label="Reason"
+            placeholder="Enter reason for adjustment..."
+            value={balanceReason}
+            onChange={(e) => setBalanceReason(e.target.value)}
+          />
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setAdjustBalanceModalOpen(false);
+                setBalanceAmount('');
+                setBalanceReason('');
+              }}
+              disabled={adjustBalanceMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleAdjustBalanceConfirm}
+              disabled={adjustBalanceMutation.isPending || !balanceAmount || !balanceReason}
+              loading={adjustBalanceMutation.isPending}
+            >
+              Adjust Balance
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Ban Modal */}
+      <ConfirmModal
+        isOpen={banModalOpen}
+        onClose={() => setBanModalOpen(false)}
+        onConfirm={handleBanConfirm}
+        title="Ban User"
+        message="Please provide a reason for banning this user. This action will prevent them from accessing the platform."
+        confirmText="Ban User"
+        cancelText="Cancel"
+        variant="danger"
+        requireInput={true}
+        inputLabel="Ban Reason"
+        inputPlaceholder="Enter reason for ban..."
+        isLoading={banMutation.isPending}
+      />
+
+      {/* Unban Modal */}
+      <ConfirmModal
+        isOpen={unbanModalOpen}
+        onClose={() => setUnbanModalOpen(false)}
+        onConfirm={handleUnbanConfirm}
+        title="Unban User"
+        message="Are you sure you want to unban this user? They will regain access to the platform."
+        confirmText="Unban User"
+        cancelText="Cancel"
+        variant="primary"
+        isLoading={unbanMutation.isPending}
+      />
     </Modal>
   );
 }

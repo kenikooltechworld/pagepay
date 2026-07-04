@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.limiter import limiter
 from app.models import Base
-from app.routers import auth, content, sessions, health, wallet, progress, ads, study
+from app.routers import auth, content, sessions, health, wallet, progress, ads, study, legal
 from app.routers.ai import router as ai_router
 from app.routers.referral import router as referral_router
 from app.routers.community import router as community_router
@@ -121,6 +121,7 @@ app.include_router(referral_router, prefix=API_PREFIX)
 app.include_router(community_router, prefix=API_PREFIX)
 app.include_router(streak_router, prefix=API_PREFIX)
 app.include_router(analytics_router, prefix=API_PREFIX)
+app.include_router(legal.router, prefix=API_PREFIX)
 
 # Phase 7: Social Tasks
 app.include_router(tasks_router, prefix=API_PREFIX)

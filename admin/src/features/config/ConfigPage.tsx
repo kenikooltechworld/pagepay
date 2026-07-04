@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
 import type { ConfigItem } from '@/lib/types';
 import { useState } from 'react';
-import { Card, Badge, Button, ShimmerLoader, Container } from '@/shared/components';
+import { Card, Badge, Button, ShimmerLoader, Container, Tooltip } from '@/shared/components';
 import { TopHeader } from '@/shared/components/TopHeader';
 import { useLayoutContext } from '@/shared/components/Layout';
 
@@ -23,7 +23,7 @@ export function ConfigPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ key, value, description }: { key: string; value: string; description?: string }) => {
-      await adminApi.put(`/admin/config/${encodeURIComponent(key)}`, { value, description });
+      await adminApi.put(`/config/${encodeURIComponent(key)}`, { value, description });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'config'] });
@@ -86,11 +86,17 @@ export function ConfigPage() {
                     <td className="px-4 py-3 text-sm text-text-main">
                       {editingKey === item.key ? (
                         <div className="flex flex-col gap-2 sm:flex-row">
-                          <Button size="sm" onClick={() => saveEdit(item.key)}>Save</Button>
-                          <Button size="sm" variant="secondary" onClick={() => setEditingKey(null)}>Cancel</Button>
+                          <Tooltip content="Save changes" position="top">
+                            <Button size="sm" onClick={() => saveEdit(item.key)}>Save</Button>
+                          </Tooltip>
+                          <Tooltip content="Cancel editing" position="top">
+                            <Button size="sm" variant="secondary" onClick={() => setEditingKey(null)}>Cancel</Button>
+                          </Tooltip>
                         </div>
                       ) : (
-                        <Button size="sm" variant="secondary" onClick={() => startEdit(item)}>Edit</Button>
+                        <Tooltip content="Edit this config value" position="top">
+                          <Button size="sm" variant="secondary" onClick={() => startEdit(item)}>Edit</Button>
+                        </Tooltip>
                       )}
                     </td>
                   </tr>

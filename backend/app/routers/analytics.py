@@ -1,41 +1,28 @@
 """Admin analytics endpoints.
 
-All endpoints require `X-Admin-Token` header.
+All endpoints require admin authentication.
 """
 
 import logging
 from datetime import date, datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app.models import User, ReadingSession, ContentCatalog
-import hmac
+from app.services.admin_auth import require_permission
 
 logger = logging.getLogger("uvicorn.error")
-router = APIRouter(prefix="/admin/analytics", tags=["analytics"])
-
-
-async def require_admin_token(x_admin_token: str | None = None) -> None:
-    expected = settings.admin_token
-    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or missing X-Admin-Token",
-            headers={"WWW-Authenticate": "X-Admin-Token"},
-        )
+router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("/dau")
 async def get_daily_active_users(
     days: int = 7,
-    x_admin_token: str | None = None,
+    current_admin: AdminUser = Depends(require_permission("dashboard.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Daily active users for the last N days."""
-    await require_admin_token(x_admin_token)
     cutoff = datetime.utcnow() - timedelta(days=days)
     rows = await db.execute(
         select(
@@ -54,7 +41,7 @@ async def get_daily_active_users(
 
 @router.get("/retention")
 async def get_retention(
-    x_admin_token: str | None = None,
+    current_admin: AdminUser = Depends(require_permission("dashboard.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Day 1 and Day 7 cohort retention.
@@ -62,7 +49,6 @@ async def get_retention(
     Counts users who signed up on a given day and returned for a
     reading session on day 1 and day 7.
     """
-    await require_admin_token(x_admin_token)
     cutoff_7 = datetime.utcnow() - timedelta(days=7)
     cutoff_1 = datetime.utcnow() - timedelta(days=1)
 
@@ -106,11 +92,10 @@ async def get_retention(
 @router.get("/content-performance")
 async def get_content_performance(
     limit: int = 20,
-    x_admin_token: str | None = None,
+    current_admin: AdminUser = Depends(require_permission("dashboard.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Top content by reading session count."""
-    await require_admin_token(x_admin_token)
     rows = await db.execute(
         select(
             ContentCatalog.id,

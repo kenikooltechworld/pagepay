@@ -111,14 +111,18 @@ export function LoginPage() {
       setTimeout(() => navigate('/dashboard', { replace: true }), 700);
     } catch (err) {
       // Try to surface a server-provided detail string.
-      const status = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response?.status;
-      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const axiosError = err as any;
+      const status = axiosError?.response?.status;
+      const detail = axiosError?.response?.data?.detail;
       const detailStr = typeof detail === 'string' ? detail : '';
 
       if (status === 401) {
         setFormError("That email and password don't match.");
+      } else if (status) {
+        setFormError(detailStr || `Server error: ${status}`);
       } else {
-        setFormError(detailStr || "Couldn't sign you in. Try again.");
+        // Network error or other issue
+        setFormError(detailStr || "Couldn't sign you in. Check the backend is running.");
       }
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);

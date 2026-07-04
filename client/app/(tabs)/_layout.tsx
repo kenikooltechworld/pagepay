@@ -74,6 +74,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tasks"
+        options={{
+          title: 'Tasks',
+          tabBarIcon: ({ color, size, focused }) => (
+            <TabIcon name="briefcase" color={color} size={size} focused={focused} tokens={tokens} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="community"
         options={{
           title: 'Community',

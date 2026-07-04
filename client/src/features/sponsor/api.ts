@@ -108,7 +108,7 @@ export type TaskSubmissionDetail = {
   submitted_at: string;
   verified_at: string | null;
   rejection_reason: string | null;
-  ai_confidence_score: number | null;
+  ai_confidence: number | null;
   ai_verification_details: any;
   flagged_for_review: boolean;
 };

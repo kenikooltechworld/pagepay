@@ -78,11 +78,11 @@ export default function SponsorTaskDetailScreen() {
           </View>
         </View>
 
-        {item.ai_confidence_score !== null && (
+        {item.ai_confidence !== null && (
           <View style={styles.aiScore}>
             <Ionicons name="analytics" size={16} color="#6C5CE7" />
             <Text style={styles.aiScoreText}>
-              AI Confidence: {(item.ai_confidence_score * 100).toFixed(1)}%
+              AI Confidence: {(item.ai_confidence * 100).toFixed(1)}%
             </Text>
           </View>
         )}

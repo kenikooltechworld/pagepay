@@ -2,14 +2,15 @@
 
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
 from app.database import get_db
-from app.models import User, Task, TaskSubmission, UserReputation
+from app.models import User, Task, TaskSubmission, UserReputation, Leaderboard, TaskMessage, Achievement, UserAchievement
 from app.schemas import (
     TaskListItem, TaskResponse, TaskSubmitRequest, TaskSubmissionResponse,
-    WorkerStatsResponse, LeaderboardResponse, LeaderboardEntry
+    WorkerStatsResponse, LeaderboardResponse, LeaderboardEntry,
+    TaskMessageResponse, AchievementResponse, UserAchievementResponse
 )
 from app.services.auth import get_current_user
 
@@ -209,15 +210,20 @@ async def get_worker_stats(
     badges = json.loads(user_rep.badges) if user_rep.badges else []
     
     return WorkerStatsResponse(
-        level=user_rep.worker_level,
-        xp=user_rep.worker_xp,
+        user_id=current_user.id,
+        worker_level=user_rep.worker_level,
+        worker_xp=user_rep.worker_xp,
         xp_to_next_level=user_rep.worker_xp_to_next_level,
         tasks_completed=user_rep.tasks_completed,
         tasks_approved=user_rep.tasks_approved,
+        tasks_rejected=user_rep.tasks_rejected,
         approval_rate=user_rep.approval_rate,
-        total_earnings=user_rep.total_earnings,
-        current_streak_days=user_rep.current_streak_days,
-        badges=badges
+        total_earned=user_rep.total_earnings,
+        current_streak=user_rep.current_streak_days,
+        longest_streak=user_rep.longest_streak_days,
+        badges=badges,
+        created_at=current_user.created_at,
+        updated_at=user_rep.updated_at
     )
 
 
@@ -287,6 +293,21 @@ async def submit_task(
     await db.commit()
     await db.refresh(submission)
     
+    # Run fraud checks on submission
+    try:
+        from app.services.fraud_detection import run_fraud_checks_on_submission
+        await run_fraud_checks_on_submission(
+            db=db,
+            submission_id=submission.id,
+            user_id=current_user.id,
+            proof_image_url=proof_image_url,
+            device_fingerprint=submission.device_fingerprint,
+            ip_address=submission.ip_address
+        )
+    except Exception as e:
+        # Don't fail submission if fraud check fails
+        logger.warning(f"Fraud check failed for submission {submission.id}: {e}")
+    
     return TaskSubmissionResponse(
         id=submission.id,
         task_id=submission.task_id,
@@ -331,11 +352,23 @@ async def get_my_submissions(
     result = await db.execute(query)
     submissions = result.scalars().all()
     
+    # Pre-fetch tasks for enrichment
+    task_ids = list({s.task_id for s in submissions if s.task_id})
+    tasks_map = {}
+    if task_ids:
+        tasks_result = await db.execute(select(Task).where(Task.id.in_(task_ids)))
+        for t in tasks_result.scalars().all():
+            tasks_map[t.id] = t
+    
     return [
         TaskSubmissionResponse(
             id=s.id,
             task_id=s.task_id,
             worker_id=s.worker_id,
+            task_title=tasks_map.get(s.task_id, {}).title if s.task_id in tasks_map else "",
+            task_type=tasks_map.get(s.task_id, {}).task_type if s.task_id in tasks_map else "",
+            platform=tasks_map.get(s.task_id, {}).platform if s.task_id in tasks_map else "",
+            reward_amount=tasks_map.get(s.task_id, {}).reward_amount if s.task_id in tasks_map else 0,
             proof_type=s.proof_type,
             proof_image_url=s.proof_image_url,
             proof_url=s.proof_url,
@@ -343,6 +376,7 @@ async def get_my_submissions(
             status=s.status,
             ai_verified=s.ai_verified,
             ai_confidence=s.ai_confidence,
+            verified_at=s.reviewed_at,
             reviewed_at=s.reviewed_at,
             rejection_reason=s.rejection_reason,
             reward_paid=s.reward_paid,
@@ -350,4 +384,169 @@ async def get_my_submissions(
             completion_time_seconds=s.completion_time_seconds
         )
         for s in submissions
+        ]
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponse)
+async def get_leaderboard(
+    leaderboard_type: str = "top_earners_week",
+    period: str = "current_week",
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get leaderboard rankings."""
+    if limit > 100:
+        limit = 100
+    
+    rows = await db.execute(
+        select(Leaderboard)
+        .where(
+            Leaderboard.leaderboard_type == leaderboard_type,
+            Leaderboard.period == period
+        )
+        .order_by(Leaderboard.rank.asc())
+        .limit(limit)
+    )
+    entries = rows.scalars().all()
+    
+    my_rank = None
+    for entry in entries:
+        if entry.user_id == current_user.id:
+            my_rank = entry
+            break
+    
+    return LeaderboardResponse(
+        entries=[
+            LeaderboardEntry(
+                rank=e.rank,
+                user_id=e.user_id,
+                username=e.username,
+                level=e.level,
+                score=e.score,
+                avatar_url=e.avatar_url
+            )
+            for e in entries
+        ],
+        my_rank=LeaderboardEntry(
+            rank=my_rank.rank,
+            user_id=my_rank.user_id,
+            username=my_rank.username,
+            level=my_rank.level,
+            score=my_rank.score,
+            avatar_url=my_rank.avatar_url
+        ) if my_rank else None,
+        leaderboard_type=leaderboard_type,
+        period=period
+    )
+
+
+@router.get("/achievements", response_model=list[AchievementResponse])
+async def list_achievements(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all achievements with unlock status for current user."""
+    achievements = await db.execute(select(Achievement).where(Achievement.is_active == True))
+    all_achievements = achievements.scalars().all()
+    
+    user_unlocks = await db.execute(
+        select(UserAchievement).where(UserAchievement.user_id == current_user.id)
+    )
+    unlocked_ids = {ua.achievement_id for ua in user_unlocks.scalars().all()}
+    
+    return [
+        AchievementResponse(
+            id=a.id,
+            slug=a.slug,
+            name=a.name,
+            description=a.description,
+            icon_emoji=a.icon_emoji,
+            xp_reward=a.xp_reward,
+            points_reward=a.points_reward,
+            rarity=a.rarity,
+            unlocked=a.id in unlocked_ids,
+            unlocked_at=None  # Could join if needed
+        )
+        for a in all_achievements
     ]
+
+
+@router.get("/{task_id}/messages", response_model=list[TaskMessageResponse])
+async def get_task_messages(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get chat messages for a task."""
+    stmt = select(TaskMessage).where(
+        TaskMessage.task_id == task_id,
+        TaskMessage.sender_id == current_user.id | TaskMessage.receiver_id == current_user.id
+    ).order_by(TaskMessage.created_at.asc())
+    
+    result = await db.execute(stmt)
+    messages = result.scalars().all()
+    
+    return [
+        TaskMessageResponse(
+            id=m.id,
+            task_id=m.task_id,
+            submission_id=m.submission_id,
+            sender_id=m.sender_id,
+            receiver_id=m.receiver_id,
+            message=m.message,
+            attachment_url=m.attachment_url,
+            attachment_type=m.attachment_type,
+            read_at=m.read_at,
+            created_at=m.created_at
+        )
+        for m in messages
+    ]
+
+
+@router.post("/{task_id}/messages", response_model=TaskMessageResponse, status_code=201)
+async def send_task_message(
+    task_id: int,
+    message: str = Query(...),
+    submission_id: int | None = None,
+    attachment_url: str | None = None,
+    attachment_type: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a message in task chat."""
+    # Verify task exists
+    task = await db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Determine receiver
+    receiver_id = task.sponsor_id if current_user.id != task.sponsor_id else task.sponsor_id
+    if current_user.id == receiver_id:
+        raise HTTPException(status_code=400, detail="Cannot message yourself")
+    
+    msg = TaskMessage(
+        task_id=task_id,
+        submission_id=submission_id,
+        sender_id=current_user.id,
+        receiver_id=receiver_id,
+        message=message,
+        attachment_url=attachment_url,
+        attachment_type=attachment_type
+    )
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+    
+    return TaskMessageResponse(
+        id=msg.id,
+        task_id=msg.task_id,
+        submission_id=msg.submission_id,
+        sender_id=msg.sender_id,
+        receiver_id=msg.receiver_id,
+        message=msg.message,
+        attachment_url=msg.attachment_url,
+        attachment_type=msg.attachment_type,
+        read_at=msg.read_at,
+        created_at=msg.created_at
+    )

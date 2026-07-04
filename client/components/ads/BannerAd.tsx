@@ -2,9 +2,9 @@
  * BannerAd
  *
  * Top- or bottom-of-screen banner slot. Renders the real
- * AdMob banner (via the future `react-native-google-mobile-ads`
- * binding) when the unit ID is present; falls back to
- * `AdPlaceholder` for the dev / no-fill branch.
+ * AdMob banner (via `react-native-google-mobile-ads`) when
+ * the unit ID is present and the SDK is available; falls back
+ * to `AdPlaceholder` for dev / no-fill / missing SDK scenarios.
  *
  * Usage:
  *   <BannerAd adUnit={unitId} />
@@ -16,9 +16,11 @@
  * the layout doesn't have to know about ads.
  */
 
-import { View, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
 
 import { AdPlaceholder } from './AdPlaceholder';
+import { logAdImpression } from '@/src/shared/lib/ads';
 
 
 export type BannerAdProps = {
@@ -33,11 +35,66 @@ export type BannerAdProps = {
 
 
 export function BannerAd({ adUnit, sessionId, body }: BannerAdProps) {
-  // Future: branch on Platform.OS + adUnit presence to mount
-  // <BannerAd size="..." unitId={adUnit} /> from
-  // react-native-google-mobile-ads. The placeholder stays as
-  // the "no SDK / no fill" fallback so the screen never has
-  // a hole.
+  const [sdkAvailable, setSdkAvailable] = useState(false);
+  const [adLoaded, setAdLoaded] = useState(false);
+
+  // Check if real SDK is available (native build only)
+  useEffect(() => {
+    if (!adUnit) return;
+    
+    // Try to dynamically import the SDK
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { BannerAd: RealBannerAd } = require('react-native-google-mobile-ads');
+        if (RealBannerAd) {
+          setSdkAvailable(true);
+        }
+      } catch {
+        // SDK not available - use placeholder
+        setSdkAvailable(false);
+      }
+    })();
+  }, [adUnit]);
+
+  // If SDK available and unit ID present, mount real banner
+  if (sdkAvailable && adUnit && Platform.OS !== 'web') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { BannerAd: RealBannerAd, BannerAdSize } = require('react-native-google-mobile-ads');
+      
+      return (
+        <View style={styles.root}>
+          <RealBannerAd
+            unitId={adUnit}
+            size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+            onAdLoaded={() => {
+              setAdLoaded(true);
+              // Log impression when banner loads
+              logAdImpression({
+                adType: 'banner',
+                provider: 'admob',
+                adUnit,
+                sessionId: sessionId ?? null,
+              }).catch(() => undefined);
+            }}
+            onAdFailedToLoad={(error) => {
+              if (__DEV__) {
+                console.warn('[BannerAd] Failed to load:', error);
+              }
+            }}
+          />
+        </View>
+      );
+    } catch (err) {
+      // SDK require failed - fall through to placeholder
+      if (__DEV__) {
+        console.warn('[BannerAd] SDK import failed:', err);
+      }
+    }
+  }
+
+  // Fallback: placeholder for dev / no-fill / missing SDK
   return (
     <View style={styles.root}>
       <AdPlaceholder

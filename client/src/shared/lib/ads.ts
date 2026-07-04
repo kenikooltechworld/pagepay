@@ -157,6 +157,7 @@ export async function logAdImpression(input: {
   try {
     const res = await apiFetch('/api/v1/ads/impression', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ad_type: input.adType,
         provider: input.provider,
@@ -164,7 +165,21 @@ export async function logAdImpression(input: {
         session_id: input.sessionId,
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (__DEV__) {
+        const text = await res.text();
+        console.warn(`[ads] logAdImpression failed: HTTP ${res.status}`, text.substring(0, 200));
+      }
+      return null;
+    }
+    const contentType = res.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      if (__DEV__) {
+        const text = await res.text();
+        console.warn('[ads] logAdImpression: Non-JSON response', text.substring(0, 200));
+      }
+      return null;
+    }
     const body = (await res.json()) as { ad_event_id: number };
     return body.ad_event_id;
   } catch (err) {

@@ -17,12 +17,29 @@ export interface AdminUserOut {
   is_active: boolean;
   last_login_at: string | null;
   created_at: string;
+  permissions: string[];
 }
 
 export interface DashboardStats {
   total_users: number;
   active_users_today: number;
-  total_revenue_ngn: number;
+  // Ad Revenue breakdown
+  ad_revenue_usd: number;
+  ad_revenue_ngn: number; // In kobo
+  ad_platform_share_usd: number;
+  ad_platform_share_ngn: number; // In kobo
+  ad_user_share_usd: number;
+  ad_user_share_ngn: number; // In kobo
+  // Premium Revenue
+  premium_revenue_ngn: number; // In kobo
+  premium_revenue_usd: number;
+  // Combined totals
+  total_revenue_usd: number;
+  total_revenue_ngn: number; // In kobo
+  platform_earnings_ngn: number; // In kobo
+  user_earnings_ngn: number; // In kobo
+  total_points_distributed: number;
+  // Other stats
   pending_payouts: number;
   pending_notes: number;
   high_severity_fraud_flags: number;
@@ -91,10 +108,24 @@ export interface UserTransactionsResponse {
 }
 
 export interface RevenueSummary {
-  total_revenue_ngn: number;
-  ad_revenue_ngn: number;
-  premium_revenue_ngn: number;
-  gross_profit_ngn: number;
+  // Ad Revenue breakdown
+  ad_revenue_usd: number;
+  ad_revenue_ngn: number; // In kobo
+  ad_platform_share_usd: number;
+  ad_platform_share_ngn: number; // In kobo
+  ad_user_share_usd: number;
+  ad_user_share_ngn: number; // In kobo
+  // Premium Revenue
+  premium_revenue_ngn: number; // In kobo
+  premium_revenue_usd: number;
+  // Combined totals
+  total_revenue_usd: number;
+  total_revenue_ngn: number; // In kobo
+  platform_earnings_ngn: number; // In kobo
+  user_earnings_ngn: number; // In kobo
+  total_points_distributed: number;
+  average_fx_rate: number;
+  current_fx_rate: number;
   period_start: string;
   period_end: string;
 }

@@ -18,6 +18,8 @@ later, add a `claim_token` round-trip here.
 
 import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger("uvicorn")
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -123,6 +125,22 @@ async def end_session(
     session.duration_seconds = int(raw_duration)
 
     effective_duration = max(0, session.duration_seconds - session.total_paused_seconds)
+
+    # Run fraud checks on completed session
+    try:
+        from app.services.fraud_detection import run_fraud_checks_on_session
+        # Estimate content length (500 words per minute of reading)
+        estimated_word_count = int(effective_duration / 60 * 250)  # 250 WPM average
+        await run_fraud_checks_on_session(
+            db=db,
+            session_id=session.id,
+            user_id=current_user.id,
+            duration_seconds=effective_duration,
+            content_length=estimated_word_count
+        )
+    except Exception as e:
+        # Don't fail session if fraud check fails
+        logger.error(f"Fraud check failed for session {session.id}: {e}")
 
     if session.scroll_events > 0:
         session.verified = True

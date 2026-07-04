@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { MockAdModal, type AdProvider } from '@/components/ads/MockAdModal';
+import { RewardedAd } from '@/components/ads/RewardedAd';
 
 type UnlockModalProps = {
   visible: boolean;
@@ -27,9 +28,38 @@ export function UnlockModal({
 }: UnlockModalProps) {
   const [showAd, setShowAd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [adUnit, setAdUnit] = useState('');
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const canAfford = userBalance >= pointsCost;
+
+  // Fetch current user for userId (required for SSV)
+  const { data: user } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/auth/me');
+      if (!res.ok) throw new Error('Failed to load profile');
+      return (await res.json()) as { id: number; points_balance: number };
+    },
+  });
+
+  // Fetch ad config for rewarded unit
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = require('react-native').Platform.OS;
+      const unitKey = platform === 'android' ? 'rewarded_android' : 'rewarded_ios';
+      setAdUnit(adConfig[unitKey] || '');
+    }
+  }, [adConfig]);
 
   const handlePointsUnlock = async () => {
     setLoading(true);
@@ -45,23 +75,15 @@ export function UnlockModal({
     setShowAd(true);
   };
 
-  const handleAdClaim = async (revenueUsd: number) => {
+  const handleAdClaimed = async (info: {
+    adEventId: number;
+    pointsCredited: number;
+    newBalance: number;
+  }) => {
+    // Ad reward already credited by RewardedAd component
+    // Now unlock the study material
     setLoading(true);
     try {
-      const res = await apiFetch('/api/v1/ads/credit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ad_unit: 'study_unlock',
-          provider: 'mock',
-          revenue_usd: revenueUsd,
-          transaction_id: `study_${Date.now()}`,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || 'Ad credit failed');
-      }
       await onUnlockPoints();
       setShowAd(false);
       onClose();
@@ -72,24 +94,27 @@ export function UnlockModal({
     }
   };
 
-  const handleAdSkip = () => {
+  const handleAdClose = () => {
     setShowAd(false);
   };
 
-  if (showAd) {
+  if (showAd && user) {
     return (
-      <MockAdModal
+      <RewardedAd
         visible
-        eyebrow="Sponsored"
+        adUnit={adUnit}
+        userId={user.id}
+        sessionId={null}
         title="Watch to unlock"
-        body={`Watch this short ad to unlock the study material for free.`}
+        eyebrow="Sponsored"
+        body="Watch this ad to unlock the study material for free."
         claimLabel="Claim unlock"
         allowSkip
         skipLabel="Skip"
         durationSeconds={15}
-        provider="mock"
-        onClaim={handleAdClaim}
-        onSkip={handleAdSkip}
+        onClaimed={handleAdClaimed}
+        onSkipped={handleAdClose}
+        onClose={handleAdClose}
       />
     );
   }

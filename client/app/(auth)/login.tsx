@@ -176,15 +176,10 @@ export default function LoginScreen() {
 
                   <View style={styles.forgotRow}>
                     <Pressable
-                      onPress={() =>
-                        Alert.alert(
-                          'Coming soon',
-                          'Password reset emails ship in a future release. Reach support@pagepay.ng if you’re locked out.',
-                        )
-                      }
+                      onPress={() => router.push('/forgot-password')}
                       hitSlop={8}
                     >
-                      <Text style={[styles.forgot, { color: tokens.inkMuted }]}>
+                      <Text style={[styles.forgot, { color: tokens.mint }]}>
                         Forgot password?
                       </Text>
                     </Pressable>

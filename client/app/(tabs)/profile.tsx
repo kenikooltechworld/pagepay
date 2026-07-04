@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -39,6 +40,7 @@ import {
 import { HelpModal } from '@/components/HelpModal';
 import { AboutModal } from '@/components/AboutModal';
 import { useReferralStats, useGenerateReferral } from '@/src/features/community/hooks/use-community';
+import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 
 type UserMe = {
   id: number;
@@ -46,6 +48,8 @@ type UserMe = {
   phone: string | null;
   points_balance: number;
   tier: string;
+  is_worker: boolean;
+  is_sponsor: boolean;
 };
 
 const tierLabel: Record<string, string> = {
@@ -83,6 +87,25 @@ export default function ProfileScreen() {
   const [showPayout, setShowPayout] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+
+  // Fetch ad config for native unit
+  const [nativeAdUnit, setNativeAdUnit] = useState('');
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = Platform.OS;
+      const unitKey = platform === 'android' ? 'in_feed_android' : 'in_feed_ios';
+      setNativeAdUnit(adConfig[unitKey] || '');
+    }
+  }, [adConfig]);
 
   const meQuery = useQuery({
     queryKey: ['me'],
@@ -177,6 +200,77 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* ── Phase 7 Roles ───────────────────────────────────── */}
+        <Text style={[styles.section, { color: tokens.inkMuted }]}>ROLES</Text>
+        <View style={{ gap: 10 }}>
+          <Pressable
+            onPress={() => router.push('/(tabs)/tasks')}
+            style={({ pressed }) => [
+              styles.roleCard,
+              { backgroundColor: tokens.card, borderColor: tokens.border, opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <View style={[styles.roleIcon, { backgroundColor: tokens.mintSoft }]}>
+              <Ionicons name="briefcase-outline" size={20} color={tokens.mint} />
+            </View>
+            <View style={styles.roleInfo}>
+              <Text style={[styles.roleTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                Tasks
+              </Text>
+              <Text style={[styles.roleSubtitle, { color: tokens.inkMuted }]}>
+                Complete tasks and earn rewards
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={tokens.inkMuted} />
+          </Pressable>
+
+          {!meQuery.data?.is_sponsor && (
+            <Pressable
+              onPress={() => router.push('/sponsor/register')}
+              style={({ pressed }) => [
+                styles.roleCard,
+                { backgroundColor: tokens.card, borderColor: tokens.mint, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <View style={[styles.roleIcon, { backgroundColor: tokens.mintSoft }]}>
+                <Ionicons name="add-circle-outline" size={20} color={tokens.mint} />
+              </View>
+              <View style={styles.roleInfo}>
+                <Text style={[styles.roleTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                  Become a Sponsor
+                </Text>
+                <Text style={[styles.roleSubtitle, { color: tokens.inkMuted }]}>
+                  Post tasks and grow your audience
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={tokens.mint} />
+            </Pressable>
+          )}
+
+          {meQuery.data?.is_sponsor && (
+            <Pressable
+              onPress={() => router.push('/sponsor/dashboard')}
+              style={({ pressed }) => [
+                styles.roleCard,
+                { backgroundColor: tokens.card, borderColor: tokens.border, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <View style={[styles.roleIcon, { backgroundColor: tokens.mintSoft }]}>
+                <Ionicons name="planet-outline" size={20} color={tokens.mint} />
+              </View>
+              <View style={styles.roleInfo}>
+                <Text style={[styles.roleTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                  Sponsor Dashboard
+                </Text>
+                <Text style={[styles.roleSubtitle, { color: tokens.inkMuted }]}>
+                  Manage your tasks and payouts
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={tokens.inkMuted} />
+            </Pressable>
+          )}
+        </View>
+
         {/* ── Payout account ───────────────────────────────────── */}
         <Text style={[styles.section, { color: tokens.inkMuted }]}>PAYOUT ACCOUNT</Text>
         <View style={[styles.payoutCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
@@ -247,6 +341,14 @@ export default function ProfileScreen() {
 
         {/* ── Referral ──────────────────────────────────────────── */}
         <ReferralSection tokens={tokens} />
+
+        {/* ── Native ad after stats ─────────────────────────────── */}
+        {nativeAdUnit && (
+          <NativeAdBanner
+            adUnit={nativeAdUnit}
+            sessionId={null}
+          />
+        )}
 
         {/* ── Settings rows ────────────────────────────────────── */}
         <Text style={[styles.section, { color: tokens.inkMuted }]}>ACCOUNT</Text>
@@ -611,6 +713,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 6,
     marginLeft: 4,
+  },
+  // Role cards
+  roleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+  },
+  roleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  roleTitle: {
+    fontSize: 15,
+  },
+  roleSubtitle: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   // Payout card
   payoutCard: {

@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -22,6 +23,7 @@ import { PageMark } from '@/components/PageMark';
 import { CategoryChip } from '@/components/CategoryChip';
 import { ContentCard, ContentItem } from '@/components/ContentCard';
 import { ResumeCard } from '@/components/ResumeCard';
+import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 
 const CATEGORIES = ['Fiction', 'Classics', 'News', 'Study'] as const;
@@ -49,6 +51,25 @@ export default function HomeScreen() {
       return (await res.json()) as UserMe;
     },
   });
+
+  // Fetch ad config for native unit
+  const [nativeAdUnit, setNativeAdUnit] = useState('');
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = Platform.OS;
+      const unitKey = platform === 'android' ? 'in_feed_android' : 'in_feed_ios';
+      setNativeAdUnit(adConfig[unitKey] || '');
+    }
+  }, [adConfig]);
 
   const feedQuery = useQuery({
     queryKey: ['feed', 'featured', meQuery.data?.id ?? 0],
@@ -317,13 +338,25 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.feed}>
-              {items.map((item) => (
-                <ContentCard
-                  key={item.id}
-                  item={item}
-                  onPress={() => onCardPress(item.id)}
-                />
-              ))}
+              {items.map((item, index) => {
+                // Inject native ad every 4th position
+                const shouldShowAd = (index + 1) % 4 === 0 && nativeAdUnit;
+                
+                return (
+                  <View key={`feed-${item.id}-${index}`}>
+                    <ContentCard
+                      item={item}
+                      onPress={() => onCardPress(item.id)}
+                    />
+                    {shouldShowAd && (
+                      <NativeAdBanner
+                        adUnit={nativeAdUnit}
+                        sessionId={null}
+                      />
+                    )}
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>

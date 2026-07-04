@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Outlet, useOutletContext, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Outlet, useOutletContext, Navigate, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { useAuthStore } from '@/store/auth';
@@ -27,8 +27,9 @@ export interface LayoutContext {
 export function Layout() {
   const { isAuthenticated, setAuth, clearAuth } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navigate = useNavigate();
 
-  // Check auth status by calling /admin/auth/me
+  // Check auth status by calling /auth/me
   // If httpOnly cookie is valid, backend returns admin info
   const { data: admin, isLoading, error } = useQuery({
     queryKey: ['admin', 'me'],
@@ -36,19 +37,23 @@ export function Layout() {
       const { data } = await adminApi.get<AdminUserOut>('/admin/auth/me');
       return data;
     },
-    retry: false,
+    retry: 1, // Retry once after 1 second to give cookie time to arrive
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000),
     staleTime: 60_000,
-    onSuccess: (data) => {
-      if (!isAuthenticated) {
-        setAuth(data.role, []); // Permissions need to be fetched separately or included in /me response
-      }
-    },
-    onError: () => {
-      if (isAuthenticated) {
-        clearAuth();
-      }
-    },
   });
+
+  // Update auth store when admin data changes (use effect to avoid render-time setState)
+  useEffect(() => {
+    if (admin && !isAuthenticated) {
+      setAuth(admin.role, admin.permissions || []);
+    }
+    // Only log out if we had a valid session before (isAuthenticated was true)
+    // and now the /me endpoint fails. This prevents immediate logout on fresh login.
+    if (error && isAuthenticated) {
+      clearAuth();
+      navigate('/login', { replace: true });
+    }
+  }, [admin, error, isAuthenticated, setAuth, clearAuth, navigate]);
 
   // Show loading state while checking auth
   if (isLoading) {

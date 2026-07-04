@@ -23,7 +23,7 @@ import { AuthScreenEntrance, AnimatedSubmitButton, ErrorShake, SuccessRedirect, 
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-type FieldErrors = Partial<Record<'email' | 'password' | 'confirm', string>>;
+type FieldErrors = Partial<Record<'email' | 'password' | 'confirm' | 'referralCode', string>>;
 
 /**
  * Returns 0..4 — strength of a password. Used to fill the 4-segment bar.
@@ -53,6 +53,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -86,6 +87,10 @@ export default function RegisterScreen() {
     setConfirm(v);
     setErrors((p) => (p.confirm ? { ...p, confirm: undefined } : p));
   }, []);
+  const onChangeReferralCode = useCallback((v: string) => {
+    setReferralCode(v.toUpperCase());
+    setErrors((p) => (p.referralCode ? { ...p, referralCode: undefined } : p));
+  }, []);
 
   const validate = useCallback((): FieldErrors => {
     const e: FieldErrors = {};
@@ -94,8 +99,13 @@ export default function RegisterScreen() {
     else if (password.length < 8) e.password = 'Use at least 8 characters.';
     if (!confirm) e.confirm = 'Re-enter your password.';
     else if (confirm !== password) e.confirm = "Passwords don't match.";
+    if (referralCode && referralCode.length !== 6) {
+      e.referralCode = 'Referral code must be 6 characters.';
+    }
     return e;
-  }, [email, password, confirm]);
+  }, [email, password, confirm, referralCode]);
+
+  const isEmail = useCallback((v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), []);
 
   const handleRegister = useCallback(async () => {
     setFormError(null);
@@ -115,10 +125,26 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
+      const payload: Record<string, string | undefined> = {
+        password,
+        referral_code: referralCode || undefined,
+      };
+      if (isEmail(email)) {
+        payload.email = email.trim();
+      } else if (email.trim().length >= 10) {
+        payload.phone = email.trim();
+      } else {
+        setFormError('Enter a valid email address or phone number.');
+        setErrorTrigger(true);
+        setTimeout(() => setErrorTrigger(false), 600);
+        setLoading(false);
+        return;
+      }
+
       const res = await apiFetch('/api/v1/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -132,6 +158,8 @@ export default function RegisterScreen() {
         }
         if (status === 409) {
           setFormError('An account with that email already exists. Sign in instead.');
+        } else if (status === 400 && detail.includes('referral')) {
+          setErrors({ referralCode: 'Invalid or expired referral code. Check the code and try again.' });
         } else {
           setFormError(detail || "Couldn't create your account. Try again.");
         }
@@ -241,39 +269,59 @@ export default function RegisterScreen() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     textContentType="newPassword"
-                    returnKeyType="go"
-                    onSubmitEditing={handleRegister}
+                    returnKeyType="next"
                     error={errors.confirm}
                   />
+
+                  <Field
+                    label="Referral code (optional)"
+                    value={referralCode}
+                    onChangeText={onChangeReferralCode}
+                    placeholder="ABC123"
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    maxLength={6}
+                    returnKeyType="go"
+                    onSubmitEditing={handleRegister}
+                    error={errors.referralCode}
+                  />
+                  <Text style={[styles.helper, { color: tokens.inkMuted, marginTop: -8 }]}>
+                    Have an invitation code? Enter it here to connect with your referrer.
+                  </Text>
                 </View>
 
-                <Pressable
-                  onPress={() => setAgreed((a) => !a)}
-                  hitSlop={6}
-                  style={styles.termsRow}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: agreed }}
-                >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      {
-                        borderColor: agreed ? tokens.mint : tokens.border,
-                        backgroundColor: agreed ? tokens.mint : 'transparent',
-                      },
-                    ]}
+                  <Pressable
+                    onPress={() => setAgreed((a) => !a)}
+                    hitSlop={6}
+                    style={styles.termsRow}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: agreed }}
                   >
-                    {agreed ? (
-                      <Ionicons name="checkmark" size={14} color={tokens.mintText} />
-                    ) : null}
-                  </View>
-                  <Text style={[styles.termsText, { color: tokens.inkMuted }]}>
-                    I agree to the{' '}
-                    <Text style={{ color: tokens.mint, fontWeight: '600' }}>Terms</Text>
-                    {' '}and{' '}
-                    <Text style={{ color: tokens.mint, fontWeight: '600' }}>Privacy Policy</Text>.
-                  </Text>
-                </Pressable>
+                    <View
+                      style={[
+                        styles.checkbox,
+                        {
+                          borderColor: agreed ? tokens.mint : tokens.border,
+                          backgroundColor: agreed ? tokens.mint : 'transparent',
+                        },
+                      ]}
+                    >
+                      {agreed ? (
+                        <Ionicons name="checkmark" size={14} color={tokens.mintText} />
+                      ) : null}
+                    </View>
+                    <Text style={[styles.termsText, { color: tokens.inkMuted }]}>
+                      I agree to the{' '}
+                      <Pressable onPress={() => router.push({ pathname: '/terms', params: { title: 'Terms of Service' } })}>
+                        <Text style={{ color: tokens.mint, fontWeight: '600' }}>Terms</Text>
+                      </Pressable>
+                      {' '}and{' '}
+                      <Pressable onPress={() => router.push({ pathname: '/privacy', params: { title: 'Privacy Policy' } })}>
+                        <Text style={{ color: tokens.mint, fontWeight: '600' }}>Privacy Policy</Text>
+                      </Pressable>
+                      .
+                    </Text>
+                  </Pressable>
 
                 <AnimatedSubmitButton
                   title="Create account"

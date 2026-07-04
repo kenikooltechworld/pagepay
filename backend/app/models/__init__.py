@@ -1,6 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import (
-    String, Integer, BigInteger, Boolean, Text, DateTime, Enum,
+    String, Integer, BigInteger, Boolean, Text, DateTime, Enum, Float,
 )
 from datetime import datetime
 import enum
@@ -870,3 +870,120 @@ class SponsorKYC(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reviewed_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class TaskMessage(Base):
+    """In-app chat between worker and sponsor about a specific task/submission."""
+    __tablename__ = "task_messages"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    submission_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    
+    sender_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    receiver_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    
+    message: Mapped[str] = mapped_column(Text)
+    attachment_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    attachment_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Achievement(Base):
+    """Predefined achievements workers can unlock."""
+    __tablename__ = "achievements"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(String(1000))
+    icon_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    icon_emoji: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    
+    xp_reward: Mapped[int] = mapped_column(Integer, default=0)
+    points_reward: Mapped[int] = mapped_column(Integer, default=0)
+    
+    condition_type: Mapped[str] = mapped_column(String(50))
+    condition_value: Mapped[int] = mapped_column(Integer)
+    
+    rarity: Mapped[str] = mapped_column(String(20), default="common")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserAchievement(Base):
+    """Tracks which achievements each user has unlocked."""
+    __tablename__ = "user_achievements"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    achievement_id: Mapped[int] = mapped_column(Integer, index=True)
+    
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    notified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Leaderboard(Base):
+    """Cached leaderboard rankings - updated hourly by cron job."""
+    __tablename__ = "leaderboards"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    
+    leaderboard_type: Mapped[str] = mapped_column(String(50), index=True)
+    period: Mapped[str] = mapped_column(String(50), index=True)
+    rank: Mapped[int] = mapped_column(Integer, index=True)
+    score: Mapped[float] = mapped_column(Float)
+    
+    username: Mapped[str] = mapped_column(String(255))
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    level: Mapped[int] = mapped_column(Integer)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TaskAnalytics(Base):
+    """Aggregated analytics per task for sponsor dashboard."""
+    __tablename__ = "task_analytics"
+    
+    task_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    unique_viewers: Mapped[int] = mapped_column(Integer, default=0)
+    started: Mapped[int] = mapped_column(Integer, default=0)
+    submitted: Mapped[int] = mapped_column(Integer, default=0)
+    approved: Mapped[int] = mapped_column(Integer, default=0)
+    rejected: Mapped[int] = mapped_column(Integer, default=0)
+    
+    view_to_start_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    start_to_submit_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    submit_to_approve_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    
+    avg_completion_time: Mapped[int] = mapped_column(Integer, default=0)
+    median_completion_time: Mapped[int] = mapped_column(Integer, default=0)
+    
+    gender_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    age_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    city_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hourly_submissions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    avg_ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_auto_approve_count: Mapped[int] = mapped_column(Integer, default=0)
+    manual_review_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PasswordResetToken(Base):
+    """Single-use tokens for forgot-password flow."""
+    __tablename__ = "password_reset_tokens"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

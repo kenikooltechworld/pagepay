@@ -68,7 +68,7 @@ export type TaskSubmission = {
   submitted_at: string;
   verified_at: string | null;
   rejection_reason: string | null;
-  ai_confidence_score: number | null;
+  ai_confidence: number | null;
   proof_image_url: string | null;
   proof_url: string | null;
   proof_text: string | null;

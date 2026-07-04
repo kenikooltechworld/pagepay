@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, AppState, AppStateStatus, Platform, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/src/shared/api/client';
-import { MockAdModal } from '@/components/MockAdModal';
+import { RewardedAd } from '@/components/ads/RewardedAd';
+import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
@@ -46,13 +47,13 @@ type SessionEndResponse = {
  *
  * Flow:
  *   1. Mount → fetch content + progress (resume offset).
- *   2. PRE-READ GATE (ad #1): show MockAdModal. On claim →
+ *   2. PRE-READ GATE (ad #1): show RewardedAd. On claim →
  *      POST /session/start → unlock the timer + heartbeat.
  *      On skip → bounce to home (no session row created, no points).
  *   3. Active reading: heartbeat every 10s, scroll-track, visible
  *      timer ticks (1s) up to 60s, then the inline Finish button
  *      unlocks.
- *   4. Tap Finish → POST-READ GATE (ad #2): show MockAdModal FIRST.
+ *   4. Tap Finish → POST-READ GATE (ad #2): show RewardedAd FIRST.
  *      On claim → POST /session/end (stages pending_points) →
  *      auto-POST /session/claim (credits the wallet) → POST
  *      /progress/finish (advance the slice pointer) → navigate to
@@ -87,6 +88,7 @@ export default function ReaderScreen() {
   const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [adUnit, setAdUnit] = useState('');
   // Pre-read gate: unlocks the session timer.
   const [preReadOpen, setPreReadOpen] = useState(true);
   // Post-read gate: sits BEFORE /session/end, not after. The user has
@@ -95,6 +97,9 @@ export default function ReaderScreen() {
   // and stages pending_points inside /session/end; the auto-claim after
   // /session/end closes the loop without surfacing a third modal.
   const [postReadAdOpen, setPostReadAdOpen] = useState(false);
+
+  // Fetch native ad unit for in-content placement
+  const [nativeAdUnit, setNativeAdUnit] = useState('');
 
   const appState = useRef(AppState.currentState);
   const heartbeatRef = useRef<number | null>(null);
@@ -113,6 +118,36 @@ export default function ReaderScreen() {
   // modal on a screen the user has already navigated away from (causing
   // the visible flicker back to Home).
   const finishedManuallyRef = useRef(false);
+
+  // Fetch current user for userId (required for SSV)
+  const { data: user } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/auth/me');
+      if (!res.ok) throw new Error('Failed to load profile');
+      return (await res.json()) as { id: number; points_balance: number };
+    },
+  });
+
+  // Fetch ad config for rewarded unit
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = Platform.OS;
+      const rewardedKey = platform === 'android' ? 'rewarded_android' : 'rewarded_ios';
+      const nativeKey = platform === 'android' ? 'in_feed_android' : 'in_feed_ios';
+      setAdUnit(adConfig[rewardedKey] || '');
+      setNativeAdUnit(adConfig[nativeKey] || '');
+    }
+  }, [adConfig]);
 
   // Load content + resume metadata once on mount. Session creation is
   // deferred until the user clears the pre-read gate.
@@ -237,6 +272,7 @@ export default function ReaderScreen() {
   };
 
   const endSession = async (sid: number) => {
+    console.log('[Reader] endSession called for session ID:', sid);
     try {
       // Manual finish path: endSession is being driven by the user
       // (Finish & claim, Skip, no-claim advance). Mark the session as
@@ -247,6 +283,7 @@ export default function ReaderScreen() {
       // router.replace('/(tabs)') would visibly flicker the user back to
       // Home after they just landed on the book detail.
       finishedManuallyRef.current = true;
+      console.log('[Reader] Calling /session/end...');
       const res = await apiFetch('/api/v1/session/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,6 +298,7 @@ export default function ReaderScreen() {
         return;
       }
       const json = (await res.json()) as SessionEndResponse;
+      console.log('[Reader] Session ended, response:', json);
       // Two-stage close:
       //   1. /session/end STAGED pending_points but did not credit.
       //   2. If the user earned anything, /session/claim credits it
@@ -270,29 +308,35 @@ export default function ReaderScreen() {
       //      whether the session earned points (skipped or too-short
       //      sessions still advance — the user did the read).
       if (json.requires_claim && json.pending_points > 0) {
+        console.log('[Reader] Auto-claiming pending points...');
         try {
           await apiFetch('/api/v1/session/claim', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: sid }),
           });
+          console.log('[Reader] Points claimed successfully');
         } catch (e) {
           console.warn('Auto-claim after end failed', e);
         }
       }
+      console.log('[Reader] Finishing progress...');
       try {
         await apiFetch(`/api/v1/progress/finish?slice_id=${Number(id)}`, { method: 'POST' });
+        console.log('[Reader] Progress finished');
       } catch (e) {
         console.warn('Progress finish failed', e);
       }
       // Return to the book detail so the user sees the next slice
       // unlocked and chooses when to start it.
       const parentId = content?.parent_work_id;
+      console.log('[Reader] Navigating to parent book:', parentId);
       if (parentId) {
         router.replace(`/book/${parentId}` as never);
       } else {
         router.replace('/(tabs)');
       }
+      console.log('[Reader] Navigation triggered');
     } catch (e) {
       console.error('End session failed', e);
       router.replace('/(tabs)');
@@ -340,7 +384,7 @@ export default function ReaderScreen() {
    * Tear down the active heartbeat and surface the post-read ad modal.
    * The modal sits BEFORE /session/end now — the user watches (or skips)
    * the ad, then the close-out sequence runs end → auto-claim → progress
-   * → navigate. endSession is called from the modal's onClaim / onSkip,
+   * → navigate. endSession is called from the modal's onClaimed / onSkipped,
    * not from here.
    */
   const triggerFinish = async () => {
@@ -365,34 +409,6 @@ export default function ReaderScreen() {
     }
   };
 
-  const onPostReadAdClaim = async (revenueUsd: number) => {
-    // User watched the ad — close the modal, credit the ad reward, and
-    // run the close-out: /session/end stages pending_points; the auto-
-    // claim inside endSession credits it (or not, if 0); /progress/finish
-    // advances the slice pointer; navigate to book detail.
-    setPostReadAdOpen(false);
-    // Fire the credit before endSession so the wallet bump lands on the
-    // book detail screen the user is about to land on. The credit
-    // handler invalidates ['me'] which triggers a refetch on whatever
-    // screen the user lands on next.
-    await creditAdReward('post_read', revenueUsd);
-    if (sessionIdRef.current) {
-      await endSession(sessionIdRef.current);
-    }
-  };
-
-  const onPostReadAdSkip = async () => {
-    // User skipped the second ad — still close out the session, still
-    // advance the slice pointer, but forfeit the points (we don't
-    // /session/claim, so pending_points stays staged and unclaimed on
-    // the row). Same forfeit model as before, just initiated by the
-    // modal being dismissed without watching.
-    setPostReadAdOpen(false);
-    if (sessionIdRef.current) {
-      await endSession(sessionIdRef.current);
-    }
-  };
-
   // User taps the inline Finish button at the end of the slice. One-shot
   // via finishFiredRef — a double-tap can't fire twice.
   const onFinishTap = async () => {
@@ -410,59 +426,17 @@ export default function ReaderScreen() {
   const potentialPoints = Math.max(0, Math.floor(elapsedSeconds / 600) * 5);
 
   // Pre-read gate handlers.
-    // Credit the user's wallet based on the revenue this single ad
-  // impression earned. Called from the ad-modal's onClaim with the
-  // synthetic USD revenue the modal generated. Invalidates ['me'] so
-  // the home chip + wallet tab reflect the new balance immediately.
-  //
-  // Network errors here are non-fatal: the modal close-out flow
-  // (startSession, endSession) runs regardless. The user gets their
-  // read reward even if the ad-credit call fails — we just log and
-  // move on, rather than trapping them on a screen because an ad
-  // network was down.
-  const creditAdReward = async (adUnit: 'pre_read' | 'post_read', revenueUsd: number) => {
-    // Unique per impression. Phase 2 swaps this for the real SDK's
-    // transaction id (AdMob's onAdPaid callback, AppLovin's postback).
-    // For now a timestamp + ad_unit + session_id is unique within a
-    // single user and idempotent against accidental replay.
-    const transactionId = `mock-${sessionIdRef.current ?? 0}-${adUnit}-${Date.now()}`;
-    try {
-      const res = await apiFetch('/api/v1/ads/credit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ad_unit: adUnit,
-          provider: 'mock',
-          revenue_usd: revenueUsd,
-          transaction_id: transactionId,
-        }),
-      });
-      const ct = res.headers.get('content-type') ?? '';
-      if (!ct.includes('application/json')) {
-        console.warn('Ad credit non-JSON response', res.status);
-        return;
-      }
-      const json = await res.json();
-      // Refresh the home chip + wallet tab with the server's authoritative balance.
-      queryClient.invalidateQueries({ queryKey: ['me'] });
-      queryClient.invalidateQueries({ queryKey: ['wallet'] });
-      if (json.credit_status === 'credited') {
-        console.info(
-          `Ad credit: +${json.points_credited} pts (rate ₦${json.fx_rate_used.toFixed(2)}/$1, ` +
-          `user share ₦${json.user_share_ngn.toFixed(4)}, balance ${json.new_balance})`,
-        );
-      }
-    } catch (e) {
-      console.warn('Ad credit failed (non-fatal)', e);
-    }
-  };
-
-  const onPreReadClaim = async (revenueUsd: number) => {
+  const onPreReadClaimed = async (info: {
+    adEventId: number;
+    pointsCredited: number;
+    newBalance: number;
+  }) => {
     setPreReadOpen(false);
-    // Fire the credit call in parallel with startSession — the credit
-    // doesn't depend on the session id, and the user shouldn't have to
-    // wait for two sequential network calls to start reading.
-    void creditAdReward('pre_read', revenueUsd);
+    // Ad reward already credited by RewardedAd component
+    // Invalidate queries to refresh balance
+    queryClient.invalidateQueries({ queryKey: ['me'] });
+    queryClient.invalidateQueries({ queryKey: ['wallet'] });
+    
     try {
       await startSession();
     } catch (e) {
@@ -471,9 +445,54 @@ export default function ReaderScreen() {
     }
   };
 
-  const onPreReadSkip = () => {
+  const onPreReadSkipped = () => {
     setPreReadOpen(false);
     router.replace('/(tabs)');
+  };
+
+  // Post-read gate handlers.
+  const onPostReadAdClaimed = async (info: {
+    adEventId: number;
+    pointsCredited: number;
+    newBalance: number;
+  }) => {
+    console.log('[Reader] Post-read ad claimed, closing modal and ending session...');
+    setPostReadAdOpen(false);
+    // Reset finish button state
+    finishFiredRef.current = false;
+    // Ad reward already credited by RewardedAd component
+    // Invalidate queries to refresh balance
+    queryClient.invalidateQueries({ queryKey: ['me'] });
+    queryClient.invalidateQueries({ queryKey: ['wallet'] });
+    
+    if (sessionIdRef.current) {
+      console.log('[Reader] Calling endSession with ID:', sessionIdRef.current);
+      await endSession(sessionIdRef.current);
+      console.log('[Reader] endSession completed');
+    } else {
+      console.warn('[Reader] No session ID, navigating to tabs');
+      router.replace('/(tabs)');
+    }
+  };
+
+  const onPostReadAdSkipped = async () => {
+    // User skipped the second ad — still close out the session, still
+    // advance the slice pointer, but forfeit the points (we don't
+    // /session/claim, so pending_points stays staged and unclaimed on
+    // the row). Same forfeit model as before, just initiated by the
+    // modal being dismissed without watching.
+    console.log('[Reader] Post-read ad skipped, closing modal and ending session...');
+    setPostReadAdOpen(false);
+    // Reset finish button state
+    finishFiredRef.current = false;
+    if (sessionIdRef.current) {
+      console.log('[Reader] Calling endSession with ID:', sessionIdRef.current);
+      await endSession(sessionIdRef.current);
+      console.log('[Reader] endSession completed');
+    } else {
+      console.warn('[Reader] No session ID, navigating to tabs');
+      router.replace('/(tabs)');
+    }
   };
 
   if (loading) {
@@ -514,9 +533,68 @@ export default function ReaderScreen() {
         onScroll={handleScroll}
         scrollEventThrottle={200}
       >
-        <Text style={[styles.body, { color: tokens.ink }]}>
-          {content.body_text || 'No content available.'}
-        </Text>
+        {/* Split content and inject native ads every 400 characters */}
+        {(() => {
+          const bodyText = content.body_text || 'No content available.';
+          const adInterval = 400; // Insert ad every 400 characters
+          const chunks: Array<{ type: 'text' | 'ad'; content: string; key: string }> = [];
+          
+          if (!nativeAdUnit || !sessionId || bodyText.length <= adInterval) {
+            // No ads or content too short - show as normal
+            return (
+              <Text style={[styles.body, { color: tokens.ink }]}>
+                {bodyText}
+              </Text>
+            );
+          }
+          
+          // Split text into chunks with ads between them
+          let position = 0;
+          let adCount = 0;
+          
+          while (position < bodyText.length) {
+            const nextChunkEnd = Math.min(position + adInterval, bodyText.length);
+            const textChunk = bodyText.substring(position, nextChunkEnd);
+            
+            // Add text chunk
+            chunks.push({
+              type: 'text',
+              content: textChunk,
+              key: `text-${position}`,
+            });
+            
+            // Add ad after chunk (if not at the end)
+            if (nextChunkEnd < bodyText.length) {
+              chunks.push({
+                type: 'ad',
+                content: '',
+                key: `ad-${adCount}`,
+              });
+              adCount++;
+            }
+            
+            position = nextChunkEnd;
+          }
+          
+          return chunks.map((chunk) => {
+            if (chunk.type === 'ad') {
+              return (
+                <View key={chunk.key} style={{ marginVertical: 20 }}>
+                  <NativeAdBanner
+                    adUnit={nativeAdUnit}
+                    sessionId={sessionId}
+                  />
+                </View>
+              );
+            }
+            return (
+              <Text key={chunk.key} style={[styles.body, { color: tokens.ink }]}>
+                {chunk.content}
+              </Text>
+            );
+          });
+        })()}
+
         {/* Inline end-of-slice footer. The Finish button only appears once
             1 minute has elapsed on the session timer (the "1 minute" gate
             that fires the reward prompt). Before that, the user is meant
@@ -556,16 +634,21 @@ export default function ReaderScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      <MockAdModal
+      <RewardedAd
         visible={preReadOpen}
+        adUnit={adUnit}
+        userId={user?.id ?? 0}
+        sessionId={sessionIdRef.current}
+        title="Watch to start earning"
         eyebrow="Sponsored"
-        title="Watch a short ad to earn from this read"
-        body="A quick ad unlocks the timer. You'll earn points based on how long you read."
+        body="Watch this ad to unlock the reading timer. You'll earn points based on how long you read."
         claimLabel="Watch ad & start"
+        allowSkip
+        skipLabel="Skip & go home"
         durationSeconds={30}
-        provider="mock"
-        onClaim={onPreReadClaim}
-        onSkip={onPreReadSkip}
+        onClaimed={onPreReadClaimed}
+        onSkipped={onPreReadSkipped}
+        onClose={() => {}}
       />
 
       {/* Post-read gate (the second ad). Sits BEFORE /session/end: the
@@ -574,17 +657,21 @@ export default function ReaderScreen() {
           progress → navigate. Skipping → end (still advances the slice
           pointer) but no claim is filed, so the user forfeits the
           pending points. Either path returns them to the book detail. */}
-      <MockAdModal
+      <RewardedAd
         visible={postReadAdOpen}
-        eyebrow="Sponsored"
+        adUnit={adUnit}
+        userId={user?.id ?? 0}
+        sessionId={sessionIdRef.current}
         title="One more ad to wrap up"
-        body="Watch a short ad to lock in your points for this read. Skip forfeits the reward but still saves your progress."
+        eyebrow="Sponsored"
+        body="Watch this ad to lock in your points for this read. Skip forfeits the reward but still saves your progress."
         claimLabel="Watch ad & finish"
+        allowSkip
         skipLabel="Skip & forfeit"
         durationSeconds={30}
-        provider="mock"
-        onClaim={onPostReadAdClaim}
-        onSkip={onPostReadAdSkip}
+        onClaimed={onPostReadAdClaimed}
+        onSkipped={onPostReadAdSkipped}
+        onClose={() => {}}
       />
     </View>
   );

@@ -12,6 +12,8 @@ import {
   ListTodo,
   BarChart3,
   Brain,
+  UserCog,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { adminApi } from '@/lib/api';
@@ -20,8 +22,10 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   { label: 'Analytics', icon: BarChart3, path: '/analytics' },
   { label: 'Users', icon: Users, path: '/users' },
+  { label: 'Admin Users', icon: UserCog, path: '/admins' },
   { label: 'Finance', icon: DollarSign, path: '/finance' },
   { label: 'Content', icon: FileText, path: '/content' },
+  { label: 'Community', icon: MessageSquare, path: '/community' },
   { label: 'Tasks', icon: ListTodo, path: '/tasks' },
   { label: 'Fraud', icon: Shield, path: '/fraud' },
   { label: 'AI Health', icon: Brain, path: '/ai-health' },

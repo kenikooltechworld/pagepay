@@ -4,7 +4,7 @@ import type { UserListResponse } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { Shield, Eye } from 'lucide-react';
 import React from 'react';
-import { Card, Badge, Button, Pagination, ShimmerLoader, Container } from '@/shared/components';
+import { Card, Badge, Button, Pagination, ShimmerLoader, Container, ConfirmModal, Tooltip } from '@/shared/components';
 import { TopHeader } from '@/shared/components/TopHeader';
 import { useLayoutContext } from '@/shared/components/Layout';
 import { Input } from '@/shared/components/Input';
@@ -18,6 +18,10 @@ export function UsersPage() {
   const [tier, setTier] = React.useState('');
   const [status, setStatus] = React.useState('');
   const [selectedUserId, setSelectedUserId] = React.useState<number | null>(null);
+  const [banModalOpen, setBanModalOpen] = React.useState(false);
+  const [unbanModalOpen, setUnbanModalOpen] = React.useState(false);
+  const [userToBan, setUserToBan] = React.useState<number | null>(null);
+  const [userToUnban, setUserToUnban] = React.useState<number | null>(null);
   const hasPermission = useAuthStore((s) => s.hasPermission);
 
   const { data, isLoading, error } = useQuery({
@@ -34,24 +38,48 @@ export function UsersPage() {
   const queryClient = useQueryClient();
 
   const banMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      const reason = prompt('Ban reason:');
-      if (!reason) return;
-      await adminApi.post(`/admin/users/${userId}/ban`, null, { params: { reason } });
+    mutationFn: async ({ userId, reason }: { userId: number; reason: string }) => {
+      await adminApi.post(`/users/${userId}/ban`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setBanModalOpen(false);
+      setUserToBan(null);
     },
   });
 
   const unbanMutation = useMutation({
     mutationFn: async (userId: number) => {
-      await adminApi.post(`/admin/users/${userId}/unban`);
+      await adminApi.post(`/users/${userId}/unban`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setUnbanModalOpen(false);
+      setUserToUnban(null);
     },
   });
+
+  const handleBanClick = (userId: number) => {
+    setUserToBan(userId);
+    setBanModalOpen(true);
+  };
+
+  const handleUnbanClick = (userId: number) => {
+    setUserToUnban(userId);
+    setUnbanModalOpen(true);
+  };
+
+  const handleBanConfirm = (reason?: string) => {
+    if (userToBan && reason) {
+      banMutation.mutate({ userId: userToBan, reason });
+    }
+  };
+
+  const handleUnbanConfirm = () => {
+    if (userToUnban) {
+      unbanMutation.mutate(userToUnban);
+    }
+  };
 
   const totalPages = data ? Math.ceil(data.total / data.limit) : 0;
 
@@ -124,18 +152,24 @@ export function UsersPage() {
                       <td className="px-4 py-3 text-sm text-text-main">{user.points_balance.toLocaleString()}</td>
                       <td className="px-4 py-3 text-sm text-text-main">
                         <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => setSelectedUserId(user.id)}>
-                            <Eye size={14} /> View
-                          </Button>
-                          {hasPermission('users.ban') && user.status === 'active' && (
-                            <Button size="sm" variant="danger" onClick={() => banMutation.mutate(user.id)}>
-                              <Shield size={14} /> Ban
+                          <Tooltip content="View user details" position="top">
+                            <Button size="sm" variant="secondary" onClick={() => setSelectedUserId(user.id)}>
+                              <Eye size={14} /> View
                             </Button>
+                          </Tooltip>
+                          {hasPermission('users.ban') && user.status === 'active' && (
+                            <Tooltip content="Ban this user" position="top">
+                              <Button size="sm" variant="danger" onClick={() => handleBanClick(user.id)}>
+                                <Shield size={14} /> Ban
+                              </Button>
+                            </Tooltip>
                           )}
                           {hasPermission('users.ban') && user.status === 'banned' && (
-                            <Button size="sm" variant="secondary" onClick={() => unbanMutation.mutate(user.id)}>
-                              Unban
-                            </Button>
+                            <Tooltip content="Restore user access" position="top">
+                              <Button size="sm" variant="secondary" onClick={() => handleUnbanClick(user.id)}>
+                                Unban
+                              </Button>
+                            </Tooltip>
                           )}
                         </div>
                       </td>
@@ -154,6 +188,41 @@ export function UsersPage() {
 
       {/* User Detail Modal */}
       <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+
+      {/* Ban Confirmation Modal */}
+      <ConfirmModal
+        isOpen={banModalOpen}
+        onClose={() => {
+          setBanModalOpen(false);
+          setUserToBan(null);
+        }}
+        onConfirm={handleBanConfirm}
+        title="Ban User"
+        message="Please provide a reason for banning this user. This action will prevent them from accessing the platform."
+        confirmText="Ban User"
+        cancelText="Cancel"
+        variant="danger"
+        requireInput={true}
+        inputLabel="Ban Reason"
+        inputPlaceholder="Enter reason for ban..."
+        isLoading={banMutation.isPending}
+      />
+
+      {/* Unban Confirmation Modal */}
+      <ConfirmModal
+        isOpen={unbanModalOpen}
+        onClose={() => {
+          setUnbanModalOpen(false);
+          setUserToUnban(null);
+        }}
+        onConfirm={handleUnbanConfirm}
+        title="Unban User"
+        message="Are you sure you want to unban this user? They will regain access to the platform."
+        confirmText="Unban User"
+        cancelText="Cancel"
+        variant="primary"
+        isLoading={unbanMutation.isPending}
+      />
     </>
   );
 }

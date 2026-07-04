@@ -9,6 +9,9 @@ export const adminApi: AxiosInstance = axios.create({
   baseURL: API_BASE,
   timeout: 30_000,
   withCredentials: true, // Required for httpOnly cookies
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
 // No need to manually add Authorization header - httpOnly cookies are sent automatically
@@ -19,11 +22,7 @@ adminApi.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 adminApi.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      // Clear any client-side auth state
-      localStorage.removeItem('admin_token'); // Clean up legacy token if exists
-      window.location.href = '/login';
-    }
+    // Don't handle 401 here - let components handle auth errors
     return Promise.reject(error);
   }
 );

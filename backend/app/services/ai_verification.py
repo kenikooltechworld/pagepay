@@ -588,9 +588,10 @@ Respond in JSON format:
         Nitter is a privacy-respecting Twitter frontend that doesn't require API keys.
         """
         nitter_instances = [
-            "https://nitter.net",
-            "https://nitter.poast.org",
-            "https://nitter.privacydev.net"
+            "https://nitter.net",           # 95% uptime (verified July 2026)
+            "https://nitter.space",         # 95% uptime
+            "https://lightbrd.com",         # 94% uptime
+            "https://nitter.catsarch.com",  # 71% uptime
         ]
         
         for instance in nitter_instances:

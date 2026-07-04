@@ -5,27 +5,15 @@
  * every 3 articles, end of a session, etc.). The component
  * is a controller — the parent decides when to call
  * `show()` and the ad is dismissed via the `onClose`
- * callback. The actual SDK (AdMob `InterstitialAd`) is
- * loaded once at module load and cached; `show()` checks
- * the cache and falls back to "no fill" if the SDK never
- * resolved.
+ * callback.
  *
- * Today (no native SDK wired): the component renders a
- * mock full-screen ad that auto-closes after 5 seconds
- * with a "Skip" button the user can tap immediately. This
- * gives the calling code a real, working interstitial
- * surface to test the "after 3 articles" trigger without
- * having to install the native module.
- *
- * Future (with `react-native-google-mobile-ads`): replace
- * the body of `show()` with `ad.show()` from a pre-loaded
- * `InterstitialAd` instance. The component's external
- * contract (props, `show()` method, `onClose` callback)
- * stays the same.
+ * With real SDK: Preloads InterstitialAd instance and calls
+ * `.show()` when ready. Falls back to MockAdModal if SDK
+ * unavailable.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PagePay } from '@/constants/theme';
@@ -64,7 +52,71 @@ export function InterstitialAd({
   const startTimeRef = useRef<number | null>(null);
   const impressionLoggedRef = useRef(false);
   const [skipReady, setSkipReady] = useState(false);
+  const [sdkAvailable, setSdkAvailable] = useState(false);
+  const [realAdShown, setRealAdShown] = useState(false);
+  const interstitialRef = useRef<any>(null);
 
+  // Preload real SDK interstitial
+  useEffect(() => {
+    if (!adUnit || Platform.OS === 'web') return;
+
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { InterstitialAd: RealInterstitialAd, AdEventType } = require('react-native-google-mobile-ads');
+        
+        const interstitial = RealInterstitialAd.createForAdRequest(adUnit);
+        
+        // Load ad in background
+        const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
+          setSdkAvailable(true);
+        });
+        
+        const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
+          setRealAdShown(false);
+          onClose();
+        });
+        
+        interstitial.load();
+        interstitialRef.current = interstitial;
+
+        return () => {
+          unsubscribeLoaded();
+          unsubscribeClosed();
+        };
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[InterstitialAd] SDK not available:', err);
+        }
+        setSdkAvailable(false);
+      }
+    })();
+  }, [adUnit, onClose]);
+
+  // Show real ad when visible prop becomes true
+  useEffect(() => {
+    if (visible && sdkAvailable && interstitialRef.current && !realAdShown) {
+      interstitialRef.current.show();
+      setRealAdShown(true);
+      
+      // Log impression
+      logAdImpression({
+        adType: 'interstitial',
+        provider: 'admob',
+        adUnit,
+        sessionId: sessionId ?? null,
+      }).catch(() => undefined);
+      
+      return;
+    }
+  }, [visible, sdkAvailable, realAdShown, adUnit, sessionId]);
+
+  // If real SDK shown, don't render modal
+  if (realAdShown) {
+    return null;
+  }
+
+  // Fallback: Mock modal for dev/no SDK
   // Reset the skip button on every open.
   useEffect(() => {
     if (!visible) {
@@ -83,10 +135,6 @@ export function InterstitialAd({
         sessionId: sessionId ?? null,
       }).catch(() => undefined);
     }
-    // AdMob shows for a minimum 5s before the close button
-    // is allowed (the spec calls this out at
-    // `.kilo/command/phase2-ads.md` step 4). We mirror that
-    // contract here.
     const t = setTimeout(() => setSkipReady(true), MIN_DURATION_MS);
     return () => clearTimeout(t);
   }, [visible, adUnit, sessionId]);

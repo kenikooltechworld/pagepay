@@ -8,8 +8,12 @@ import { ShimmerLoader } from '@/shared/components/ShimmerLoader';
 import { Container } from '@/shared/components/Container';
 import { useLayoutContext } from '@/shared/components/Layout';
 
-function formatNgn(kobo: number) {
+function formatNgn(kobo: number = 0) {
   return `₦${(kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatUsd(usd: number = 0) {
+  return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function DashboardPage() {
@@ -46,14 +50,95 @@ export function DashboardPage() {
           )}
           {statsError && <Card className="p-4 text-error">Failed to load dashboard</Card>}
           {stats && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              <StatCard label="Total Users" value={stats.total_users.toLocaleString()} />
-              <StatCard label="Active Today" value={stats.active_users_today.toLocaleString()} />
-              <StatCard label="Revenue" value={formatNgn(stats.total_revenue_ngn)} />
-              <StatCard label="Pending Payouts" value={stats.pending_payouts.toLocaleString()} />
-              <StatCard label="Pending Notes" value={stats.pending_notes.toLocaleString()} />
-              <StatCard label="High Fraud Flags" value={stats.high_severity_fraud_flags.toLocaleString()} />
-            </div>
+            <>
+              {/* Overview Stats */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <StatCard label="Total Users" value={stats.total_users.toLocaleString()} />
+                <StatCard label="Active Today" value={stats.active_users_today.toLocaleString()} />
+                <StatCard label="Pending Payouts" value={stats.pending_payouts.toLocaleString()} />
+                <StatCard label="High Fraud Flags" value={stats.high_severity_fraud_flags.toLocaleString()} />
+              </div>
+
+              {/* Revenue Overview */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Revenue Overview</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Total revenue in USD and NGN</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard 
+                      label="Total Revenue (USD)" 
+                      value={formatUsd(stats.total_revenue_usd ?? 0)} 
+                    />
+                    <StatCard 
+                      label="Total Revenue (NGN)" 
+                      value={formatNgn(stats.total_revenue_ngn ?? 0)} 
+                    />
+                    <StatCard 
+                      label="Platform Earnings" 
+                      value={formatNgn(stats.platform_earnings_ngn ?? 0)} 
+                    />
+                    <StatCard 
+                      label="User Earnings" 
+                      value={formatNgn(stats.user_earnings_ngn ?? 0)} 
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Ad Revenue Breakdown */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Ad Revenue (80/20 Split)</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Revenue from AdMob and AppLovin ads</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <StatCard 
+                      label="Ad Revenue (USD)" 
+                      value={formatUsd(stats.ad_revenue_usd ?? 0)} 
+                    />
+                    <StatCard 
+                      label="Ad Revenue (NGN)" 
+                      value={formatNgn(stats.ad_revenue_ngn ?? 0)} 
+                    />
+                    <StatCard 
+                      label="Total Points Distributed" 
+                      value={(stats.total_points_distributed ?? 0).toLocaleString()} 
+                    />
+                    <StatCard 
+                      label="Platform Share (20%)" 
+                      value={`${formatUsd(stats.ad_platform_share_usd ?? 0)} / ${formatNgn(stats.ad_platform_share_ngn ?? 0)}`} 
+                    />
+                    <StatCard 
+                      label="User Share (80%)" 
+                      value={`${formatUsd(stats.ad_user_share_usd ?? 0)} / ${formatNgn(stats.ad_user_share_ngn ?? 0)}`} 
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* Premium Revenue */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Premium Subscriptions</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Revenue from premium tier subscriptions</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <StatCard 
+                      label="Premium Revenue (NGN)" 
+                      value={formatNgn(stats.premium_revenue_ngn ?? 0)} 
+                    />
+                    <StatCard 
+                      label="Premium Revenue (USD)" 
+                      value={formatUsd(stats.premium_revenue_usd ?? 0)} 
+                    />
+                  </div>
+                </div>
+              </Card>
+            </>
           )}
 
           <Card>

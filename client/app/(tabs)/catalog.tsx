@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,7 @@ import { useCatalogFilter } from '@/src/shared/lib/catalog-filter';
 import { ContentCard, ContentItem } from '@/components/ContentCard';
 import { SkeletonContentCard } from '@/components/skeletons';
 import { CategoryChip } from '@/components/CategoryChip';
+import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
@@ -42,6 +44,25 @@ export default function CatalogScreen() {
   const setStoreCategory = useCatalogFilter((s) => s.setCategory);
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch ad config for native unit
+  const [nativeAdUnit, setNativeAdUnit] = useState('');
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = Platform.OS;
+      const unitKey = platform === 'android' ? 'in_feed_android' : 'in_feed_ios';
+      setNativeAdUnit(adConfig[unitKey] || '');
+    }
+  }, [adConfig]);
 
   // Phase 2: switch the catalog list source to `/content/feed/:user_id`
   // so the in-feed sponsored rotation lands every 4th item per the
@@ -227,13 +248,25 @@ export default function CatalogScreen() {
           </View>
         ) : (
           <View style={styles.list}>
-            {items.map((item) => (
-              <ContentCard
-                key={item.id}
-                item={item}
-                onPress={() => router.push(`/book/${item.id}` as never)}
-              />
-            ))}
+            {items.map((item, index) => {
+              // Inject native ad every 4th position
+              const shouldShowAd = (index + 1) % 4 === 0 && nativeAdUnit;
+              
+              return (
+                <View key={`catalog-${item.id}-${index}`}>
+                  <ContentCard
+                    item={item}
+                    onPress={() => router.push(`/book/${item.id}` as never)}
+                  />
+                  {shouldShowAd && (
+                    <NativeAdBanner
+                      adUnit={nativeAdUnit}
+                      sessionId={null}
+                    />
+                  )}
+                </View>
+              );
+            })}
           </View>
         )}
         <View style={{ height: 24 }} />

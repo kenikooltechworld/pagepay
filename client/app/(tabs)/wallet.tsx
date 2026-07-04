@@ -1,7 +1,7 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { View, Text, FlatList, RefreshControl, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, FlatList, RefreshControl, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -17,6 +17,7 @@ import {
   type PayoutAccount,
 } from '@/components/LinkPayoutAccountModal';
 import { SkeletonBalanceCard, SkeletonTransactionRow } from '@/components/skeletons';
+import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 
 type UserMe = {
   id: number;
@@ -78,6 +79,25 @@ export default function WalletScreen() {
   const scheme = useEffectiveScheme();
   const c = PagePay[scheme];
   const qc = useQueryClient();
+
+  // Fetch ad config for native unit
+  const [nativeAdUnit, setNativeAdUnit] = useState('');
+  const { data: adConfig } = useQuery({
+    queryKey: ['ads-config'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      if (!res.ok) return {};
+      return (await res.json()) as Record<string, string>;
+    },
+  });
+
+  useEffect(() => {
+    if (adConfig) {
+      const platform = Platform.OS;
+      const unitKey = platform === 'android' ? 'in_feed_android' : 'in_feed_ios';
+      setNativeAdUnit(adConfig[unitKey] || '');
+    }
+  }, [adConfig]);
 
   const meQ = useQuery({
     queryKey: ['me'],
@@ -322,11 +342,25 @@ export default function WalletScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => {
-          if (item.kind === 'withdrawal') {
-            return <WithdrawalRow row={item.data} tokens={c} />;
-          }
-          return <SessionRow item={item.data} tokens={c} />;
+        renderItem={({ item, index }) => {
+          // Inject native ad every 4th transaction
+          const shouldShowAd = (index + 1) % 4 === 0 && nativeAdUnit;
+
+          return (
+            <View>
+              {item.kind === 'withdrawal' ? (
+                <WithdrawalRow row={item.data} tokens={c} />
+              ) : (
+                <SessionRow item={item.data} tokens={c} />
+              )}
+              {shouldShowAd && (
+                <NativeAdBanner
+                  adUnit={nativeAdUnit}
+                  sessionId={null}
+                />
+              )}
+            </View>
+          );
         }}
         ListEmptyComponent={
           txQ.isLoading || withdrawalsQ.isLoading ? (

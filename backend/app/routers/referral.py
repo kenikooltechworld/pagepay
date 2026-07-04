@@ -141,6 +141,14 @@ async def validate_referral(
 
     await db.commit()
 
+    # Run fraud checks on referral activity
+    try:
+        from app.services.fraud_detection import run_fraud_checks_on_referral
+        await run_fraud_checks_on_referral(db=db, referrer_id=referrer.id)
+    except Exception as e:
+        # Don't fail referral if fraud check fails
+        logger.warning(f"Fraud check failed for referrer {referrer.id}: {e}")
+
     return ReferralValidateResponse(
         rewarded=True,
         referrer_points=REFERRER_REWARD,

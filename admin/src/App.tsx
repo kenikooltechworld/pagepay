@@ -11,6 +11,8 @@ import { LogsPage } from '@/features/logs/LogsPage'
 import { TasksPage } from '@/features/tasks/TasksPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { AiHealthPage } from '@/features/ai/AiHealthPage'
+import { AdminsPage } from '@/features/admins/AdminsPage'
+import { CommunityPage } from '@/features/community/CommunityPage'
 
 export default function AppRoutes() {
   return (
@@ -20,8 +22,10 @@ export default function AppRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="admins" element={<AdminsPage />} />
         <Route path="finance" element={<FinancePage />} />
         <Route path="content" element={<ContentPage />} />
+        <Route path="community" element={<CommunityPage />} />
         <Route path="fraud" element={<FraudPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />

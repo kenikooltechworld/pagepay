@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
 import { useState } from 'react';
-import { Card, StatCard, Badge, Button, Pagination, ShimmerLoader, Container } from '@/shared/components';
+import { Card, StatCard, Badge, Button, Pagination, ShimmerLoader, Container, Tooltip } from '@/shared/components';
 import { TopHeader } from '@/shared/components/TopHeader';
 import { useLayoutContext } from '@/shared/components/Layout';
 import { useAuthStore } from '@/store/auth';
@@ -122,7 +122,7 @@ export function TasksPage() {
   const approveKycMutation = useMutation({
     mutationFn: async (sponsorId: number) => {
       const notes = prompt('Approval notes (optional):');
-      await adminApi.post(`/admin/tasks/kyc/${sponsorId}/approve`, null, { params: { admin_notes: notes || undefined } });
+      await adminApi.post(`/tasks/kyc/${sponsorId}/approve`, null, { params: { admin_notes: notes || undefined } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'kyc'] });
@@ -131,7 +131,7 @@ export function TasksPage() {
 
   const rejectKycMutation = useMutation({
     mutationFn: async ({ sponsorId, reason }: { sponsorId: number; reason: string }) => {
-      await adminApi.post(`/admin/tasks/kyc/${sponsorId}/reject`, null, { params: { reason } });
+      await adminApi.post(`/tasks/kyc/${sponsorId}/reject`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'kyc'] });
@@ -142,7 +142,7 @@ export function TasksPage() {
   const approveSubmissionMutation = useMutation({
     mutationFn: async (submissionId: number) => {
       const notes = prompt('Approval notes (optional):');
-      await adminApi.post(`/admin/tasks/submissions/${submissionId}/approve`, null, { params: { notes: notes || undefined } });
+      await adminApi.post(`/tasks/submissions/${submissionId}/approve`, null, { params: { notes: notes || undefined } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'submissions'] });
@@ -151,7 +151,7 @@ export function TasksPage() {
 
   const rejectSubmissionMutation = useMutation({
     mutationFn: async ({ submissionId, reason }: { submissionId: number; reason: string }) => {
-      await adminApi.post(`/admin/tasks/submissions/${submissionId}/reject`, null, { params: { reason } });
+      await adminApi.post(`/tasks/submissions/${submissionId}/reject`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'submissions'] });
@@ -248,12 +248,16 @@ export function TasksPage() {
                           <td className="px-4 py-3 text-sm text-text-main">
                             {hasPermission('tasks.kyc') && (
                               <div className="flex gap-2">
-                                <Button size="sm" variant="secondary" onClick={() => handleApproveKyc(k.sponsor_id)}>
-                                  <CheckCircle size={14} /> Approve
-                                </Button>
-                                <Button size="sm" variant="danger" onClick={() => handleRejectKyc(k.sponsor_id)}>
-                                  <XCircle size={14} /> Reject
-                                </Button>
+                                <Tooltip content="Approve KYC application" position="top">
+                                  <Button size="sm" variant="secondary" onClick={() => handleApproveKyc(k.sponsor_id)}>
+                                    <CheckCircle size={14} /> Approve
+                                  </Button>
+                                </Tooltip>
+                                <Tooltip content="Reject KYC application" position="top">
+                                  <Button size="sm" variant="danger" onClick={() => handleRejectKyc(k.sponsor_id)}>
+                                    <XCircle size={14} /> Reject
+                                  </Button>
+                                </Tooltip>
                               </div>
                             )}
                           </td>
@@ -310,12 +314,16 @@ export function TasksPage() {
                           <td className="px-4 py-3 text-sm text-text-main">
                             {hasPermission('tasks.review') && s.status === 'pending' && (
                               <div className="flex gap-2">
-                                <Button size="sm" variant="secondary" onClick={() => handleApproveSubmission(s.submission_id)}>
-                                  <CheckCircle size={14} /> Approve
-                                </Button>
-                                <Button size="sm" variant="danger" onClick={() => handleRejectSubmission(s.submission_id)}>
-                                  <XCircle size={14} /> Reject
-                                </Button>
+                                <Tooltip content="Approve this submission" position="top">
+                                  <Button size="sm" variant="secondary" onClick={() => handleApproveSubmission(s.submission_id)}>
+                                    <CheckCircle size={14} /> Approve
+                                  </Button>
+                                </Tooltip>
+                                <Tooltip content="Reject this submission" position="top">
+                                  <Button size="sm" variant="danger" onClick={() => handleRejectSubmission(s.submission_id)}>
+                                    <XCircle size={14} /> Reject
+                                  </Button>
+                                </Tooltip>
                               </div>
                             )}
                             {s.status !== 'pending' && <span className="text-text-muted">-</span>}
