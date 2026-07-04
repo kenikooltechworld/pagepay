@@ -98,7 +98,7 @@ async def seed_ad_placements(db: AsyncSession) -> int:
     # intact (we update nothing on conflict, just bump updated_at via
     # the model's onupdate). For sqlite (tests) we fall back to a
     # SELECT-then-INSERT loop.
-    if db.bind and db.bind.dialect.name == "mysql":
+    if db.bind and db.bind.dialect.name in ("mysql", "postgresql"):
         stmt = mysql_insert(AdPlacement).values(rows)
         # `ON DUPLICATE KEY UPDATE` with a no-op is the standard
         # "INSERT IGNORE" replacement that's explicit about the
@@ -119,11 +119,11 @@ async def seed_ad_placements(db: AsyncSession) -> int:
         existing = (
             await db.execute(
                 select(AdPlacement).where(
-                    AdPlacement.location == row["location"],
-                    AdPlacement.platform == row["platform"],
-                )
+                    (AdPlacement.location == row["location"]) &
+                    (AdPlacement.platform == row["platform"])
+                ).limit(1)
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if existing is None:
             db.add(AdPlacement(**row))
             inserted += 1
@@ -186,7 +186,7 @@ async def seed_app_config(db: AsyncSession) -> int:
             "description": f"AdMob {location} unit ID ({platform}).",
         })
 
-    if db.bind and db.bind.dialect.name == "mysql":
+    if db.bind and db.bind.dialect.name in ("mysql", "postgresql"):
         stmt = mysql_insert(AppConfig).values(rows)
         stmt = stmt.on_duplicate_key_update(
             value=stmt.inserted.value,
@@ -199,8 +199,12 @@ async def seed_app_config(db: AsyncSession) -> int:
     inserted = 0
     for row in rows:
         existing = (
-            await db.execute(select(AppConfig).where(AppConfig.key == row["key"]))
-        ).scalar_one_or_none()
+            await db.execute(
+                select(AppConfig).where(
+                    AppConfig.key == row["key"]
+                ).limit(1)
+            )
+        ).scalars().first()
         if existing is None:
             db.add(AppConfig(**row))
             inserted += 1
@@ -227,7 +231,7 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
         {"provider_name": "anthropic", "consecutive_failures": 0},
         {"provider_name": "google", "consecutive_failures": 0},
     ]
-    if db.bind and db.bind.dialect.name == "mysql":
+    if db.bind and db.bind.dialect.name in ("mysql", "postgresql"):
         stmt = mysql_insert(AiProviderHealth).values(rows)
         stmt = stmt.on_duplicate_key_update(
             # No-op update — the row already exists, leave it alone.
@@ -242,10 +246,10 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
         existing = (
             await db.execute(
                 select(AiProviderHealth).where(
-                    AiProviderHealth.provider_name == row["provider_name"],
-                )
+                    AiProviderHealth.provider_name == row["provider_name"]
+                ).limit(1)
             )
-        ).scalar_one_or_none()
+        ).scalars().first()
         if existing is None:
             db.add(AiProviderHealth(**row))
             inserted += 1
