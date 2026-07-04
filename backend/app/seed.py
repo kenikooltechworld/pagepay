@@ -1,7 +1,7 @@
 """Idempotent seed for the Phase 2 ad-infrastructure tables.
 
 Run via the lifespan hook in `app/main.py`. Safe to call repeatedly —
-we INSERT IGNORE on the natural key (placement, app_config.key,
+we SELECT-then-INSERT on the natural key (placement, app_config.key,
 provider_name) so re-running never throws and never duplicates.
 
 This file is the only place that hardcodes the production AdMob unit
@@ -13,12 +13,9 @@ column for it.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from sqlalchemy import select
-from sqlalchemy.dialects.mysql import insert as mysql_insert
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdPlacement, AppConfig, AiProviderHealth, AdminUser
@@ -71,17 +68,7 @@ _LOCATION_AD_TYPE = {
 
 
 async def seed_ad_placements(db: AsyncSession) -> int:
-    """Insert any missing rows into ad_placements.
-
-    Returns the number of new rows inserted. Idempotent — re-running
-    the seed with no changes returns 0.
-
-    The placement schema is per-(location, platform), so each UI slot
-    gets two rows: one for Android, one for iOS. AdMob is the primary
-    for all 4 slots today. When AppLovin integration lands, the
-    rewarded row can flip to `primary_provider='applovin_max'` per the
-    spec.
-    """
+    """Insert any missing rows into ad_placements (idempotent)."""
     rows: list[dict] = []
     for (location, platform), unit_id in _UNIT_IDS.items():
         rows.append({
@@ -95,29 +82,6 @@ async def seed_ad_placements(db: AsyncSession) -> int:
             "enabled": True,
         })
 
-    dialect_name = db.bind.dialect.name if db.bind else "sqlite"
-    
-    if dialect_name == "mysql":
-        stmt = mysql_insert(AdPlacement).values(rows)
-        stmt = stmt.on_duplicate_key_update(
-            ad_unit_id=stmt.inserted.ad_unit_id,
-        )
-        result = await db.execute(stmt)
-        await db.commit()
-        return result.rowcount or 0
-    
-    elif dialect_name == "postgresql":
-        # PostgreSQL: use ON CONFLICT DO UPDATE
-        stmt = pg_insert(AdPlacement).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["location", "platform"],
-            set_={"ad_unit_id": stmt.excluded.ad_unit_id},
-        )
-        result = await db.execute(stmt)
-        await db.commit()
-        return result.rowcount or 0
-
-    # Fallback for sqlite (tests)
     inserted = 0
     for row in rows:
         existing = (
@@ -125,35 +89,22 @@ async def seed_ad_placements(db: AsyncSession) -> int:
                 select(AdPlacement).where(
                     (AdPlacement.location == row["location"]) &
                     (AdPlacement.platform == row["platform"])
-                ).limit(1)
+                )
             )
-        ).scalars().first()
+        ).scalar_one_or_none()
         if existing is None:
             db.add(AdPlacement(**row))
             inserted += 1
         elif existing.ad_unit_id != row["ad_unit_id"]:
             existing.ad_unit_id = row["ad_unit_id"]
+    
     if inserted:
         await db.commit()
     return inserted
 
 
 async def seed_app_config(db: AsyncSession) -> int:
-    """Insert the default app_config rows.
-
-    We ship:
-      - `app.environment`            → "dev" (the seed assumes dev;
-                                       production override sets this
-                                       in app_config directly)
-      - `admob.app_id.android`       → prod App ID
-      - `admob.app_id.ios`           → prod App ID
-      - `admob.<location>.<platform>` → prod unit ID for each slot
-
-    Dev builds call `/api/v1/config/ads` with `?env=dev` to get
-    Google's documented test unit IDs. The test IDs are baked into
-    the response when `env=dev` so the seed only needs to carry
-    production data.
-    """
+    """Insert the default app_config rows (idempotent)."""
     rows: list[dict] = [
         {
             "key": "app.environment",
@@ -188,100 +139,46 @@ async def seed_app_config(db: AsyncSession) -> int:
             "description": f"AdMob {location} unit ID ({platform}).",
         })
 
-    dialect_name = db.bind.dialect.name if db.bind else "sqlite"
-    
-    if dialect_name == "mysql":
-        stmt = mysql_insert(AppConfig).values(rows)
-        stmt = stmt.on_duplicate_key_update(
-            value=stmt.inserted.value,
-            description=stmt.inserted.description,
-        )
-        result = await db.execute(stmt)
-        await db.commit()
-        return result.rowcount or 0
-    
-    elif dialect_name == "postgresql":
-        # PostgreSQL: use ON CONFLICT DO UPDATE
-        stmt = pg_insert(AppConfig).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["key"],
-            set_={"value": stmt.excluded.value, "description": stmt.excluded.description},
-        )
-        result = await db.execute(stmt)
-        await db.commit()
-        return result.rowcount or 0
-
-    # Fallback for sqlite (tests)
     inserted = 0
     for row in rows:
         existing = (
             await db.execute(
-                select(AppConfig).where(
-                    AppConfig.key == row["key"]
-                ).limit(1)
+                select(AppConfig).where(AppConfig.key == row["key"])
             )
-        ).scalars().first()
+        ).scalar_one_or_none()
         if existing is None:
             db.add(AppConfig(**row))
             inserted += 1
+        else:
+            existing.value = row["value"]
+            existing.description = row["description"]
+    
     if inserted:
         await db.commit()
     return inserted
 
 
 async def seed_ai_provider_health(db: AsyncSession) -> int:
-    """Phase 3 prep: ensure one row per known provider exists.
-
-    The Phase 3 AI router reads `consecutive_failures` and
-    `circuit_open_until` to decide whether to call a provider. The
-    table is here now so the router code can land without a
-    migration; the rows are empty placeholders until Phase 3 wires
-    the actual providers.
-
-    Today we only seed OpenAI since the steering doc says Phase 3
-    uses OpenAI as the primary provider (Anthropic and Google as
-    fallbacks). The other rows are added when the router code lands.
-    """
+    """Phase 3 prep: ensure one row per known provider exists (idempotent)."""
     rows: list[dict] = [
         {"provider_name": "openai", "consecutive_failures": 0},
         {"provider_name": "anthropic", "consecutive_failures": 0},
         {"provider_name": "google", "consecutive_failures": 0},
     ]
     
-    dialect_name = db.bind.dialect.name if db.bind else "sqlite"
-    
-    if dialect_name == "mysql":
-        stmt = mysql_insert(AiProviderHealth).values(rows)
-        stmt = stmt.on_duplicate_key_update(
-            provider_name=stmt.inserted.provider_name,
-        )
-        result = await db.execute(stmt)
-        await db.commit()
-        return result.rowcount or 0
-    
-    elif dialect_name == "postgresql":
-        # PostgreSQL: use ON CONFLICT DO NOTHING (no update needed)
-        stmt = pg_insert(AiProviderHealth).values(rows)
-        stmt = stmt.on_conflict_do_nothing(
-            index_elements=["provider_name"],
-        )
-        result = await db.execute(stmt)
-        await db.commit()
-        return result.rowcount or 0
-
-    # Fallback for sqlite (tests)
     inserted = 0
     for row in rows:
         existing = (
             await db.execute(
                 select(AiProviderHealth).where(
                     AiProviderHealth.provider_name == row["provider_name"]
-                ).limit(1)
+                )
             )
-        ).scalars().first()
+        ).scalar_one_or_none()
         if existing is None:
             db.add(AiProviderHealth(**row))
             inserted += 1
+    
     if inserted:
         await db.commit()
     return inserted
