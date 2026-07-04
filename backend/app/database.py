@@ -1,6 +1,6 @@
+import ssl
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.engine.url import make_url
 from app.config import settings
 
 DATABASE_URL = settings.database_url
@@ -9,18 +9,25 @@ DATABASE_URL = settings.database_url
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Add SSL mode for Render PostgreSQL
-# Render requires SSL connections, so we add sslmode=require query param
-url = make_url(DATABASE_URL)
-if "sslmode" not in url.query:
-    url = url.update_query_string("sslmode=require")
-    DATABASE_URL = str(url)
+# Create SSL context for Render PostgreSQL
+# Render requires SSL, and asyncpg needs an ssl.SSLContext object
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = True
+ssl_context.verify_mode = ssl.CERT_REQUIRED
 
 engine = create_async_engine(
     DATABASE_URL,
     pool_size=20,
     max_overflow=10,
     pool_recycle=1800,
+    # SSL required for Render PostgreSQL
+    # asyncpg requires an ssl.SSLContext, not just ssl=True
+    connect_args={
+        "ssl": ssl_context,
+        "server_settings": {
+            "application_name": "pagepay_backend",
+        }
+    },
     # Disabled: SQLAlchemy 2.0.36 + aiomysql 0.2.0 have a known incompatibility
     # where pool_pre_ping calls connection.ping() with no args, but the
     # AsyncAdapt_aiomysql_connection.ping(reconnect) wrapper has no default.
