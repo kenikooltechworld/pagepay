@@ -18,6 +18,7 @@ import json
 import logging
 from sqlalchemy import select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdPlacement, AppConfig, AiProviderHealth, AdminUser
@@ -94,26 +95,29 @@ async def seed_ad_placements(db: AsyncSession) -> int:
             "enabled": True,
         })
 
-    # MySQL's INSERT ... ON DUPLICATE KEY UPDATE keeps existing rows
-    # intact (we update nothing on conflict, just bump updated_at via
-    # the model's onupdate). For sqlite (tests) we fall back to a
-    # SELECT-then-INSERT loop.
-    if db.bind and db.bind.dialect.name in ("mysql", "postgresql"):
+    dialect_name = db.bind.dialect.name if db.bind else "sqlite"
+    
+    if dialect_name == "mysql":
         stmt = mysql_insert(AdPlacement).values(rows)
-        # `ON DUPLICATE KEY UPDATE` with a no-op is the standard
-        # "INSERT IGNORE" replacement that's explicit about the
-        # natural key. We do update `ad_unit_id` so changing a unit
-        # ID in the seed (e.g. rotating an underperforming ad) takes
-        # effect on next deploy without a manual UPDATE.
         stmt = stmt.on_duplicate_key_update(
             ad_unit_id=stmt.inserted.ad_unit_id,
         )
         result = await db.execute(stmt)
         await db.commit()
         return result.rowcount or 0
+    
+    elif dialect_name == "postgresql":
+        # PostgreSQL: use ON CONFLICT DO UPDATE
+        stmt = pg_insert(AdPlacement).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["location", "platform"],
+            set_={"ad_unit_id": stmt.excluded.ad_unit_id},
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount or 0
 
-    # Fallback for non-MySQL (sqlite in tests). Check each row and
-    # insert only the missing ones.
+    # Fallback for sqlite (tests)
     inserted = 0
     for row in rows:
         existing = (
@@ -128,8 +132,6 @@ async def seed_ad_placements(db: AsyncSession) -> int:
             db.add(AdPlacement(**row))
             inserted += 1
         elif existing.ad_unit_id != row["ad_unit_id"]:
-            # Same fallback as the MySQL path: keep the placement in
-            # sync with the seed.
             existing.ad_unit_id = row["ad_unit_id"]
     if inserted:
         await db.commit()
@@ -186,7 +188,9 @@ async def seed_app_config(db: AsyncSession) -> int:
             "description": f"AdMob {location} unit ID ({platform}).",
         })
 
-    if db.bind and db.bind.dialect.name in ("mysql", "postgresql"):
+    dialect_name = db.bind.dialect.name if db.bind else "sqlite"
+    
+    if dialect_name == "mysql":
         stmt = mysql_insert(AppConfig).values(rows)
         stmt = stmt.on_duplicate_key_update(
             value=stmt.inserted.value,
@@ -195,7 +199,19 @@ async def seed_app_config(db: AsyncSession) -> int:
         result = await db.execute(stmt)
         await db.commit()
         return result.rowcount or 0
+    
+    elif dialect_name == "postgresql":
+        # PostgreSQL: use ON CONFLICT DO UPDATE
+        stmt = pg_insert(AppConfig).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["key"],
+            set_={"value": stmt.excluded.value, "description": stmt.excluded.description},
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount or 0
 
+    # Fallback for sqlite (tests)
     inserted = 0
     for row in rows:
         existing = (
@@ -231,16 +247,29 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
         {"provider_name": "anthropic", "consecutive_failures": 0},
         {"provider_name": "google", "consecutive_failures": 0},
     ]
-    if db.bind and db.bind.dialect.name in ("mysql", "postgresql"):
+    
+    dialect_name = db.bind.dialect.name if db.bind else "sqlite"
+    
+    if dialect_name == "mysql":
         stmt = mysql_insert(AiProviderHealth).values(rows)
         stmt = stmt.on_duplicate_key_update(
-            # No-op update — the row already exists, leave it alone.
             provider_name=stmt.inserted.provider_name,
         )
         result = await db.execute(stmt)
         await db.commit()
         return result.rowcount or 0
+    
+    elif dialect_name == "postgresql":
+        # PostgreSQL: use ON CONFLICT DO NOTHING (no update needed)
+        stmt = pg_insert(AiProviderHealth).values(rows)
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["provider_name"],
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount or 0
 
+    # Fallback for sqlite (tests)
     inserted = 0
     for row in rows:
         existing = (
