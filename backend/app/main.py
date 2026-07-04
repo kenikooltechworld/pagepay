@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     # Start Phase 7 background task processor
     # Only start if explicitly enabled via environment variable
     # Render free tier can't reliably run background tasks due to connection pooling
-    should_run_processor = settings.get("RUN_TASK_PROCESSOR", "false").lower() == "true"
+    should_run_processor = os.getenv("RUN_TASK_PROCESSOR", "false").lower() == "true"
     
     if should_run_processor:
         logger.info("Starting Phase 7 task processor...")
