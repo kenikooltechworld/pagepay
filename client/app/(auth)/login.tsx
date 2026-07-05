@@ -85,10 +85,10 @@ export default function LoginScreen() {
         } catch {
           /* non-JSON response */
         }
-        if (status === 401) {
+        if (status === 401 && !detail) {
           setFormError("That email and password don't match.");
         } else {
-          setFormError(detail || "Couldn't sign you in. Try again.");
+          setFormError(detail || `Connection error (HTTP ${status})`);
         }
         setErrorTrigger(true);
         setTimeout(() => setErrorTrigger(false), 600);

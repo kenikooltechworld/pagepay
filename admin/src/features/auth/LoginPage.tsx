@@ -110,19 +110,22 @@ export function LoginPage() {
       setSuccess(true);
       setTimeout(() => navigate('/dashboard', { replace: true }), 700);
     } catch (err) {
-      // Try to surface a server-provided detail string.
       const axiosError = err as any;
       const status = axiosError?.response?.status;
       const detail = axiosError?.response?.data?.detail;
       const detailStr = typeof detail === 'string' ? detail : '';
 
-      if (status === 401) {
+      // Surface the server-provided detail when available; fall back
+      // to a short human-friendly string for well-known status codes
+      // so the user isn't left staring at "500".
+      if (detailStr) {
+        setFormError(detailStr);
+      } else if (status === 401) {
         setFormError("That email and password don't match.");
       } else if (status) {
-        setFormError(detailStr || `Server error: ${status}`);
+        setFormError(`Server error (${status}). Check Render logs for details.`);
       } else {
-        // Network error or other issue
-        setFormError(detailStr || "Couldn't sign you in. Check the backend is running.");
+        setFormError("Connection failed. Check the backend is running.");
       }
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);
