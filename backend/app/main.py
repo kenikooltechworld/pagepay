@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import os
+import traceback
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -97,6 +98,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PagePay API", lifespan=lifespan)
 app.state.limiter = limiter
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Return all unhandled exceptions as JSON so the client always gets
+    a parseable error response instead of raw text/plain or HTML.
+
+    Uses FastAPI's standard `detail` key so the frontend error handling
+    (which reads `response.data.detail`) works without changes.
+    """
+    logger.error("Unhandled exception: %s\n%s", exc, traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+    )
+
+
 def _rate_limit_handler(request, exc):
     """Render a RateLimitExceeded as a JSON 429 instead of letting
     slowapi's default handler crash.

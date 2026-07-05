@@ -26,6 +26,7 @@ from app.routers import (
     admin_payments,
     admin_tasks,
 )
+from app.routers.analytics import router as analytics_router
 
 # Create main router
 router = APIRouter(prefix="/admin", tags=["admin"])
