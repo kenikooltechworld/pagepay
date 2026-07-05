@@ -12,14 +12,15 @@ import { apiFetch } from '@/src/shared/api/client';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PagePay } from '@/constants/theme';
 
-type Bundle = {
-  id: string;
-  network: string;
+type DataNetwork = {
+  identifier: string;
   name: string;
-  size_mb: number;
-  validity_days: number;
-  price_naira: number;
-  commission_rate: number;
+};
+
+type DataPlan = {
+  plan_code: string;
+  amount: number;
+  label: string;
 };
 
 type PurchaseResult = {
@@ -29,14 +30,8 @@ type PurchaseResult = {
   new_balance: number;
   status: string;
   phone: string;
+  customer_name: string | null;
 };
-
-const NETWORKS = [
-  { key: 'mtn', label: 'MTN' },
-  { key: 'airtel', label: 'Airtel' },
-  { key: 'glo', label: 'GLO' },
-  { key: '9mobile', label: '9mobile' },
-];
 
 export default function BuyDataScreen() {
   const scheme = useEffectiveScheme();
@@ -45,29 +40,39 @@ export default function BuyDataScreen() {
   const qc = useQueryClient();
 
   const [phone, setPhone] = useState('');
-  const [network, setNetwork] = useState('mtn');
-  const [selectedBundle, setSelectedBundle] = useState<string | null>(null);
+  const [network, setNetwork] = useState('mtn_data_share');
+  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
 
-  const bundlesQ = useQuery({
-    queryKey: ['data-bundles', network],
+  const networksQ = useQuery({
+    queryKey: ['data-networks'],
     queryFn: async () => {
-      const res = await apiFetch(`/api/v1/bills/bundles?network=${network}`);
-      if (!res.ok) throw new Error('Failed to load bundles');
-      return (await res.json()) as Bundle[];
+      const res = await apiFetch('/api/v1/bills/data/networks');
+      if (!res.ok) throw new Error('Failed to load networks');
+      return (await res.json()) as DataNetwork[];
     },
   });
 
-  const selectedPkg = bundlesQ.data?.find((b) => b.id === selectedBundle);
+  const plansQ = useQuery({
+    queryKey: ['data-plans', network],
+    queryFn: async () => {
+      const res = await apiFetch(`/api/v1/bills/data/plans?network=${encodeURIComponent(network)}`);
+      if (!res.ok) throw new Error('Failed to load plans');
+      return (await res.json()) as DataPlan[];
+    },
+    enabled: !!network,
+  });
+
+  const selectedPkg = plansQ.data?.find((p) => p.plan_code === selectedPlan);
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedBundle || !selectedPkg) throw new Error('Select a bundle');
+      if (!selectedPlan || !selectedPkg) throw new Error('Select a plan');
       const res = await apiFetch('/api/v1/bills/data', {
         method: 'POST',
         body: JSON.stringify({
           phone,
           network,
-          data_id: selectedBundle,
+          plan_code: selectedPlan,
         }),
       });
       if (!res.ok) {
@@ -80,7 +85,7 @@ export default function BuyDataScreen() {
       qc.invalidateQueries({ queryKey: ['me'] });
       Alert.alert(
         'Data Sent!',
-        `${selectedPkg?.name} sent to ${phone}. You earned +${data.points_earned} points!`,
+        `${selectedPkg?.label} sent to ${phone}. You earned +${data.points_earned} points!`,
         [{ text: 'Done', onPress: () => router.back() }],
       );
     },
@@ -89,10 +94,9 @@ export default function BuyDataScreen() {
     },
   });
 
-  const canSubmit = phone.length >= 10 && selectedBundle !== null;
-
+  const canSubmit = phone.length >= 10 && selectedPlan !== null;
   const estPoints = selectedPkg
-    ? Math.floor(selectedPkg.price_naira * selectedPkg.commission_rate * 0.67 * 100)
+    ? Math.floor(selectedPkg.amount * 0.034 * 0.67 * 100)
     : 0;
 
   return (
@@ -119,53 +123,58 @@ export default function BuyDataScreen() {
         />
 
         {/* Network */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Network</Text>
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-          {NETWORKS.map((n) => (
-            <TouchableOpacity
-              key={n.key}
-              onPress={() => { setNetwork(n.key); setSelectedBundle(null); }}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor: network === n.key ? tokens.mint : tokens.card,
-                  borderColor: network === n.key ? tokens.mint : tokens.border,
-                },
-              ]}
-            >
-              <Text style={[
-                styles.chipText,
-                { color: network === n.key ? tokens.mintText : tokens.ink },
-              ]}>{n.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>Data Network</Text>
+        {networksQ.isLoading ? (
+          <ActivityIndicator color={tokens.mint} />
+        ) : (
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {(networksQ.data ?? []).map((n) => (
+              <TouchableOpacity
+                key={n.identifier}
+                onPress={() => { setNetwork(n.identifier); setSelectedPlan(null); }}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: network === n.identifier ? tokens.mint : tokens.card,
+                    borderColor: network === n.identifier ? tokens.mint : tokens.border,
+                  },
+                ]}
+              >
+                <Text style={[
+                  styles.chipText,
+                  { color: network === n.identifier ? tokens.mintText : tokens.ink },
+                ]}>{n.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-        {/* Bundles */}
+        {/* Plans */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Bundle</Text>
-        {bundlesQ.isLoading ? (
+        {plansQ.isLoading ? (
           <ActivityIndicator color={tokens.mint} />
         ) : (
           <View style={{ gap: 8 }}>
-            {(bundlesQ.data ?? []).map((b) => (
+            {(plansQ.data ?? []).map((p) => (
               <TouchableOpacity
-                key={b.id}
-                onPress={() => setSelectedBundle(b.id)}
+                key={p.plan_code}
+                onPress={() => setSelectedPlan(p.plan_code)}
                 style={[
                   styles.bundleCard,
                   {
-                    backgroundColor: selectedBundle === b.id ? tokens.mintSoft : tokens.card,
-                    borderColor: selectedBundle === b.id ? tokens.mint : tokens.border,
+                    backgroundColor: selectedPlan === p.plan_code ? tokens.mintSoft : tokens.card,
+                    borderColor: selectedPlan === p.plan_code ? tokens.mint : tokens.border,
                   },
                 ]}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.bundleName, { color: tokens.ink }]}>{b.name}</Text>
-                  <Text style={[styles.bundleMeta, { color: tokens.inkMuted }]}>
-                    {b.size_mb >= 1024 ? `${(b.size_mb / 1024).toFixed(0)}GB` : `${b.size_mb}MB`} • {b.validity_days} days
+                  <Text style={[styles.bundleName, { color: tokens.ink }]}>
+                    {p.label}
                   </Text>
                 </View>
-                <Text style={[styles.bundlePrice, { color: tokens.mint }]}>₦{b.price_naira.toLocaleString()}</Text>
+                <Text style={[styles.bundlePrice, { color: tokens.mint }]}>
+                  ₦{p.amount.toLocaleString()}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -202,7 +211,7 @@ export default function BuyDataScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {selectedPkg ? `Pay ₦${selectedPkg.price_naira.toLocaleString()}` : 'Select a bundle'}
+                {selectedPkg ? `Pay ₦${selectedPkg.amount.toLocaleString()}` : 'Select a bundle'}
               </Text>
             </>
           )}
@@ -223,13 +232,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
     borderWidth: 1,
   },
-  chipText: { fontSize: 14, fontWeight: '600' },
+  chipText: { fontSize: 13, fontWeight: '600' },
   bundleCard: {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 12, padding: 14, borderWidth: 1,
   },
-  bundleName: { fontSize: 14, fontWeight: '600' },
-  bundleMeta: { fontSize: 11, marginTop: 2 },
+  bundleName: { fontSize: 13, fontWeight: '500', flex: 1 },
   bundlePrice: { fontSize: 15, fontWeight: '700', fontFamily: 'SpaceGrotesk_700Bold' },
   earnCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
