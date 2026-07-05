@@ -40,8 +40,30 @@ export default function BuyAirtimeScreen() {
 
   const [phone, setPhone] = useState('');
   const [network, setNetwork] = useState('mtn');
+  const [detectedNetwork, setDetectedNetwork] = useState<string | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
+
+  // Detect network when phone number is complete
+  const detectNetwork = async (phoneNumber: string) => {
+    if (phoneNumber.length === 11) {
+      try {
+        const res = await apiFetch('/api/v1/bills/detect-network', {
+          method: 'POST',
+          body: JSON.stringify({ phone: phoneNumber }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.validated && data.network) {
+            setNetwork(data.network);
+            setDetectedNetwork(data.network_name);
+          }
+        }
+      } catch (error) {
+        // Ignore detection errors
+      }
+    }
+  };
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
@@ -97,6 +119,7 @@ export default function BuyAirtimeScreen() {
             // Only allow numbers and format
             const cleaned = text.replace(/[^0-9]/g, '');
             setPhone(cleaned);
+            detectNetwork(cleaned);
           }}
           keyboardType="phone-pad"
           maxLength={11}
@@ -104,6 +127,11 @@ export default function BuyAirtimeScreen() {
         {phone.length > 0 && phone.length < 11 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
             Phone number must be 11 digits
+          </Text>
+        )}
+        {detectedNetwork && (
+          <Text style={{ color: tokens.mint, fontSize: 12, marginTop: -10 }}>
+            ✓ Detected: {detectedNetwork}
           </Text>
         )}
 
