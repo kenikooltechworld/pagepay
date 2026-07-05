@@ -301,25 +301,12 @@ export default function ReaderScreen() {
       console.log('[Reader] Session ended, response:', json);
       // Two-stage close:
       //   1. /session/end STAGED pending_points but did not credit.
-      //   2. If the user earned anything, /session/claim credits it
-      //      automatically. The post-read ad already played — we don't
-      //      surface a third modal after the user has watched the ad.
+      //   2. NO auto-claim — points come exclusively from ad revenue,
+      //      not from reading time. The post-read ad already credited
+      //      the user via /ads/reward-claim before this runs.
       //   3. /progress/finish advances the slice pointer regardless of
       //      whether the session earned points (skipped or too-short
       //      sessions still advance — the user did the read).
-      if (json.requires_claim && json.pending_points > 0) {
-        console.log('[Reader] Auto-claiming pending points...');
-        try {
-          await apiFetch('/api/v1/session/claim', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sid }),
-          });
-          console.log('[Reader] Points claimed successfully');
-        } catch (e) {
-          console.warn('Auto-claim after end failed', e);
-        }
-      }
       console.log('[Reader] Finishing progress...');
       try {
         await apiFetch(`/api/v1/progress/finish?slice_id=${Number(id)}`, { method: 'POST' });
@@ -329,17 +316,12 @@ export default function ReaderScreen() {
       }
       // Return to the book detail so the user sees the next slice
       // unlocked and chooses when to start it.
-      const parentId = content?.parent_work_id;
-      console.log('[Reader] Navigating to parent book:', parentId);
-      if (parentId) {
-        router.replace(`/book/${parentId}` as never);
-      } else {
-        router.replace('/(tabs)');
-      }
-      console.log('[Reader] Navigation triggered');
+      // Use back() instead of replace() so the navigation stack stays
+      // clean: Home → Book → Reader → back() → Book (not Book → Book).
+      router.back();
     } catch (e) {
       console.error('End session failed', e);
-      router.replace('/(tabs)');
+      router.back();
     }
   };
 

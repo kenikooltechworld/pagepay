@@ -76,16 +76,24 @@ export function RewardedAd(props: RewardedAdProps) {
   const rewardedRef = useRef<any>(null);
   const rewardDataRef = useRef<{ type: string; amount: number } | null>(null);
   const hasLoadedRef = useRef(false); // Track if we've loaded for this modal open
+  // Captures the real revenue from the AdMob PAID event (in micro-units).
+  // Passed to claimAdReward so the backend credits based on actual ad earnings.
+  const paidRevenueRef = useRef<number>(0);
 
   // Handle reward claim
   const handleRewardClaim = useCallback(async () => {
     const transactionId = `rewarded-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    // Convert AdMob micro-units (millionths of USD) to USD.
+    // If no PAID event fired yet, fall back to 0.01 as a safe default.
+    const revenueUsd = paidRevenueRef.current > 0
+      ? paidRevenueRef.current / 1_000_000
+      : 0.01;
     const result = await claimAdReward({
       adEventId: null,
       adType: 'rewarded',
       provider: 'admob',
       adUnit: adUnit || 'unknown',
-      revenueUsd: 0.01,
+      revenueUsd,
       transactionId,
     });
 
@@ -150,6 +158,17 @@ export function RewardedAd(props: RewardedAdProps) {
           rewardDataRef.current = reward;
         });
 
+        // Real ad revenue from AdMob (in micro-units — millionths of USD).
+        // This fires after the SDK resolves the impression-level revenue.
+        const unsubPaid = ad.addAdEventListener(AdEventType.PAID, (event: { currency: string; value: number }) => {
+          if (__DEV__) {
+            console.log('[RewardedAd] Paid event:', event);
+          }
+          if (event.value > 0) {
+            paidRevenueRef.current = event.value;
+          }
+        });
+
         // Ad closed
         const unsubClosed = ad.addAdEventListener(AdEventType.CLOSED, async () => {
           if (__DEV__) {
@@ -159,6 +178,7 @@ export function RewardedAd(props: RewardedAdProps) {
           // Cleanup listeners
           unsubLoaded();
           unsubEarned();
+          unsubPaid();
           unsubClosed();
 
           // Cleanup ad
