@@ -23,6 +23,18 @@ type DataPlan = {
   label: string;
 };
 
+type ValidityPeriod = 'daily' | 'weekly' | 'monthly';
+
+// Helper to categorize plans by validity period from label
+function categorizePlan(label: string): ValidityPeriod {
+  const lower = label.toLowerCase();
+  if (lower.includes('day') && !lower.includes('days')) return 'daily';
+  if (lower.includes('1day') || lower.includes('2day')) return 'daily';
+  if (lower.includes('week')) return 'weekly';
+  if (lower.includes('month') || lower.includes('year')) return 'monthly';
+  return 'monthly'; // default
+}
+
 type PurchaseResult = {
   reference: string;
   commission_naira: number;
@@ -42,6 +54,7 @@ export default function BuyDataScreen() {
   const [phone, setPhone] = useState('');
   const [network, setNetwork] = useState('mtn_data_share');
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ValidityPeriod>('monthly');
 
   const networksQ = useQuery({
     queryKey: ['data-networks'],
@@ -63,6 +76,14 @@ export default function BuyDataScreen() {
   });
 
   const selectedPkg = plansQ.data?.find((p) => p.plan_code === selectedPlan);
+
+  // Categorize plans by validity
+  const categorizedPlans = (plansQ.data ?? []).reduce((acc, plan) => {
+    const period = categorizePlan(plan.label);
+    if (!acc[period]) acc[period] = [];
+    acc[period].push(plan);
+    return acc;
+  }, {} as Record<ValidityPeriod, DataPlan[]>);
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
@@ -95,9 +116,9 @@ export default function BuyDataScreen() {
   });
 
   const canSubmit = phone.length >= 10 && selectedPlan !== null;
-  const estPoints = selectedPkg
-    ? Math.floor(selectedPkg.amount * 0.034 * 0.67 * 100)
-    : 0;
+  
+  // Points will come from backend response after purchase
+  // For display, show "Earn cashback" without hardcoded calculation
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>
@@ -149,34 +170,68 @@ export default function BuyDataScreen() {
           </View>
         )}
 
-        {/* Plans */}
+        {/* Plans with tabs */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Bundle</Text>
+        
+        {/* Validity Tabs */}
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+          {(['daily', 'weekly', 'monthly'] as ValidityPeriod[]).map((period) => {
+            const count = categorizedPlans[period]?.length || 0;
+            if (count === 0) return null;
+            return (
+              <TouchableOpacity
+                key={period}
+                onPress={() => setActiveTab(period)}
+                style={[
+                  styles.tab,
+                  {
+                    backgroundColor: activeTab === period ? tokens.mint : tokens.card,
+                    borderColor: activeTab === period ? tokens.mint : tokens.border,
+                  },
+                ]}
+              >
+                <Text style={[
+                  styles.tabText,
+                  { color: activeTab === period ? tokens.mintText : tokens.ink },
+                ]}>
+                  {period.charAt(0).toUpperCase() + period.slice(1)} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        
         {plansQ.isLoading ? (
           <ActivityIndicator color={tokens.mint} />
         ) : (
           <View style={{ gap: 8 }}>
-            {(plansQ.data ?? []).map((p) => (
-              <TouchableOpacity
-                key={p.plan_code}
-                onPress={() => setSelectedPlan(p.plan_code)}
-                style={[
-                  styles.bundleCard,
-                  {
-                    backgroundColor: selectedPlan === p.plan_code ? tokens.mintSoft : tokens.card,
-                    borderColor: selectedPlan === p.plan_code ? tokens.mint : tokens.border,
-                  },
-                ]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.bundleName, { color: tokens.ink }]}>
-                    {p.label}
+            {(categorizedPlans[activeTab] ?? []).map((p) => {
+              return (
+                <TouchableOpacity
+                  key={p.plan_code}
+                  onPress={() => setSelectedPlan(p.plan_code)}
+                  style={[
+                    styles.bundleCard,
+                    {
+                      backgroundColor: selectedPlan === p.plan_code ? tokens.mintSoft : tokens.card,
+                      borderColor: selectedPlan === p.plan_code ? tokens.mint : tokens.border,
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bundleName, { color: tokens.ink }]}>
+                      {p.label}
+                    </Text>
+                    <Text style={[styles.bundlePoints, { color: tokens.mint }]}>
+                      💰 Earn cashback points
+                    </Text>
+                  </View>
+                  <Text style={[styles.bundlePrice, { color: tokens.mint }]}>
+                    ₦{p.amount.toLocaleString()}
                   </Text>
-                </View>
-                <Text style={[styles.bundlePrice, { color: tokens.mint }]}>
-                  ₦{p.amount.toLocaleString()}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -185,9 +240,9 @@ export default function BuyDataScreen() {
           <View style={[styles.earnCard, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
             <Ionicons name="gift-outline" size={20} color={tokens.mint} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.earnLabel, { color: tokens.mint }]}>You'll earn +{estPoints} points</Text>
+              <Text style={[styles.earnLabel, { color: tokens.mint }]}>You'll earn cashback points!</Text>
               <Text style={[styles.earnSub, { color: tokens.ink }]}>
-                Commission from the data purchase is split — you get points, we keep the platform running.
+                Real commission from Peyflex will be credited after purchase (varies by network).
               </Text>
             </View>
           </View>
@@ -233,11 +288,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 13, fontWeight: '600' },
+  tab: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1, flex: 1, alignItems: 'center',
+  },
+  tabText: { fontSize: 12, fontWeight: '600' },
   bundleCard: {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 12, padding: 14, borderWidth: 1,
   },
-  bundleName: { fontSize: 13, fontWeight: '500', flex: 1 },
+  bundleName: { fontSize: 13, fontWeight: '500' },
+  bundlePoints: { fontSize: 11, fontWeight: '600', marginTop: 3 },
   bundlePrice: { fontSize: 15, fontWeight: '700', fontFamily: 'SpaceGrotesk_700Bold' },
   earnCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
