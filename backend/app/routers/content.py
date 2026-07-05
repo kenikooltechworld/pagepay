@@ -407,7 +407,7 @@ async def continue_reading(
     )
 
 
-@router.get("/{content_id}", response_model=ContentDetail)
+@router.get("/{content_id:int}", response_model=ContentDetail)
 async def get_content(content_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ContentCatalog).where(ContentCatalog.id == content_id))
     item = result.scalar_one_or_none()

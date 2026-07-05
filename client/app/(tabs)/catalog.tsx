@@ -29,12 +29,6 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 // 0 is reserved server-side (no user has id=0) so it's a safe sentinel.
 const ANONYMOUS_USER_ID = 0;
 
-// Anonymous-browse fallback for the per-user sponsored shuffle. Any
-// fixed value works — the shuffle is stable per-id so the same
-// anonymous user sees the same ad order between page refreshes.
-// 0 is reserved server-side (no user has id=0) so it's a safe sentinel.
-const ANONYMOUS_USER_ID = 0;
-
 export default function CatalogScreen() {
   const router = useRouter();
   const scheme = useEffectiveScheme();
