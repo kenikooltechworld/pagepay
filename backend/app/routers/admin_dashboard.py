@@ -98,9 +98,9 @@ async def dashboard_stats(
         if event.user_points_credited:
             total_points += event.user_points_credited
 
-    # Calculate 80/20 split for ads
-    PLATFORM_SHARE = 0.20
-    USER_SHARE = 0.80
+    # Calculate 95/5 split for ads
+    PLATFORM_SHARE = 0.05
+    USER_SHARE = 0.95
 
     ad_platform_share_usd = ad_revenue_usd * PLATFORM_SHARE
     ad_user_share_usd = ad_revenue_usd * USER_SHARE

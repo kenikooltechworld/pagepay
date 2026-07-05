@@ -36,7 +36,7 @@ logger = logging.getLogger("uvicorn.error")
 # Platform revenue share: 20% to us, 80% to the user. Keep this as a
 # constant — flipping it requires a deploy, which is the right blast
 # radius for a money-affecting change.
-PLATFORM_SHARE = 0.20
+PLATFORM_SHARE = 0.05
 USER_SHARE = 1.0 - PLATFORM_SHARE
 
 # 100 points = ₦1 (NGN). All point math goes through this constant so

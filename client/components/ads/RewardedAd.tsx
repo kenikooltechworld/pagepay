@@ -84,11 +84,11 @@ export function RewardedAd(props: RewardedAdProps) {
   const handleRewardClaim = useCallback(async () => {
     const transactionId = `rewarded-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     // Convert AdMob micro-units (millionths of USD) to USD.
-    // If no PAID event fired yet, fall back to 0.003 (~$3 CPM,
-    // realistic for Nigerian rewarded video eCPM).
+    // If no PAID event fired yet, fall back to 0.00035 (Nigeria
+    // AdMob CPM averages ~$0.35 per 1k impressions = $0.00035 per ad).
     const revenueUsd = paidRevenueRef.current > 0
       ? paidRevenueRef.current / 1_000_000
-      : 0.003;
+      : 0.00035;
     const result = await claimAdReward({
       adEventId: null,
       adType: 'rewarded',
