@@ -1,6 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -32,6 +31,7 @@ import { clearToken } from '@/src/shared/lib/storage';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PagePay } from '@/constants/theme';
 import { PageMark } from '@/components/PageMark';
+import { Skeleton } from '@/components/Skeleton';
 import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import {
   LinkPayoutAccountModal,
@@ -275,7 +275,10 @@ export default function ProfileScreen() {
         <Text style={[styles.section, { color: tokens.inkMuted }]}>PAYOUT ACCOUNT</Text>
         <View style={[styles.payoutCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
           {payoutQuery.isLoading ? (
-            <ActivityIndicator color={tokens.mint} />
+            <View style={{ gap: 8, padding: 4 }}>
+              <Skeleton height={16} width="70%" borderRadius={6} />
+              <Skeleton height={14} width="50%" borderRadius={6} />
+            </View>
           ) : payoutQuery.data ? (
             <View style={styles.payoutInner}>
               <View style={[styles.payoutIcon, { backgroundColor: tokens.mintSoft }]}>

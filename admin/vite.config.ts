@@ -35,3 +35,21 @@ export default defineConfig(({ mode }) => {
     },
   }
 })
+
+
+//  am talking of something outside that will bring me revenue for both platform and user and you're
+//   here telling me something stupid, where will i get or have money to pay users if i dont get
+//   profit, i cant give users my personal money right? am talking of third party integrations. But
+//   airtime/data, utitlity subscriptions, etc like opay and others do. please lest have a serious
+//   discussion 
+
+// what is the plan and how to make it happen? 
+
+// give me a visual design let me first before code 
+
+//  i see, but dont expose my secret to users, how will i get vtpass apikey? and where do you think
+//   we can get apikey for aggregator that sell chip data? 
+
+//   lets start with peyflex, we can implement them all, but let peyflex be the primary usage, what do   you think 
+
+//   start while i check peyflex website, dont forget to follow the exiting pattern 

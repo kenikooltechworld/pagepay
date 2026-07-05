@@ -14,6 +14,7 @@ import { AssetBrowser } from '@/components/study/AssetBrowser';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { SkeletonPage } from '@/components/skeletons';
 
 type AssetInfo = {
   id: number;
@@ -303,8 +304,7 @@ export default function StudyScreen() {
 
             {isLoading ? (
               <View style={styles.stateBlock}>
-                <ActivityIndicator color={tokens.mint} />
-                <Text style={[styles.stateText, { color: tokens.inkMuted }]}>Loading materials...</Text>
+                <SkeletonPage count={3} header={false} />
               </View>
             ) : materials.length > 0 ? (
               <View style={styles.materialList}>

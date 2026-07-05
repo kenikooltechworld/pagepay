@@ -91,7 +91,16 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     openrouter_api_key: str | None = None
 
-    # ── Content feed ──────────────────────────────────────────────
+    # ── Phase 8: Bills & Earn (VTU aggregator) ────────────────────────
+    # Peyflex is the primary VTU provider (airtime, data, electricity, TV).
+    # API key from peyflex.com.ng dashboard — never commit the real value.
+    peyflex_api_key: str | None = None
+    peyflex_base_url: str = "https://portal.peyflex.com.ng/api/v1"
+
+    # Commission split: portion of the aggregator's commission that goes
+    # back to the user as points (the rest funds the platform).
+    # 0.67 = user gets 67% of the commission, platform keeps 33%.
+    bills_user_share: float = 0.67
     # Every Nth item in the catalog feed is a sponsored slot. The
     # spec's default is 4 (in-feed native every 4th item). Set to
     # 0 to disable sponsored rotation entirely (rare — only for

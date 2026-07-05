@@ -36,6 +36,32 @@ class User(Base):
     banned_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     subscription_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BillTransaction(Base):
+    """Record of a VTU bill-payment transaction (airtime, data, elec, TV).
+
+    Every successful purchase via the Bills & Earn feature creates one of
+    these rows. Each row records the provider commission earned and how
+    many points were credited back to the user.
+    """
+    __tablename__ = "bill_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    service: Mapped[str] = mapped_column(String(50))          # "airtime" | "data" | "electricity" | "tv"
+    provider: Mapped[str] = mapped_column(String(30))         # "peyflex"
+    phone: Mapped[str | None] = mapped_column(String(20))     # recipient phone (airtime/data)
+    meter_number: Mapped[str | None] = mapped_column(String(30))  # for electricity
+    smartcard_number: Mapped[str | None] = mapped_column(String(30))  # for TV
+    amount_naira: Mapped[int] = mapped_column(Integer)         # what the user paid (kobo)
+    commission_naira: Mapped[int] = mapped_column(Integer)     # aggregator commission (kobo)
+    points_earned: Mapped[int] = mapped_column(Integer)        # points credited to user
+    reference: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(20))            # "success" | "failed" | "pending"
+    external_ref: Mapped[str | None] = mapped_column(String(100))  # peyflex transaction id
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     
     # ── Phase 7: Social Tasks ─────────────────────────────────────────

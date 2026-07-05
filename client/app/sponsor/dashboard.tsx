@@ -1,13 +1,19 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
 import { useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchSponsorTasks, type TaskResponseFull } from '@/src/features/sponsor/api';
+import { SkeletonPage } from '@/components/skeletons';
+import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { PagePay } from '@/constants/theme';
 
 export default function SponsorDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'draft' | 'active' | 'completed'>('all');
+  const scheme = useEffectiveScheme();
+  const tokens = PagePay[scheme];
 
   const { data: tasks, isLoading, refetch } = useQuery({
     queryKey: ['sponsorTasks', filter],
@@ -27,44 +33,44 @@ export default function SponsorDashboardScreen() {
 
     return (
       <TouchableOpacity
-        style={styles.taskCard}
+        style={[styles.taskCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}
         onPress={() => router.push(`/sponsor/tasks/${item.id}`)}
       >
         <View style={styles.taskHeader}>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-            <Text style={styles.statusText}>{item.status}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status, tokens) }]}>
+            <Text style={[styles.statusText, { color: tokens.mintText }]}>{item.status}</Text>
           </View>
-          <Text style={styles.rewardText}>₦{(item.reward_amount / 100).toFixed(2)} each</Text>
+          <Text style={[styles.rewardText, { color: tokens.mint }]}>₦{(item.reward_amount / 100).toFixed(2)} each</Text>
         </View>
 
-        <Text style={styles.taskTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={[styles.taskTitle, { color: tokens.ink }]} numberOfLines={2}>{item.title}</Text>
 
-        <View style={styles.statsRow}>
+        <View style={[styles.statsRow, { borderColor: tokens.border }]}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{item.completed_count}/{item.max_completions}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
+            <Text style={[styles.statValue, { color: tokens.ink }]}>{item.completed_count}/{item.max_completions}</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Completed</Text>
           </View>
 
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{item.pending_count}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
+            <Text style={[styles.statValue, { color: tokens.ink }]}>{item.pending_count}</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Pending</Text>
           </View>
 
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{completionRate}%</Text>
-            <Text style={styles.statLabel}>Progress</Text>
+            <Text style={[styles.statValue, { color: tokens.ink }]}>{completionRate}%</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Progress</Text>
           </View>
         </View>
 
         <View style={styles.taskFooter}>
           <View style={styles.taskMeta}>
-            <Ionicons name="calendar-outline" size={14} color="#666" />
-            <Text style={styles.taskMetaText}>{new Date(item.expires_at).toLocaleDateString()}</Text>
+            <Ionicons name="calendar-outline" size={14} color={tokens.inkMuted} />
+            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>{new Date(item.expires_at).toLocaleDateString()}</Text>
           </View>
 
           <View style={styles.taskMeta}>
-            <Ionicons name="cash-outline" size={14} color="#666" />
-            <Text style={styles.taskMetaText}>Spent: ₦{(item.total_spent / 100).toFixed(2)}</Text>
+            <Ionicons name="cash-outline" size={14} color={tokens.inkMuted} />
+            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>Spent: ₦{(item.total_spent / 100).toFixed(2)}</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -72,30 +78,32 @@ export default function SponsorDashboardScreen() {
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#6C5CE7" />
-      </View>
-    );
+    return <SkeletonPage count={4} header={false} />;
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Tasks</Text>
+    <View style={[styles.container, { backgroundColor: tokens.paper }]}>
+      <View style={[styles.header, { backgroundColor: tokens.card, borderBottomColor: tokens.border }]}>
+        <Text style={[styles.headerTitle, { color: tokens.ink }]}>My Tasks</Text>
         <TouchableOpacity onPress={() => router.push('/sponsor/tasks/create')}>
-          <Ionicons name="add-circle" size={32} color="#6C5CE7" />
+          <Ionicons name="add-circle" size={32} color={tokens.mint} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.filterContainer}>
+      <View style={[styles.filterContainer, { backgroundColor: tokens.card, borderBottomColor: tokens.border }]}>
         {['all', 'draft', 'active', 'completed'].map((status) => (
           <TouchableOpacity
             key={status}
-            style={[styles.filterPill, filter === status && styles.filterPillActive]}
+            style={[
+              styles.filterPill,
+              {
+                backgroundColor: filter === status ? tokens.mint : tokens.paper,
+                borderColor: filter === status ? tokens.mint : tokens.border,
+              },
+            ]}
             onPress={() => setFilter(status as any)}
           >
-            <Text style={[styles.filterText, filter === status && styles.filterTextActive]}>
+            <Text style={[styles.filterText, { color: filter === status ? tokens.mintText : tokens.inkMuted }]}>
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </Text>
           </TouchableOpacity>
@@ -107,17 +115,17 @@ export default function SponsorDashboardScreen() {
         renderItem={renderTask}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.mint} />}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="briefcase-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No tasks yet</Text>
+            <Ionicons name="briefcase-outline" size={64} color={tokens.border} />
+            <Text style={[styles.emptyText, { color: tokens.ink }]}>No tasks yet</Text>
             <TouchableOpacity
-              style={styles.createButton}
+              style={[styles.createButton, { backgroundColor: tokens.mint }]}
               onPress={() => router.push('/sponsor/tasks/create')}
             >
-              <Ionicons name="add" size={20} color="#fff" />
-              <Text style={styles.createButtonText}>Create Your First Task</Text>
+              <Ionicons name="add" size={20} color={tokens.mintText} />
+              <Text style={[styles.createButtonText, { color: tokens.mintText }]}>Create Your First Task</Text>
             </TouchableOpacity>
           </View>
         }
@@ -126,82 +134,62 @@ export default function SponsorDashboardScreen() {
   );
 }
 
-function getStatusColor(status: string) {
+function getStatusColor(status: string, tokens: (typeof PagePay)['light']) {
   switch (status) {
-    case 'draft': return '#999';
-    case 'active': return '#00B894';
-    case 'paused': return '#FFA500';
-    case 'completed': return '#6C5CE7';
-    case 'expired': return '#ff6b6b';
-    default: return '#999';
+    case 'draft': return tokens.inkMuted;
+    case 'active': return tokens.mint;
+    case 'paused': return '#FFA500'; // keep orange — no dedicated token
+    case 'completed': return tokens.mint;
+    case 'expired': return tokens.signal;
+    default: return tokens.inkMuted;
   }
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    fontFamily: 'SpaceGrotesk_700Bold',
   },
   filterContainer: {
     flexDirection: 'row',
     padding: 16,
     gap: 8,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   filterPill: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#f5f5f5',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  filterPillActive: {
-    backgroundColor: '#6C5CE7',
-    borderColor: '#6C5CE7',
   },
   filterText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
-  },
-  filterTextActive: {
-    color: '#fff',
   },
   listContent: {
     padding: 16,
   },
   taskCard: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   taskHeader: {
     flexDirection: 'row',
@@ -217,18 +205,17 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#fff',
     textTransform: 'capitalize',
   },
   rewardText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#00B894',
+    fontFamily: 'SpaceGrotesk_700Bold',
   },
   taskTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    fontFamily: 'SpaceGrotesk_700Bold',
     marginBottom: 12,
   },
   statsRow: {
@@ -237,7 +224,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#f0f0f0',
     marginBottom: 12,
   },
   statItem: {
@@ -246,12 +232,11 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    fontFamily: 'SpaceGrotesk_700Bold',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    color: '#666',
   },
   taskFooter: {
     flexDirection: 'row',
@@ -264,7 +249,6 @@ const styles = StyleSheet.create({
   },
   taskMetaText: {
     fontSize: 12,
-    color: '#666',
   },
   emptyContainer: {
     alignItems: 'center',
@@ -274,7 +258,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    fontFamily: 'SpaceGrotesk_700Bold',
     marginTop: 16,
     marginBottom: 24,
   },
@@ -282,13 +266,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#6C5CE7',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
   },
   createButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },

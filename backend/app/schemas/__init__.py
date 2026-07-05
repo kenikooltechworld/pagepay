@@ -34,6 +34,104 @@ class UserMe(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ══════════════════════════════════════════════════════════════════════
+# PHASE 8: BILLS & EARN (VTU)
+# ══════════════════════════════════════════════════════════════════════
+
+
+class AirtimePurchaseRequest(BaseModel):
+    """POST /bills/airtime - Buy airtime and earn points."""
+    phone: str = Field(min_length=10, max_length=15)
+    network: str = Field(..., description="mtn, airtel, glo, 9mobile")
+    amount_naira: int = Field(ge=50, le=50000)
+
+
+class DataPurchaseRequest(BaseModel):
+    """POST /bills/data - Buy data bundle and earn points."""
+    phone: str = Field(min_length=10, max_length=15)
+    network: str = Field(..., description="mtn, airtel, glo, 9mobile")
+    data_id: str = Field(..., description="Data bundle unique ID from Peyflex")
+
+
+class AirtimePurchaseResponse(BaseModel):
+    """Response after a successful airtime purchase."""
+    reference: str
+    phone: str
+    amount_naira: int
+    network: str
+    commission_naira: int
+    points_earned: int
+    new_balance: int
+    status: str
+
+
+class DataPurchaseRequest(BaseModel):
+    """POST /bills/data - Buy data bundle and earn points."""
+    phone: str = Field(min_length=10, max_length=15)
+    network: str = Field(..., description="mtn, airtel, glo, 9mobile")
+    data_id: str = Field(..., description="Data bundle unique ID from Peyflex")
+
+
+class ElectricityPurchaseRequest(BaseModel):
+    """POST /bills/electricity - Buy electricity tokens."""
+    meter_number: str = Field(min_length=6, max_length=30)
+    disco: str = Field(..., description="aedc, ekedc, ibedc, ikedc, jed, kaedco, kedco, phed")
+    meter_type: str = Field(default="prepaid", pattern="^(prepaid|postpaid)$")
+    amount_naira: int = Field(ge=500, le=100000)
+
+
+class TelevisionPurchaseRequest(BaseModel):
+    """POST /bills/tv - Subscribe cable TV."""
+    smartcard_number: str = Field(min_length=8, max_length=30)
+    provider: str = Field(..., description="dstv, gotv, startimes")
+    variation_id: str = Field(..., description="Bouquet code from Peyflex")
+
+
+class BillsPurchaseResponse(BaseModel):
+    """Generic response for bills purchases."""
+    reference: str
+    commission_naira: int
+    points_earned: int
+    new_balance: int
+    status: str
+    # Service-specific fields
+    phone: str | None = None
+    meter_number: str | None = None
+    smartcard_number: str | None = None
+    customer_name: str | None = None
+    token: str | None = None
+    units: str | None = None
+
+
+class BundleInfo(BaseModel):
+    """One data bundle option."""
+    id: str
+    network: str
+    name: str
+    size_mb: int
+    validity_days: int
+    price_naira: int
+    commission_rate: float = 0.03
+
+
+class DiscoInfo(BaseModel):
+    """One electricity DISCO."""
+    code: str
+    name: str
+    supports_prepaid: bool = True
+    supports_postpaid: bool = True
+
+
+class BouquetInfo(BaseModel):
+    """One cable TV bouquet."""
+    id: str
+    provider: str
+    name: str
+    price_naira: int
+    channels: str | None = None
+    commission_rate: float = 0.015
+
+
 class ContentItem(BaseModel):
     id: int
     title: str

@@ -25,6 +25,7 @@ import { ContentCard, ContentItem } from '@/components/ContentCard';
 import { ResumeCard } from '@/components/ResumeCard';
 import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
+import { SkeletonPage } from '@/components/skeletons';
 
 const CATEGORIES = ['Fiction', 'Classics', 'News', 'Study'] as const;
 
@@ -310,12 +311,7 @@ export default function HomeScreen() {
           </View>
 
           {feedQuery.isLoading && items.length === 0 ? (
-            <View style={[styles.stateBlock, { borderColor: tokens.border }]}>
-              <ActivityIndicator color={tokens.mint} />
-              <Text style={[styles.stateText, { color: tokens.inkMuted }]}>
-                Loading your feed…
-              </Text>
-            </View>
+            <SkeletonPage count={2} header={false} />
           ) : feedQuery.isError ? (
             <View style={[styles.stateBlock, { borderColor: tokens.signal }]}>
               <Ionicons name="cloud-offline-outline" size={20} color={tokens.signal} />

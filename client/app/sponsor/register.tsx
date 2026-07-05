@@ -5,6 +5,8 @@ import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { registerSponsor } from '@/src/features/sponsor/api';
 import { saveToken } from '@/src/shared/lib/storage';
+import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { PagePay } from '@/constants/theme';
 
 export default function SponsorRegisterScreen() {
   const [email, setEmail] = useState('');
@@ -12,6 +14,8 @@ export default function SponsorRegisterScreen() {
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const scheme = useEffectiveScheme();
+  const tokens = PagePay[scheme];
 
   const registerMutation = useMutation({
     mutationFn: registerSponsor,
@@ -43,27 +47,30 @@ export default function SponsorRegisterScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView style={[styles.container, { backgroundColor: tokens.paper }]} contentContainerStyle={styles.contentContainer}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: tokens.card }]}>
+          <Ionicons name="arrow-back" size={24} color={tokens.ink} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.heroSection}>
-        <Ionicons name="briefcase" size={64} color="#6C5CE7" />
-        <Text style={styles.title}>Become a Sponsor</Text>
-        <Text style={styles.subtitle}>
+        <Ionicons name="briefcase" size={64} color={tokens.mint} />
+        <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+          Become a Sponsor
+        </Text>
+        <Text style={[styles.subtitle, { color: tokens.inkMuted }]}>
           Post tasks, reach thousands of users, and grow your brand
         </Text>
       </View>
 
-      <View style={styles.form}>
+      <View style={[styles.form, { backgroundColor: tokens.card }]}>
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Display Name *</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>Display Name *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
             placeholder="Your name or brand name"
+            placeholderTextColor={tokens.inkMuted}
             value={displayName}
             onChangeText={setDisplayName}
             autoCapitalize="words"
@@ -71,10 +78,11 @@ export default function SponsorRegisterScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email *</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>Email *</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
             placeholder="sponsor@example.com"
+            placeholderTextColor={tokens.inkMuted}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
@@ -83,10 +91,11 @@ export default function SponsorRegisterScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Phone (Optional)</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>Phone (Optional)</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
             placeholder="+234 XXX XXX XXXX"
+            placeholderTextColor={tokens.inkMuted}
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
@@ -94,46 +103,47 @@ export default function SponsorRegisterScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Password *</Text>
-          <View style={styles.passwordContainer}>
+          <Text style={[styles.label, { color: tokens.ink }]}>Password *</Text>
+          <View style={[styles.passwordContainer, { backgroundColor: tokens.paper, borderColor: tokens.border }]}>
             <TextInput
-              style={styles.passwordInput}
+              style={[styles.passwordInput, { color: tokens.ink }]}
               placeholder="Minimum 8 characters"
+              placeholderTextColor={tokens.inkMuted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color="#666" />
+              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={tokens.inkMuted} />
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle" size={20} color="#6C5CE7" />
-          <Text style={styles.infoText}>
+        <View style={[styles.infoBox, { backgroundColor: tokens.mintSoft }]}>
+          <Ionicons name="information-circle" size={20} color={tokens.mint} />
+          <Text style={[styles.infoText, { color: tokens.ink }]}>
             Anyone can be a sponsor - individuals, influencers, brands. No business registration required.
           </Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.submitButton, registerMutation.isPending && styles.submitButtonDisabled]}
+          style={[styles.submitButton, { backgroundColor: tokens.mint }, registerMutation.isPending && { backgroundColor: tokens.border }]}
           onPress={handleSubmit}
           disabled={registerMutation.isPending}
         >
           {registerMutation.isPending ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={tokens.mintText} />
           ) : (
             <>
-              <Ionicons name="checkmark-circle" size={24} color="#fff" />
-              <Text style={styles.submitButtonText}>Create Sponsor Account</Text>
+              <Ionicons name="checkmark-circle" size={24} color={tokens.mintText} />
+              <Text style={[styles.submitButtonText, { color: tokens.mintText }]}>Create Sponsor Account</Text>
             </>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.loginLink}>
-          <Text style={styles.loginLinkText}>Already have an account? Log in</Text>
+          <Text style={[styles.loginLinkText, { color: tokens.mint }]}>Already have an account? Log in</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -143,7 +153,6 @@ export default function SponsorRegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   contentContainer: {
     padding: 16,
@@ -156,12 +165,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -171,19 +179,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
     marginTop: 16,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
     marginTop: 8,
     paddingHorizontal: 32,
   },
   form: {
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
   },
@@ -193,34 +197,30 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f5f5f5',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: '#333',
+    borderWidth: 1,
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     borderRadius: 8,
+    borderWidth: 1,
   },
   passwordInput: {
     flex: 1,
     padding: 12,
     fontSize: 16,
-    color: '#333',
   },
   eyeIcon: {
     padding: 12,
   },
   infoBox: {
     flexDirection: 'row',
-    backgroundColor: '#E3F2FD',
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
@@ -229,32 +229,20 @@ const styles = StyleSheet.create({
   infoText: {
     flex: 1,
     fontSize: 13,
-    color: '#333',
     lineHeight: 18,
   },
   submitButton: {
-    backgroundColor: '#6C5CE7',
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#6C5CE7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#ccc',
-    shadowOpacity: 0,
-    elevation: 0,
   },
   submitButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk_700Bold',
   },
   loginLink: {
     padding: 12,
@@ -262,7 +250,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   loginLinkText: {
-    color: '#6C5CE7',
     fontSize: 14,
     fontWeight: '600',
   },

@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchTaskDetail, startTask } from '@/src/features/tasks/api';
+import { SkeletonDetailPage } from '@/components/skeletons';
 
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,11 +48,7 @@ export default function TaskDetailScreen() {
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#6C5CE7" />
-      </View>
-    );
+    return <SkeletonDetailPage />;
   }
 
   if (!task) {

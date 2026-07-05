@@ -3,11 +3,14 @@
 [cmd]: https://commandcode.ai/
 
 # workflow
+- When adding new components to existing screen files (e.g., wallet.tsx), always verify the required React Native imports (TouchableOpacity, etc.) are included — the error `Property 'TouchableOpacity' doesn't exist` means an import was missed. Confidence: 0.70
 - Before writing code for business logic decisions (e.g., revenue calculations, ad payout rates, user earnings math), first research thoroughly via web search and present findings to the user for confirmation before making any changes. Do not assume values, rush into implementation, or push code — discuss and align first. Confidence: 0.82
+- Before coding new screens or features, first present a visual design/mockup for the user to review and approve. Do not jump straight into implementation code. Confidence: 0.70
 
 # architecture
-- Points earning model is purely ad-driven: users earn points only from pre-read and post-read ad views (80% of ad revenue, converted via live FX rate at 100 pts = ₦1), NOT from reading time or session duration. No reading-time bonuses apply. Confidence: 0.85
-- Remove the `/session/claim` call and the reading-time point formula (`(effective_duration // 600) * 5`) from the session flow — points should come exclusively from ad revenue, not reading duration. Confidence: 0.80
-- Ad revenue passed to the backend must come from AdMob's actual payout (e.g., SSV callback), not hardcoded `revenueUsd: 0.01` in `RewardedAd.tsx`. Confidence: 0.80
-- SSV signature verification is crucial and must work properly — do not bypass or log-and-accept on failure; fix the actual verification instead. Confidence: 0.70
+See [architecture/taste.md](architecture/taste.md)
 
+# monetization
+- For user rewards and platform revenue, use third-party affiliate integrations (e.g., airtime/data/electricity bill payments via aggregator APIs) where the third party pays the commission. Split commission between user points and platform profit — never fund user rewards from the platform's own pocket. Confidence: 0.70
+- Never display the platform's earnings/cut/margin to end users in any UI mockup or screen. The commission split between user and platform must remain invisible to users — only show what the user earns (points), not what the platform keeps. Confidence: 0.75
+- Use Peyflex as the primary VTU/data/airtime aggregator API, with other providers (e.g., VTpass) as fallback. Peyflex offers free API access and better data margins (5% discount). Confidence: 0.65

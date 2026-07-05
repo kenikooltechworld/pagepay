@@ -7,6 +7,7 @@ import { RewardedAd } from '@/components/ads/RewardedAd';
 import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { SkeletonDetailPage } from '@/components/skeletons';
 
 type ContentDetail = {
   id: number;
@@ -480,7 +481,7 @@ export default function ReaderScreen() {
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: tokens.paper }]}>
-        <Text style={{ color: tokens.ink }}>Loading...</Text>
+        <SkeletonDetailPage />
       </View>
     );
   }

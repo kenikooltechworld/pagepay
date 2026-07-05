@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator, Alert } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
@@ -8,6 +8,7 @@ import * as Linking from 'expo-linking';
 import { apiFetch } from '@/src/shared/api/client';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { SkeletonPage } from '@/components/skeletons';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
 type Tier = {
@@ -104,9 +105,7 @@ export default function PremiumScreen() {
         ) : null}
 
         {tiersQ.isLoading ? (
-          <View style={styles.loading}>
-            <ActivityIndicator color={tokens.mint} size="large" />
-          </View>
+          <SkeletonPage count={3} header={false} />
         ) : (
           <View style={styles.tiersContainer}>
             {tiers.map((tier) => (

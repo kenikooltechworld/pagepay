@@ -1,7 +1,7 @@
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { View, Text, FlatList, RefreshControl, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { View, Text, FlatList, RefreshControl, ActivityIndicator, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -78,6 +78,7 @@ const formatDate = (iso: string | null) => {
 export default function WalletScreen() {
   const scheme = useEffectiveScheme();
   const c = PagePay[scheme];
+  const router = useRouter();
   const qc = useQueryClient();
 
   // Fetch ad config for native unit
@@ -326,6 +327,53 @@ export default function WalletScreen() {
                 <PrimaryButton title="Withdraw" onPress={handleWithdrawPress} />
               )}
             </View>
+
+            {/* ── Pay Bills & Earn ──────────────────────────── */}
+            <View style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontFamily: Fonts.display,
+                  fontSize: 18,
+                  color: c.ink,
+                  letterSpacing: -0.3,
+                }}
+              >
+                Pay Bills & Earn
+              </Text>
+              <Text style={{ fontSize: 12, color: c.inkMuted, marginTop: 2, marginBottom: 12 }}>
+                Buy what you need, earn points from every transaction
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <BillsService
+                  icon="phone-portrait-outline"
+                   label="Airtime"
+                   earn="3%"
+                   color={c}
+                   onPress={() => router.push('/(tabs)/buy-airtime')}
+                 />
+                 <BillsService
+                   icon="wifi-outline"
+                   label="Data"
+                   earn="4%"
+                   color={c}
+                   onPress={() => router.push('/(tabs)/buy-data')}
+                 />
+                 <BillsService
+                   icon="flash-outline"
+                   label="Electricity"
+                   earn="1%"
+                   color={c}
+                   onPress={() => router.push('/(tabs)/buy-electricity')}
+                 />
+                 <BillsService
+                   icon="tv-outline"
+                   label="TV"
+                   earn="1.5%"
+                   color={c}
+                   onPress={() => router.push('/(tabs)/buy-tv')}
+                 />
+               </View>
+             </View>
 
             {/* Section title */}
             <Text
@@ -584,6 +632,66 @@ function WithdrawalRow({
         ) : null}
       </View>
     </View>
+  );
+}
+
+// ── Bills & Earn service button ──────────────────────────────────
+
+function BillsService({
+  icon,
+  label,
+  earn,
+  color: c,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  earn: string;
+  color: (typeof PagePay)['light'];
+  onPress?: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={{
+        flex: 1,
+        backgroundColor: c.card,
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 14,
+        paddingVertical: 14,
+        paddingHorizontal: 6,
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: c.mintSoft,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Ionicons name={icon} size={16} color={c.mint} />
+      </View>
+      <Text style={{ fontSize: 11, fontWeight: '600', color: c.ink, textAlign: 'center' }}>
+        {label}
+      </Text>
+      <View
+        style={{
+          backgroundColor: c.mintSoft,
+          paddingHorizontal: 6,
+          paddingVertical: 1,
+          borderRadius: 6,
+        }}
+      >
+        <Text style={{ fontSize: 9, fontWeight: '600', color: c.mint }}>{earn}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 

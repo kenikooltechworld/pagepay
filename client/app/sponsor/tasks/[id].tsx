@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchTaskSubmissions, approveSubmission, rejectSubmission, type TaskSubmissionDetail } from '@/src/features/sponsor/api';
+import { SkeletonDetailPage } from '@/components/skeletons';
 
 export default function SponsorTaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

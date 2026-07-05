@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchMySubmissions, type TaskSubmission } from '@/src/features/tasks/api';
+import { SkeletonPage } from '@/components/skeletons';
 
 const StatusBadge = ({ status }: { status: TaskSubmission['status'] }) => {
   const statusConfig = {
@@ -130,11 +131,7 @@ export default function SubmissionHistoryScreen() {
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#6C5CE7" />
-      </View>
-    );
+    return <SkeletonPage count={4} />;
   }
 
   return (

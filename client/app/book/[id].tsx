@@ -1,6 +1,5 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
-  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -9,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -17,6 +16,7 @@ import { apiFetch } from '@/src/shared/api/client';
 import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { SkeletonDetailPage } from '@/components/skeletons';
 
 type SliceSummary = {
   id: number;
@@ -108,8 +108,16 @@ export default function BookDetailScreen() {
     retry: false, // 401 for anonymous users — handle in render
   });
 
+  // Re-fetch progress when the user returns from the reader (router.back()).
+  // Without this, the stale resumeQuery would keep the next slice locked.
+  useFocusEffect(
+    useCallback(() => {
+      resumeQuery.refetch();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
   // Compute the set of unlocked slice ids. The current slice is always
-  // unlocked; everything before it (by read_order) is also unlocked.
   const unlockedIds = useMemo(() => {
     const book = bookQuery.data;
     const resume = resumeQuery.data;
@@ -167,10 +175,7 @@ export default function BookDetailScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.stateBlock}>
-          <ActivityIndicator color={tokens.mint} />
-          <Text style={[styles.stateText, { color: tokens.inkMuted }]}>Loading…</Text>
-        </View>
+        <SkeletonDetailPage />
       ) : errored ? (
         <View style={[styles.stateBlock, { borderColor: tokens.signal }]}>
           <Ionicons name="cloud-offline-outline" size={20} color={tokens.signal} />

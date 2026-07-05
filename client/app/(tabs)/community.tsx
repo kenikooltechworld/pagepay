@@ -19,6 +19,7 @@ import { useCommunityFeed, useToggleLike, useUploadCommunityNote } from '@/src/f
 import type { CommunityFeedItem } from '@/src/features/community/api';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { SkeletonPage } from '@/components/skeletons';
 
 type Filters = 'all' | 'my_courses' | 'popular' | 'recent';
 
@@ -169,10 +170,7 @@ export default function CommunityScreen() {
         )}
 
         {feedQ.isLoading ? (
-          <View style={{ paddingVertical: 32, alignItems: 'center' }}>
-            <ActivityIndicator color={tokens.mint} />
-            <Text style={[styles.emptyText, { color: tokens.inkMuted, marginTop: 8 }]}>Loading notes...</Text>
-          </View>
+          <SkeletonPage count={3} header={false} />
         ) : notes.length === 0 ? (
           <View style={{ paddingVertical: 48, alignItems: 'center', paddingHorizontal: 32 }}>
             <Ionicons name="people-outline" size={40} color={tokens.mint} />
