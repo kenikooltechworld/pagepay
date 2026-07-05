@@ -273,11 +273,22 @@ async def handle_payment_webhook(
     
     # Check if this is a wallet deposit (tier == "wallet_deposit")
     if payment.tier == "wallet_deposit":
-        # Credit user's wallet with deposited amount (1 kobo = 1 point)
+        # Calculate actual deposit amount (user paid total, but we credit only deposit amount)
+        # User pays: deposit + fee (1.5%)
+        # We credit: deposit amount only
+        # Example: User pays ₦10,150 (₦10,000 + ₦150 fee), we credit 1,000,000 points
+        
+        total_paid_kobo = payment.amount_kobo
+        # Reverse calculate: total = deposit + (deposit * 0.015)
+        # total = deposit * 1.015
+        # deposit = total / 1.015
+        deposit_amount_kobo = int(total_paid_kobo / 1.015)
+        
+        # Credit user's wallet with deposit amount (not total paid)
         await db.execute(
             update(User)
             .where(User.id == payment.user_id)
-            .values(points_balance=User.points_balance + payment.amount_kobo)
+            .values(points_balance=User.points_balance + deposit_amount_kobo)
         )
         
         await db.execute(
@@ -293,13 +304,13 @@ async def handle_payment_webhook(
         await db.commit()
         
         logger.info(
-            "Wallet deposit confirmed: user_id=%s amount=%d kobo",
-            payment.user_id, payment.amount_kobo
+            "Wallet deposit confirmed: user_id=%s paid=%d kobo, credited=%d kobo (fee deducted)",
+            payment.user_id, total_paid_kobo, deposit_amount_kobo
         )
         
         return PaymentWebhookResponse(
             status="confirmed",
-            message=f"Wallet credited with {payment.amount_kobo} points"
+            message=f"Wallet credited with {deposit_amount_kobo} points"
         )
     
     # Premium subscription — upgrade user's tier

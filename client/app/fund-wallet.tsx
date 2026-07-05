@@ -34,10 +34,14 @@ export default function FundWalletScreen() {
       const finalAmount = amount ?? (parseInt(customAmount) || 0);
       if (finalAmount < 500) throw new Error('Minimum deposit is ₦500');
 
+      // Calculate processing fee (1.5% of deposit amount, capped at ₦2,000)
+      const processingFee = Math.min(Math.ceil(finalAmount * 0.015), 2000);
+      const totalPayment = finalAmount + processingFee;
+
       const res = await apiFetch('/api/v1/wallet/deposit', {
         method: 'POST',
         body: JSON.stringify({
-          amount_kobo: finalAmount * 100,
+          amount_kobo: totalPayment * 100, // User pays total (deposit + fee)
         }),
       });
 
@@ -54,10 +58,15 @@ export default function FundWalletScreen() {
       if (canOpen) {
         await Linking.openURL(data.payment_url);
         
+        // Calculate actual deposit amount (total - fee)
+        const actualDeposit = data.amount_kobo / 100;
+        const processingFee = Math.min(Math.ceil(actualDeposit * 0.015), 2000);
+        const depositAmount = actualDeposit - processingFee;
+        
         // Show success message
         Alert.alert(
           'Payment Initiated',
-          `Complete payment of ₦${(data.amount_kobo / 100).toLocaleString()} via Paystack. Your wallet will be credited automatically after payment.`,
+          `Complete payment of ₦${actualDeposit.toLocaleString()}. You'll receive ₦${depositAmount.toLocaleString()} in your wallet.`,
           [
             { 
               text: 'Done', 
@@ -78,8 +87,10 @@ export default function FundWalletScreen() {
   });
 
   const finalAmount = amount ?? (parseInt(customAmount) || 0);
+  const processingFee = finalAmount >= 500 ? Math.min(Math.ceil(finalAmount * 0.015), 2000) : 0;
+  const totalPayment = finalAmount + processingFee;
   const canSubmit = finalAmount >= 500;
-  const pointsToReceive = finalAmount * 100; // 1 naira = 100 points
+  const pointsToReceive = finalAmount * 100; // Points based on deposit amount (not including fee)
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>
@@ -148,11 +159,22 @@ export default function FundWalletScreen() {
         {canSubmit && (
           <View style={[styles.summaryCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Amount to deposit</Text>
+              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Deposit amount</Text>
               <Text style={[styles.summaryValue, { color: tokens.ink }]}>₦{finalAmount.toLocaleString()}</Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Points you'll receive</Text>
+              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Processing fee (1.5%)</Text>
+              <Text style={[styles.summaryValue, { color: tokens.inkMuted }]}>₦{processingFee.toLocaleString()}</Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: tokens.border }]} />
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: tokens.ink, fontWeight: '600' }]}>Total payment</Text>
+              <Text style={[styles.summaryValue, { color: tokens.ink, fontWeight: '700', fontSize: 18 }]}>
+                ₦{totalPayment.toLocaleString()}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: tokens.mint }]}>You'll receive</Text>
               <Text style={[styles.summaryValue, { color: tokens.mint, fontWeight: '700' }]}>
                 {pointsToReceive.toLocaleString()} pts
               </Text>
@@ -182,7 +204,7 @@ export default function FundWalletScreen() {
             <>
               <Ionicons name="card-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {canSubmit ? `Deposit ₦${finalAmount.toLocaleString()}` : 'Enter amount (min ₦500)'}
+                {canSubmit ? `Pay ₦${totalPayment.toLocaleString()}` : 'Enter amount (min ₦500)'}
               </Text>
             </>
           )}
