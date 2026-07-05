@@ -19,7 +19,7 @@ crashing mid-run and restarting is safe.
 
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +38,7 @@ async def expire_subscriptions(db: AsyncSession) -> int:
     
     Called daily to check if any user's subscription_expires_at has passed.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     
     result = await db.execute(
         update(User)
@@ -62,7 +62,7 @@ async def reset_daily_referral_caps(db: AsyncSession) -> int:
 
     Called daily by cron so the 10-referrals-per-day cap resets at UTC midnight.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     today = now.date()
     
     result = await db.execute(

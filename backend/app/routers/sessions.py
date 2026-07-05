@@ -17,7 +17,7 @@ later, add a `claim_token` round-trip here.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 logger = logging.getLogger("uvicorn")
 from fastapi import APIRouter, Depends, HTTPException
@@ -30,21 +30,6 @@ from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/session", tags=["session"])
 logger = logging.getLogger("uvicorn.error")
-
-
-def _as_aware_utc(value: datetime | None) -> datetime | None:
-    """SQLite (and some MySQL session configs) strip tzinfo when reading back
-    a DateTime column. Comparing one of those against `datetime.now(timezone.utc)`
-    raises `TypeError: can't subtract offset-naive and offset-aware datetimes`.
-
-    We standardize on UTC-aware across the session engine so subtraction and
-    ordering behave predictably. None in, None out.
-    """
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 @router.post("/start", status_code=201)
@@ -75,8 +60,7 @@ async def heartbeat(
 
     session.scroll_events += payload.scroll_events
 
-    now = datetime.now(timezone.utc)
-    session.paused_at = _as_aware_utc(session.paused_at)
+    now = datetime.utcnow()
 
     if payload.app_state == "background":
         if session.paused_at is None:
@@ -118,8 +102,7 @@ async def end_session(
     if not session or session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    now = datetime.now(timezone.utc)
-    session.start_time = _as_aware_utc(session.start_time)
+    now = datetime.utcnow()
     session.end_time = now
     raw_duration = (now - session.start_time).total_seconds()
     session.duration_seconds = int(raw_duration)
@@ -202,7 +185,7 @@ async def claim_session(
         # End-of-session returned 0 pending (no scroll, too short). Nothing
         # to do — but we still mark the session as claimed so the client
         # can move on without re-trying.
-        session.claimed_at = datetime.now(timezone.utc)
+        session.claimed_at = datetime.utcnow()
         await db.commit()
         me = (await db.execute(select(User.points_balance).where(User.id == current_user.id))).scalar_one()
         return SessionClaimResponse(
@@ -213,7 +196,7 @@ async def claim_session(
 
     session.points_earned = pending
     session.pending_points = 0
-    session.claimed_at = datetime.now(timezone.utc)
+    session.claimed_at = datetime.utcnow()
     await db.execute(
         update(User).where(User.id == current_user.id).values(
             points_balance=User.points_balance + pending

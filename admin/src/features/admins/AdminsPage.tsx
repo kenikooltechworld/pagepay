@@ -111,7 +111,7 @@ export function AdminsPage() {
       role: string;
       permissions?: string;
     }) => {
-      await adminApi.post('/admins', null, { params });
+      await adminApi.post('/admin/admins', null, { params });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'admins'] });
@@ -141,7 +141,7 @@ export function AdminsPage() {
   // Reset password mutation
   const resetPasswordMutation = useMutation({
     mutationFn: async (params: { id: number; new_password: string }) => {
-      await adminApi.post(`/admins/${params.id}/reset-password`, null, {
+      await adminApi.post(`/admin/admins/${params.id}/reset-password`, null, {
         params: { new_password: params.new_password },
       });
     },
@@ -155,7 +155,7 @@ export function AdminsPage() {
   // Delete admin mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await adminApi.delete(`/admins/${id}`);
+      await adminApi.delete(`/admin/admins/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'admins'] });

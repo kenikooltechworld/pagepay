@@ -39,7 +39,7 @@ export function UsersPage() {
 
   const banMutation = useMutation({
     mutationFn: async ({ userId, reason }: { userId: number; reason: string }) => {
-      await adminApi.post(`/users/${userId}/ban`, null, { params: { reason } });
+      await adminApi.post(`/admin/users/${userId}/ban`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
@@ -50,7 +50,7 @@ export function UsersPage() {
 
   const unbanMutation = useMutation({
     mutationFn: async (userId: number) => {
-      await adminApi.post(`/users/${userId}/unban`);
+      await adminApi.post(`/admin/users/${userId}/unban`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });

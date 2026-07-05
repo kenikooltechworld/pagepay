@@ -5,7 +5,7 @@ ad-or-points gated unlock → streaming study chat.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse

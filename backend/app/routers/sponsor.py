@@ -154,7 +154,7 @@ async def submit_kyc(
         kyc.id_document_number = payload.id_document_number
         kyc.business_document_url = business_document_url
         kyc.status = "pending"
-        kyc.submitted_at = datetime.now(timezone.utc)
+        kyc.submitted_at = datetime.utcnow()
     else:
         # Create new
         kyc = SponsorKYC(
@@ -171,13 +171,13 @@ async def submit_kyc(
             id_document_number=payload.id_document_number,
             business_document_url=business_document_url,
             status="pending",
-            submitted_at=datetime.now(timezone.utc)
+            submitted_at=datetime.utcnow()
         )
         db.add(kyc)
     
     # Update user KYC status
     current_user.sponsor_kyc_status = "pending"
-    current_user.sponsor_kyc_submitted_at = datetime.now(timezone.utc)
+    current_user.sponsor_kyc_submitted_at = datetime.utcnow()
     
     await db.commit()
     await db.refresh(kyc)
@@ -245,7 +245,7 @@ async def create_task(
     platform_fee = int(worker_rewards_total * 0.15)  # 15% platform fee
     total_escrowed = worker_rewards_total + platform_fee
     
-    expires_at = datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)
+    expires_at = datetime.utcnow() + timedelta(days=payload.expires_in_days)
     
     # Create task
     task = Task(
@@ -324,7 +324,7 @@ async def publish_task(
     
     # Publish task
     task.status = "active"
-    task.published_at = datetime.now(timezone.utc)
+    task.published_at = datetime.utcnow()
     
     # Update reputation
     rep = await db.execute(
@@ -446,7 +446,7 @@ async def sponsor_approve_submission(
     # Update submission status
     submission.status = "approved"
     submission.reviewed_by = current_user.id
-    submission.reviewed_at = datetime.now(timezone.utc)
+    submission.reviewed_at = datetime.utcnow()
     
     # Credit worker
     worker_stmt = select(User).where(User.id == submission.worker_id)
@@ -459,7 +459,7 @@ async def sponsor_approve_submission(
         worker.points_balance += net_reward
         submission.reward_paid = net_reward
         submission.payment_status = "paid"
-        submission.paid_at = datetime.now(timezone.utc)
+        submission.paid_at = datetime.utcnow()
     
     # Update task stats
     task.approved_count += 1
@@ -470,7 +470,7 @@ async def sponsor_approve_submission(
     
     if task.completed_count >= task.max_completions:
         task.status = "completed"
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.utcnow()
     
     # Update worker reputation
     rep_stmt = select(UserReputation).where(UserReputation.user_id == submission.worker_id)
@@ -549,7 +549,7 @@ async def sponsor_reject_submission(
     submission.status = "rejected"
     submission.rejection_reason = reason
     submission.reviewed_by = current_user.id
-    submission.reviewed_at = datetime.now(timezone.utc)
+    submission.reviewed_at = datetime.utcnow()
     
     # Update task stats
     task.rejected_count += 1

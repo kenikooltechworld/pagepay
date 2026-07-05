@@ -12,7 +12,7 @@ catalog instead.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -203,7 +203,7 @@ async def save_bookmark(
         )
     else:
         bm.scroll_offset_px = payload.scroll_offset_px
-        bm.updated_at = datetime.now(timezone.utc)
+        bm.updated_at = datetime.utcnow()
     await db.commit()
     return {"ok": True}
 
@@ -256,7 +256,7 @@ async def finish_slice(
             slices_completed=0,
             total_slices=total_count,
             is_finished=False,
-            last_read_at=datetime.now(timezone.utc),
+            last_read_at=datetime.utcnow(),
         )
         db.add(rp)
         await db.flush()
@@ -271,7 +271,7 @@ async def finish_slice(
 
     # Update progress: bump counter, advance pointer, set last_read_at.
     rp.slices_completed = min(rp.total_slices, rp.slices_completed + 1)
-    rp.last_read_at = datetime.now(timezone.utc)
+    rp.last_read_at = datetime.utcnow()
 
     if next_slice is None:
         rp.is_finished = True
@@ -329,7 +329,7 @@ async def start_work(
             slices_completed=0,
             total_slices=total_count,
             is_finished=False,
-            last_read_at=datetime.now(timezone.utc),
+            last_read_at=datetime.utcnow(),
         )
     )
     await db.commit()

@@ -23,7 +23,7 @@ export function ConfigPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ key, value, description }: { key: string; value: string; description?: string }) => {
-      await adminApi.put(`/config/${encodeURIComponent(key)}`, { value, description });
+      await adminApi.put(`/admin/config/${encodeURIComponent(key)}`, { value, description });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'config'] });

@@ -29,7 +29,7 @@ export function ContentPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       if (!confirm('Delete this content?')) return;
-      await adminApi.delete(`/content/${id}`);
+      await adminApi.delete(`/admin/content/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'content'] });

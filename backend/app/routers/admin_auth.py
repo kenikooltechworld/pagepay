@@ -42,7 +42,7 @@ async def admin_login(
         raise HTTPException(status_code=403, detail="Admin account is disabled")
 
     # Update last login timestamp
-    admin.last_login_at = datetime.now(timezone.utc)
+    admin.last_login_at = datetime.utcnow()
     await db.commit()
 
     # Parse permissions

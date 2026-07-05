@@ -6,7 +6,7 @@ POST /referral/validate  — referee completed first session → award points
 """
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,7 +118,7 @@ async def validate_referral(
     today = date.today()
     if referrer.referrals_today_reset_at is None or referrer.referrals_today_reset_at.date() < today:
         referrer.referrals_today_count = 0
-        referrer.referrals_today_reset_at = datetime.now(timezone.utc)
+        referrer.referrals_today_reset_at = datetime.utcnow()
 
     if referrer.referrals_today_count >= DAILY_CAP:
         return ReferralValidateResponse(rewarded=False, referrer_points=0, referee_points=0, message="Daily referral cap reached")

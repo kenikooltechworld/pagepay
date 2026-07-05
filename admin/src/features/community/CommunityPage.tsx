@@ -73,7 +73,7 @@ export function CommunityPage() {
   // Approve note mutation
   const approveMutation = useMutation({
     mutationFn: async (noteId: number) => {
-      await adminApi.post(`/community/notes/${noteId}/approve`);
+      await adminApi.post(`/admin/community/notes/${noteId}/approve`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'community'] });
@@ -85,7 +85,7 @@ export function CommunityPage() {
   // Reject note mutation
   const rejectMutation = useMutation({
     mutationFn: async ({ noteId, reason }: { noteId: number; reason: string }) => {
-      await adminApi.post(`/community/notes/${noteId}/reject`, null, {
+      await adminApi.post(`/admin/community/notes/${noteId}/reject`, null, {
         params: { reason },
       });
     },
@@ -100,7 +100,7 @@ export function CommunityPage() {
   // Delete note mutation
   const deleteMutation = useMutation({
     mutationFn: async ({ noteId, reason }: { noteId: number; reason: string }) => {
-      await adminApi.delete(`/community/notes/${noteId}`, {
+      await adminApi.delete(`/admin/community/notes/${noteId}`, {
         params: { reason },
       });
     },

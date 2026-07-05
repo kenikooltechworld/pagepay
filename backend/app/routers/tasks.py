@@ -1,7 +1,7 @@
 """Phase 7: Social Tasks Marketplace - Worker endpoints."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
@@ -44,7 +44,7 @@ async def list_tasks(
     # Build query with filters
     query = select(Task).where(
         Task.status == "active",
-        Task.expires_at > datetime.now(timezone.utc),
+        Task.expires_at > datetime.utcnow(),
         Task.completed_count < Task.max_completions,
     )
     
@@ -135,7 +135,7 @@ async def start_task(
     if not task or task.status != "active":
         raise HTTPException(status_code=404, detail="Task not found")
     
-    if task.expires_at < datetime.now(timezone.utc):
+    if task.expires_at < datetime.utcnow():
         raise HTTPException(status_code=400, detail="Task expired")
     
     if task.completed_count >= task.max_completions:
@@ -157,7 +157,7 @@ async def start_task(
         worker_id=current_user.id,
         proof_type=task.proof_type,
         status="started",
-        started_at=datetime.now(timezone.utc)
+        started_at=datetime.utcnow()
     )
     db.add(submission)
     
@@ -272,14 +272,14 @@ async def submit_task(
     # Calculate completion time
     completion_time = None
     if submission.started_at:
-        completion_time = int((datetime.now(timezone.utc) - submission.started_at).total_seconds())
+        completion_time = int((datetime.utcnow() - submission.started_at).total_seconds())
     
     # Update submission
     submission.proof_image_url = proof_image_url
     submission.proof_url = proof_url
     submission.proof_text = proof_text
     submission.status = "validating"  # Will trigger AI verification
-    submission.submitted_at = datetime.now(timezone.utc)
+    submission.submitted_at = datetime.utcnow()
     submission.completion_time_seconds = completion_time
     
     # Update reputation

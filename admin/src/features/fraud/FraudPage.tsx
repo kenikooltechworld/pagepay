@@ -56,7 +56,7 @@ export function FraudPage() {
   const resolveMutation = useMutation({
     mutationFn: async ({ flagId, notes }: { flagId: number; notes?: string }) => {
       const params = notes ? `?notes=${encodeURIComponent(notes)}` : '';
-      await adminApi.post(`/fraud/${flagId}/resolve${params}`);
+      await adminApi.post(`/admin/fraud/${flagId}/resolve${params}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'fraud'] });
@@ -69,7 +69,7 @@ export function FraudPage() {
   // Mutation for ignoring fraud flags
   const ignoreMutation = useMutation({
     mutationFn: async ({ flagId, reason }: { flagId: number; reason: string }) => {
-      await adminApi.post(`/fraud/${flagId}/ignore?reason=${encodeURIComponent(reason)}`);
+      await adminApi.post(`/admin/fraud/${flagId}/ignore?reason=${encodeURIComponent(reason)}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'fraud'] });

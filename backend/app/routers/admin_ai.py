@@ -15,7 +15,7 @@ from app.models import AiProviderHealth, AdminUser
 from app.services.admin_auth import require_permission
 
 logger = logging.getLogger("uvicorn.error")
-router = APIRouter(prefix="/admin/ai", tags=["admin-ai"])
+router = APIRouter(prefix="/ai", tags=["admin-ai"])
 
 
 @router.get("/health")

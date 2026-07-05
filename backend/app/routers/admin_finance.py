@@ -30,7 +30,7 @@ async def revenue_summary(
     """Get revenue summary for a date range (default: last 30 days)."""
     from app.services import fx
 
-    end = datetime.now(timezone.utc)
+    end = datetime.utcnow()
     start = end - timedelta(days=30)
     
     if start_date:

@@ -49,7 +49,7 @@ export function FinancePage() {
 
   const approveMutation = useMutation({
     mutationFn: async (payoutId: number) => {
-      await adminApi.post(`/payouts/${payoutId}/approve`);
+      await adminApi.post(`/admin/payouts/${payoutId}/approve`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'finance', 'payouts'] });
@@ -60,7 +60,7 @@ export function FinancePage() {
 
   const rejectMutation = useMutation({
     mutationFn: async ({ payoutId, reason }: { payoutId: number; reason: string }) => {
-      await adminApi.post(`/payouts/${payoutId}/reject`, null, { params: { reason } });
+      await adminApi.post(`/admin/payouts/${payoutId}/reject`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'finance', 'payouts'] });

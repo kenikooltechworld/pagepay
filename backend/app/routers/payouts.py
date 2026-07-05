@@ -34,7 +34,7 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -304,7 +304,7 @@ async def link_payout_account(
         row.account_name = payload.account_name or "Pending validation"
         row.recipient_code = None
         row.verified = False
-        row.linked_at = datetime.now(timezone.utc)
+        row.linked_at = datetime.utcnow()
 
         await db.commit()
         await db.refresh(row)
@@ -372,7 +372,7 @@ async def link_payout_account(
     row.account_name = account_name
     row.recipient_code = recipient_code
     row.verified = True
-    row.linked_at = datetime.now(timezone.utc)
+    row.linked_at = datetime.utcnow()
 
     await db.commit()
     await db.refresh(row)
@@ -655,7 +655,7 @@ async def paystack_webhook(
     # Update the row + (for failed) reverse the debit. We commit
     # inside the handler so the next webhook or list call sees the
     # new state.
-    settled = datetime.now(timezone.utc)
+    settled = datetime.utcnow()
 
     if event_name == "transfer.success":
         txn.status = "success"

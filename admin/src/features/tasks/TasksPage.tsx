@@ -122,7 +122,7 @@ export function TasksPage() {
   const approveKycMutation = useMutation({
     mutationFn: async (sponsorId: number) => {
       const notes = prompt('Approval notes (optional):');
-      await adminApi.post(`/tasks/kyc/${sponsorId}/approve`, null, { params: { admin_notes: notes || undefined } });
+      await adminApi.post(`/admin/tasks/kyc/${sponsorId}/approve`, null, { params: { admin_notes: notes || undefined } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'kyc'] });
@@ -131,7 +131,7 @@ export function TasksPage() {
 
   const rejectKycMutation = useMutation({
     mutationFn: async ({ sponsorId, reason }: { sponsorId: number; reason: string }) => {
-      await adminApi.post(`/tasks/kyc/${sponsorId}/reject`, null, { params: { reason } });
+      await adminApi.post(`/admin/tasks/kyc/${sponsorId}/reject`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'kyc'] });
@@ -142,7 +142,7 @@ export function TasksPage() {
   const approveSubmissionMutation = useMutation({
     mutationFn: async (submissionId: number) => {
       const notes = prompt('Approval notes (optional):');
-      await adminApi.post(`/tasks/submissions/${submissionId}/approve`, null, { params: { notes: notes || undefined } });
+      await adminApi.post(`/admin/tasks/submissions/${submissionId}/approve`, null, { params: { notes: notes || undefined } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'submissions'] });
@@ -151,7 +151,7 @@ export function TasksPage() {
 
   const rejectSubmissionMutation = useMutation({
     mutationFn: async ({ submissionId, reason }: { submissionId: number; reason: string }) => {
-      await adminApi.post(`/tasks/submissions/${submissionId}/reject`, null, { params: { reason } });
+      await adminApi.post(`/admin/tasks/submissions/${submissionId}/reject`, null, { params: { reason } });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'tasks', 'submissions'] });

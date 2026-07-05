@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# Environment files. Vite reads `.env`, `.env.local`, `.env.development`,
+# etc. — keep real values out of git.
+.env
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

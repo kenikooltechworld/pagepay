@@ -1,7 +1,7 @@
 import logging
 import secrets
 import string
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -182,7 +182,7 @@ async def forgot_password(
 
     raw_token = secrets.token_urlsafe(32)
     token_hash = _hash_token(raw_token)
-    expires_at = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)
+    expires_at = datetime.utcnow().replace(hour=23, minute=59, second=59)
 
     reset_token = PasswordResetToken(
         user_id=user.id,
@@ -214,7 +214,7 @@ async def reset_password(
         select(PasswordResetToken).where(
             PasswordResetToken.token_hash == token_hash,
             PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > datetime.now(timezone.utc),
+            PasswordResetToken.expires_at > datetime.utcnow(),
         )
     )
     reset_token = result.scalar_one_or_none()
@@ -226,7 +226,7 @@ async def reset_password(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.password_hash = hash_password(payload.new_password)
-    reset_token.used_at = datetime.now(timezone.utc)
+    reset_token.used_at = datetime.utcnow()
     await db.commit()
 
     logger.info("Password reset completed for user_id=%s", user.id)
