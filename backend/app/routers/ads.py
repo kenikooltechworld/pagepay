@@ -375,9 +375,10 @@ async def _fetch_verifier_keys() -> dict[str, str]:
 
     keys: dict[str, str] = {}
     try:
-        # Response shape: {"keys": [{"keyId": "...", "pem": "..."}, ...]}
+        # Response shape: {"keys": [{"keyId": 3335741209, "pem": "...", "base64": "..."}, ...]}
+        # keyId is an integer from Google but AdMob sends it as a string — store as string.
         for entry in data.get("keys", []):
-            kid = entry.get("keyId")
+            kid = str(entry.get("keyId", ""))
             pem = entry.get("pem")
             if kid and pem:
                 keys[kid] = pem
@@ -466,12 +467,15 @@ async def admob_ssv_callback(
                        query_params.get("transaction_id", "unknown"))
         raise HTTPException(status_code=401, detail="Invalid SSV signature")
 
-    # Parse fields
+    # Parse fields. Note: reward_amount from SSV is the custom reward value
+    # set in the AdMob dashboard (e.g. "1") — it is NOT ad revenue. The
+    # actual revenue comes exclusively from the client-side PAID event.
+    # SSV is verification that the user completed the ad; we log it but
+    # do NOT credit points here to avoid double-crediting.
     reward_amount = float(query_params.get("reward_amount", 0))
     user_id_raw = query_params.get("user_id", "")
     transaction_id = query_params.get("transaction_id", "")
     ad_unit = query_params.get("ad_unit", "admob_unknown")
-    custom_data_raw = query_params.get("custom_data", "{}")
 
     try:
         user_id = int(user_id_raw)
@@ -482,85 +486,48 @@ async def admob_ssv_callback(
     if not transaction_id:
         return {"status": "ignored", "reason": "missing_transaction_id"}
 
-    # Parse custom_data for extra context
-    try:
-        custom_data = _json.loads(custom_data_raw) if isinstance(custom_data_raw, str) else {}
-    except Exception:
-        custom_data = {}
-
-    # reward_amount from AdMob is in micro-units (decimal string, e.g. "10000000" = $10)
-    # Convert to USD
-    revenue_usd = reward_amount / 1_000_000
-
-    # Idempotency check
+    # Idempotency check — if the client-side PAID event already credited
+    # this transaction, return the existing outcome.
     existing = (
         await db.execute(
             select(AdEvent).where(AdEvent.transaction_id == transaction_id)
         )
     ).scalar_one_or_none()
     if existing is not None:
-        me = (
-            await db.execute(select(User.points_balance).where(User.id == user_id))
-        ).scalar_one_or_none() or 0
         return {
             "status": "duplicate",
             "points_credited": existing.user_points_credited or 0,
-            "new_balance": me,
+            "new_balance": 0,
         }
 
-    # Link to active session
-    active_session = await ads_service.find_active_session_for_user(db, user_id)
-
-    # FX + math
-    try:
-        result = await ads_service.compute_ad_credit(revenue_usd)
-    except Exception as exc:
-        logger.error("AdMob SSV: FX unavailable: %s", exc)
-        return {"status": "fx_unavailable"}
-
-    points = result.points
-    credit_status = result.credit_status
+    # Log the SSV verification event but do NOT credit points.
+    # Points are credited by the client-side PAID event handler.
+    logger.info(
+        "AdMob SSV verified: user=%s unit=%s tx=%s reward_amount=%.6f",
+        user_id, ad_unit, transaction_id, reward_amount,
+    )
 
     event = AdEvent(
         user_id=user_id,
-        session_id=active_session.id if active_session else None,
+        session_id=None,
         ad_type="rewarded",
         ad_unit=ad_unit,
         provider="admob",
-        impression_revenue_usd=ads_service.to_micro(revenue_usd),
         watched_fully=True,
-        reward_granted=(credit_status == "credited"),
+        reward_granted=True,
         transaction_id=transaction_id,
-        revenue_usd=ads_service.to_micro(revenue_usd),
-        fx_rate_used=ads_service.to_micro(result.fx_rate),
-        user_points_credited=points if credit_status == "credited" else 0,
-        credit_status=credit_status,
+        revenue_usd=None,
+        fx_rate_used=None,
+        user_points_credited=None,
+        credit_status="pending",
     )
     db.add(event)
-    if credit_status == "credited":
-        await db.execute(
-            update(User)
-            .where(User.id == user_id)
-            .values(points_balance=User.points_balance + points)
-        )
     await db.commit()
-    me = (
-        await db.execute(select(User.points_balance).where(User.id == user_id))
-    ).scalar_one()
-    logger.info(
-        "AdMob SSV credited user=%s unit=%s tx=%s usd=%.6f pts=%d status=%s balance=%d",
-        user_id, ad_unit, transaction_id, revenue_usd,
-        event.user_points_credited or 0, event.credit_status, me,
-    )
+
     return {
-        "status": event.credit_status,
-        "points_credited": event.user_points_credited or 0,
-        "new_balance": me,
+        "status": "verified",
+        "message": "SSV callback verified. Points credited via client-side PAID event.",
     }
-
-
-# Remove old POST /google/callback and the old _verify_admob_signature function
-# They're now replaced by the GET handler above.
 
 
 # ── POST /ads/applovin/callback — AppLovin SSV webhook (stub) ──────
