@@ -269,7 +269,40 @@ async def handle_payment_webhook(
         logger.warning("Payment failed in Paystack: %s", provider_tx_ref)
         return PaymentWebhookResponse(status="failed", message="Payment failed in Paystack")
     
-    # ✅ Payment successful — upgrade user's tier
+    # ✅ Payment successful — check payment type
+    
+    # Check if this is a wallet deposit (tier == "wallet_deposit")
+    if payment.tier == "wallet_deposit":
+        # Credit user's wallet with deposited amount (1 kobo = 1 point)
+        await db.execute(
+            update(User)
+            .where(User.id == payment.user_id)
+            .values(points_balance=User.points_balance + payment.amount_kobo)
+        )
+        
+        await db.execute(
+            update(Payment)
+            .where(Payment.id == payment.id)
+            .values(
+                status="success",
+                webhook_confirmed=True,
+                confirmed_at=datetime.utcnow(),
+            )
+        )
+        
+        await db.commit()
+        
+        logger.info(
+            "Wallet deposit confirmed: user_id=%s amount=%d kobo",
+            payment.user_id, payment.amount_kobo
+        )
+        
+        return PaymentWebhookResponse(
+            status="confirmed",
+            message=f"Wallet credited with {payment.amount_kobo} points"
+        )
+    
+    # Premium subscription — upgrade user's tier
     expiry = _compute_subscription_expiry(payment.tier)
     tier_enum = UserTier[payment.tier.upper()]  # Convert string to enum
     

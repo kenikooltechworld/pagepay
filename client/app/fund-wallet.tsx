@@ -1,0 +1,250 @@
+import { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView,
+  Alert, ActivityIndicator, StyleSheet, Linking,
+} from 'react-native';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+import { apiFetch } from '@/src/shared/api/client';
+import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { PagePay } from '@/constants/theme';
+
+type DepositResponse = {
+  payment_url: string;
+  reference: string;
+  amount_kobo: number;
+};
+
+const AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
+
+export default function FundWalletScreen() {
+  const scheme = useEffectiveScheme();
+  const tokens = PagePay[scheme];
+  const insets = useSafeAreaInsets();
+  const qc = useQueryClient();
+
+  const [amount, setAmount] = useState<number | null>(null);
+  const [customAmount, setCustomAmount] = useState('');
+
+  const depositMutation = useMutation({
+    mutationFn: async () => {
+      const finalAmount = amount ?? (parseInt(customAmount) || 0);
+      if (finalAmount < 500) throw new Error('Minimum deposit is ₦500');
+
+      const res = await apiFetch('/api/v1/wallet/deposit', {
+        method: 'POST',
+        body: JSON.stringify({
+          amount_kobo: finalAmount * 100,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Deposit failed');
+      }
+
+      return (await res.json()) as DepositResponse;
+    },
+    onSuccess: async (data) => {
+      // Open Paystack checkout URL
+      const canOpen = await Linking.canOpenURL(data.payment_url);
+      if (canOpen) {
+        await Linking.openURL(data.payment_url);
+        
+        // Show success message
+        Alert.alert(
+          'Payment Initiated',
+          `Complete payment of ₦${(data.amount_kobo / 100).toLocaleString()} via Paystack. Your wallet will be credited automatically after payment.`,
+          [
+            { 
+              text: 'Done', 
+              onPress: () => {
+                qc.invalidateQueries({ queryKey: ['me'] });
+                router.back();
+              }
+            }
+          ],
+        );
+      } else {
+        throw new Error('Could not open payment link');
+      }
+    },
+    onError: (error: Error) => {
+      Alert.alert('Deposit Failed', error.message);
+    },
+  });
+
+  const finalAmount = amount ?? (parseInt(customAmount) || 0);
+  const canSubmit = finalAmount >= 500;
+  const pointsToReceive = finalAmount * 100; // 1 naira = 100 points
+
+  return (
+    <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={24} color={tokens.ink} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: tokens.ink }]}>Fund Wallet</Text>
+        </View>
+
+        {/* Info */}
+        <View style={[styles.infoCard, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
+          <Ionicons name="information-circle-outline" size={20} color={tokens.mint} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoText, { color: tokens.ink }]}>
+              Add money to your wallet to pay bills. 100 points = ₦1
+            </Text>
+          </View>
+        </View>
+
+        {/* Quick amounts */}
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Amount</Text>
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+          {AMOUNTS.map((a) => (
+            <TouchableOpacity
+              key={a}
+              onPress={() => { setAmount(a); setCustomAmount(''); }}
+              style={[
+                styles.amtBtn,
+                {
+                  backgroundColor: amount === a ? tokens.mint : tokens.card,
+                  borderColor: amount === a ? tokens.mint : tokens.border,
+                },
+              ]}
+            >
+              <Text style={[
+                styles.amtText,
+                { color: amount === a ? tokens.mintText : tokens.ink },
+              ]}>₦{a.toLocaleString()}</Text>
+              <Text style={[
+                styles.ptsText,
+                { color: amount === a ? tokens.mintText : tokens.mint },
+              ]}>{(a * 100).toLocaleString()} pts</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Custom amount */}
+        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 8 }]}>Or Enter Custom Amount</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
+          placeholder="Enter amount (min ₦500)"
+          placeholderTextColor={tokens.inkMuted}
+          value={customAmount}
+          onChangeText={(text) => {
+            setCustomAmount(text);
+            setAmount(null);
+          }}
+          keyboardType="number-pad"
+          maxLength={7}
+        />
+
+        {/* Summary */}
+        {canSubmit && (
+          <View style={[styles.summaryCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Amount to deposit</Text>
+              <Text style={[styles.summaryValue, { color: tokens.ink }]}>₦{finalAmount.toLocaleString()}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Points you'll receive</Text>
+              <Text style={[styles.summaryValue, { color: tokens.mint, fontWeight: '700' }]}>
+                {pointsToReceive.toLocaleString()} pts
+              </Text>
+            </View>
+            <View style={[styles.divider, { backgroundColor: tokens.border }]} />
+            <Text style={[styles.noteText, { color: tokens.inkMuted }]}>
+              💳 Pay securely via Paystack. Wallet credited instantly after payment.
+            </Text>
+          </View>
+        )}
+
+        {/* Pay button */}
+        <TouchableOpacity
+          onPress={() => depositMutation.mutate()}
+          disabled={!canSubmit || depositMutation.isPending}
+          style={[
+            styles.payBtn,
+            {
+              backgroundColor: canSubmit ? tokens.mint : tokens.border,
+              opacity: depositMutation.isPending ? 0.7 : 1,
+            },
+          ]}
+        >
+          {depositMutation.isPending ? (
+            <ActivityIndicator color={tokens.mintText} />
+          ) : (
+            <>
+              <Ionicons name="card-outline" size={20} color={tokens.mintText} />
+              <Text style={[styles.payText, { color: tokens.mintText }]}>
+                {canSubmit ? `Deposit ₦${finalAmount.toLocaleString()}` : 'Enter amount (min ₦500)'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  title: { fontSize: 22, fontWeight: '700', fontFamily: 'SpaceGrotesk_700Bold' },
+  label: { fontSize: 13, fontWeight: '500' },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+  },
+  infoText: { fontSize: 13, lineHeight: 18 },
+  input: {
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 18,
+    fontWeight: '600',
+    borderWidth: 1,
+  },
+  amtBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    minWidth: 110,
+  },
+  amtText: { fontSize: 16, fontWeight: '700', fontFamily: 'SpaceGrotesk_700Bold' },
+  ptsText: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+  summaryCard: {
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  summaryLabel: { fontSize: 14 },
+  summaryValue: { fontSize: 16, fontWeight: '600' },
+  divider: { height: 1, marginVertical: 12 },
+  noteText: { fontSize: 12, lineHeight: 16 },
+  payBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 8,
+  },
+  payText: { fontSize: 16, fontWeight: '700', fontFamily: 'SpaceGrotesk_700Bold' },
+});

@@ -28,11 +28,37 @@ type ValidityPeriod = 'daily' | 'weekly' | 'monthly';
 // Helper to categorize plans by validity period from label
 function categorizePlan(label: string): ValidityPeriod {
   const lower = label.toLowerCase();
-  if (lower.includes('day') && !lower.includes('days')) return 'daily';
-  if (lower.includes('1day') || lower.includes('2day')) return 'daily';
-  if (lower.includes('week')) return 'weekly';
-  if (lower.includes('month') || lower.includes('year')) return 'monthly';
-  return 'monthly'; // default
+  
+  // Weekly plans explicitly say "WEEKLY"
+  if (lower.includes('week')) {
+    return 'weekly';
+  }
+  
+  // Daily plans: 1DAY, 2DAYS, 3DAYS, etc (small numbers)
+  if (lower.match(/\(?\d*\s*days?\)?/) && !lower.includes('week') && !lower.includes('month')) {
+    // Extract the number of days if present
+    const daysMatch = lower.match(/(\d+)\s*days?/);
+    if (daysMatch) {
+      const numDays = parseInt(daysMatch[1]);
+      // 1-3 days are daily plans
+      if (numDays <= 3) return 'daily';
+      // 4-13 days could be considered weekly-ish but Peyflex doesn't have this
+      // 7 days+ are usually treated as weekly bundles
+      if (numDays >= 4 && numDays <= 13) return 'weekly';
+    }
+    // If "1DAY" or "2DAY" without number extraction
+    if (lower.includes('1day') || lower.includes('2day') || lower.includes('3day')) {
+      return 'daily';
+    }
+  }
+  
+  // Monthly/yearly plans
+  if (lower.includes('month') || lower.includes('year')) {
+    return 'monthly';
+  }
+  
+  // Default to monthly
+  return 'monthly';
 }
 
 type PurchaseResult = {
@@ -55,6 +81,7 @@ export default function BuyDataScreen() {
   const [network, setNetwork] = useState('mtn_data_share');
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ValidityPeriod>('monthly');
+  const [showNetworkDropdown, setShowNetworkDropdown] = useState(false);
 
   const networksQ = useQuery({
     queryKey: ['data-networks'],
@@ -143,30 +170,54 @@ export default function BuyDataScreen() {
           maxLength={15}
         />
 
-        {/* Network */}
+        {/* Network with better organization */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Data Network</Text>
-        {networksQ.isLoading ? (
-          <ActivityIndicator color={tokens.mint} />
-        ) : (
-          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-            {(networksQ.data ?? []).map((n) => (
-              <TouchableOpacity
-                key={n.identifier}
-                onPress={() => { setNetwork(n.identifier); setSelectedPlan(null); }}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: network === n.identifier ? tokens.mint : tokens.card,
-                    borderColor: network === n.identifier ? tokens.mint : tokens.border,
-                  },
-                ]}
-              >
-                <Text style={[
-                  styles.chipText,
-                  { color: network === n.identifier ? tokens.mintText : tokens.ink },
-                ]}>{n.name}</Text>
-              </TouchableOpacity>
-            ))}
+        <TouchableOpacity
+          onPress={() => setShowNetworkDropdown(!showNetworkDropdown)}
+          style={[
+            styles.dropdown,
+            {
+              backgroundColor: tokens.card,
+              borderColor: tokens.border,
+            },
+          ]}
+        >
+          <Text style={[styles.dropdownText, { color: tokens.ink }]}>
+            {networksQ.data?.find(n => n.identifier === network)?.name || 'Select Network'}
+          </Text>
+          <Ionicons name={showNetworkDropdown ? "chevron-up" : "chevron-down"} size={20} color={tokens.inkMuted} />
+        </TouchableOpacity>
+        
+        {showNetworkDropdown && (
+          <View style={[styles.dropdownMenu, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+            {networksQ.isLoading ? (
+              <ActivityIndicator color={tokens.mint} />
+            ) : (
+              (networksQ.data ?? []).map((n) => (
+                <TouchableOpacity
+                  key={n.identifier}
+                  onPress={() => {
+                    setNetwork(n.identifier);
+                    setSelectedPlan(null);
+                    setShowNetworkDropdown(false);
+                  }}
+                  style={[
+                    styles.dropdownItem,
+                    network === n.identifier && { backgroundColor: tokens.mintSoft },
+                  ]}
+                >
+                  <Text style={[
+                    styles.dropdownItemText,
+                    { color: network === n.identifier ? tokens.mint : tokens.ink },
+                  ]}>
+                    {n.name}
+                  </Text>
+                  {network === n.identifier && (
+                    <Ionicons name="checkmark" size={20} color={tokens.mint} />
+                  )}
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         )}
 
@@ -288,6 +339,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 13, fontWeight: '600' },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  dropdownText: { fontSize: 15, fontWeight: '600' },
+  dropdownMenu: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginTop: -8,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e5e5',
+  },
+  dropdownItemText: { fontSize: 14, fontWeight: '500' },
   tab: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
     borderWidth: 1, flex: 1, alignItems: 'center',

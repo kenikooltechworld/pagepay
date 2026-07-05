@@ -412,6 +412,67 @@ class PaystackClient:
             status=str(data.get("status") or "pending"),
         )
 
+    # ── Payment initialization ─────────────────────────────────────
+
+    async def initialize_transaction(
+        self,
+        *,
+        email: str,
+        amount_kobo: int,
+        reference: str,
+        callback_url: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Initialize a Paystack payment transaction.
+        
+        Returns a dict with:
+        - authorization_url: URL to redirect user to for payment
+        - access_code: Transaction access code
+        - reference: Transaction reference (echoed back)
+        
+        Raises PaystackError on any failure.
+        """
+        url = f"{PAYSTACK_BASE_URL}/transaction/initialize"
+        payload: dict[str, Any] = {
+            "email": email,
+            "amount": int(amount_kobo),
+            "reference": reference,
+            "currency": "NGN",
+        }
+        
+        if callback_url:
+            payload["callback_url"] = callback_url
+        
+        if metadata:
+            payload["metadata"] = metadata
+        
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+                resp = await client.post(
+                    url,
+                    headers=_auth_headers(self._secret_key),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PaystackError(f"Paystack request failed: {exc}") from exc
+
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise PaystackError(
+                f"Paystack returned HTTP {resp.status_code} for POST /transaction/initialize: {resp.text[:500]}"
+            )
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise PaystackError("Paystack returned non-JSON for POST /transaction/initialize") from exc
+        if not isinstance(body, dict) or body.get("status") is not True:
+            raise PaystackError(f"Paystack status != true for POST /transaction/initialize: {body!r}")
+        
+        data = body.get("data") or {}
+        if not data.get("authorization_url"):
+            raise PaystackError(f"Paystack /transaction/initialize returned no authorization_url: {body!r}")
+        
+        return data
+
     # ── Webhook signature ──────────────────────────────────────────
 
     @staticmethod

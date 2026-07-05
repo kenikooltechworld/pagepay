@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     # this must be set to the real public domain (e.g.
     # `https://api.pagepay.ng`).
     public_base_url: str = "http://localhost:8000"
+    # Frontend URL for redirects after payment (wallet funding, subscriptions)
+    frontend_url: str = "exp://localhost:8081"  # Expo dev default
 
     # ── Withdrawal fee tiers ────────────────────────────────────────
     # Mirrors Paystack's flat-fee transfer schedule (₦10 / ₦25 / ₦50) with

@@ -1,14 +1,16 @@
 import logging
+import uuid
 from datetime import datetime
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
+from sqlalchemy import select, update
+from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.models import ReadingSession, ContentCatalog, AdEvent
+from app.models import ReadingSession, ContentCatalog, AdEvent, User, Payment
 from app.routers.auth import get_current_user
-from app.models import User
+from app.services.paystack import get_client
+from app.config import settings
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -90,3 +92,86 @@ async def list_transactions(
     # Sort newest first, limit
     out.sort(key=lambda t: t.date, reverse=True)
     return out[:limit]
+
+
+
+# ══════════════════════════════════════════════════════════════════════
+# WALLET FUNDING (DEPOSIT)
+# ══════════════════════════════════════════════════════════════════════
+
+
+class WalletDepositRequest(BaseModel):
+    """Request to fund wallet via Paystack."""
+    amount_kobo: int = Field(ge=50000, description="Minimum ₦500 (50,000 kobo)")
+
+
+class WalletDepositResponse(BaseModel):
+    """Paystack checkout URL response."""
+    payment_url: str
+    reference: str
+    amount_kobo: int
+
+
+@router.post("/deposit", response_model=WalletDepositResponse)
+async def initiate_wallet_deposit(
+    payload: WalletDepositRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Initiate Paystack payment to fund user wallet.
+    
+    Minimum deposit: ₦500 (50,000 kobo)
+    Conversion: Amount deposited = Points credited (1 kobo = 1 point, 100 pts = ₦1)
+    
+    After successful payment, webhook will credit user's points_balance.
+    """
+    if not settings.paystack_secret_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Wallet funding temporarily unavailable. Please try again later.",
+        )
+    
+    # Generate unique reference
+    reference = f"wallet_deposit_{current_user.id}_{uuid.uuid4().hex[:16]}"
+    
+    # Initialize Paystack transaction
+    paystack = get_client()
+    try:
+        result = await paystack.initialize_transaction(
+            email=current_user.email,
+            amount_kobo=payload.amount_kobo,
+            reference=reference,
+            callback_url=f"{settings.frontend_url}/wallet",
+            metadata={
+                "user_id": current_user.id,
+                "type": "wallet_deposit",
+                "amount_kobo": payload.amount_kobo,
+            }
+        )
+    except Exception as exc:
+        logger.error("Paystack initialization failed for wallet deposit: %s", exc)
+        raise HTTPException(status_code=502, detail="Payment provider unavailable")
+    
+    # Create Payment record to track deposit
+    payment = Payment(
+        user_id=current_user.id,
+        tier="wallet_deposit",  # Using tier field to indicate deposit
+        amount_kobo=payload.amount_kobo,
+        provider="paystack",
+        provider_tx_ref=reference,
+        status="pending",
+    )
+    db.add(payment)
+    await db.commit()
+    
+    logger.info(
+        "Wallet deposit initiated: user_id=%d, amount=%d, ref=%s",
+        current_user.id, payload.amount_kobo, reference
+    )
+    
+    return WalletDepositResponse(
+        payment_url=result["authorization_url"],
+        reference=reference,
+        amount_kobo=payload.amount_kobo,
+    )

@@ -305,26 +305,50 @@ export default function WalletScreen() {
 
               {meQ.isLoading || payoutQ.isLoading ? (
                 <ActivityIndicator color={c.mint} style={{ alignSelf: 'flex-start' }} />
-              ) : belowMin ? (
-                <>
-                  <PrimaryButton
-                    title="Withdraw"
-                    onPress={handleWithdrawPress}
-                    disabled
-                  />
-                  <Text
+              ) : (
+                <View style={{ gap: 10 }}>
+                  {/* Fund Wallet Button */}
+                  <TouchableOpacity
+                    onPress={() => router.push('/fund-wallet')}
                     style={{
-                      fontSize: 12,
-                      color: c.inkMuted,
-                      marginTop: 8,
-                      textAlign: 'center',
+                      backgroundColor: c.mint,
+                      borderRadius: 14,
+                      padding: 16,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
                     }}
                   >
-                    Min ₦1,000 to withdraw
-                  </Text>
-                </>
-              ) : (
-                <PrimaryButton title="Withdraw" onPress={handleWithdrawPress} />
+                    <Ionicons name="add-circle-outline" size={20} color={c.mintText} />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: c.mintText, fontFamily: Fonts.display }}>
+                      Fund Wallet
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Withdraw Button */}
+                  {belowMin ? (
+                    <>
+                      <PrimaryButton
+                        title="Withdraw"
+                        onPress={handleWithdrawPress}
+                        disabled
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: c.inkMuted,
+                          marginTop: -4,
+                          textAlign: 'center',
+                        }}
+                      >
+                        Min ₦1,000 to withdraw
+                      </Text>
+                    </>
+                  ) : (
+                    <PrimaryButton title="Withdraw" onPress={handleWithdrawPress} />
+                  )}
+                </View>
               )}
             </View>
 
