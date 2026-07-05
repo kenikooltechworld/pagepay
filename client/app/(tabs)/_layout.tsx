@@ -108,7 +108,6 @@ export default function TabLayout() {
         <Tabs.Screen name="community" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ href: null }} />
         <Tabs.Screen name="premium" options={{ href: null }} />
-        <Tabs.Screen name="buy-airtime" options={{ href: null }} />
       </Tabs>
 
       <MoreDrawer

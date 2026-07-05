@@ -349,28 +349,28 @@ export default function WalletScreen() {
                    label="Airtime"
                    earn="3%"
                    color={c}
-                   onPress={() => router.push('/(tabs)/buy-airtime')}
+                   onPress={() => router.push('/buy-airtime')}
                  />
                  <BillsService
                    icon="wifi-outline"
                    label="Data"
                    earn="4%"
                    color={c}
-                   onPress={() => router.push('/(tabs)/buy-data')}
+                   onPress={() => router.push('/buy-data')}
                  />
                  <BillsService
                    icon="flash-outline"
                    label="Electricity"
                    earn="1%"
                    color={c}
-                   onPress={() => router.push('/(tabs)/buy-electricity')}
+                   onPress={() => router.push('/buy-electricity')}
                  />
                  <BillsService
                    icon="tv-outline"
                    label="TV"
                    earn="1.5%"
                    color={c}
-                   onPress={() => router.push('/(tabs)/buy-tv')}
+                   onPress={() => router.push('/buy-tv')}
                  />
                </View>
              </View>

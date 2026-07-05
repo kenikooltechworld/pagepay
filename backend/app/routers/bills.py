@@ -38,7 +38,7 @@ from app.schemas import (
     TelevisionPurchaseRequest,
     BillsPurchaseResponse,
 )
-from app.services.peyflex import get_client, PeyflexError
+from app.services.peyflex import get_client, get_public_client, PeyflexError
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/bills", tags=["bills"])
@@ -75,7 +75,7 @@ def _generate_reference() -> str:
 async def list_airtime_networks():
     """List airtime networks available on Peyflex."""
     try:
-        nets = await get_client().get_airtime_networks()
+        nets = await get_public_client().get_airtime_networks()
         return [{"id": n.id, "name": n.name} for n in nets]
     except PeyflexError as exc:
         logger.error("Failed to fetch airtime networks: %s", exc)
@@ -169,7 +169,7 @@ async def buy_airtime(
 async def list_data_networks():
     """List data networks available on Peyflex."""
     try:
-        nets = await get_client().get_data_networks()
+        nets = await get_public_client().get_data_networks()
         return [{"identifier": n.identifier, "name": n.name} for n in nets]
     except PeyflexError as exc:
         logger.error("Failed to fetch data networks: %s", exc)
@@ -184,17 +184,43 @@ async def list_data_networks():
         ]
 
 
+# Fallback plans (from Peyflex API docs response samples) used when the
+# live API is unreachable (e.g. Cloudflare block). These match the real
+# plan_code values Peyflex expects.
+_FALLBACK_PLANS: dict[str, list[dict]] = {
+    "mtn_gifting_data": [
+        {"plan_code": "M110MBS", "amount": 150, "label": "110MB = N150 (1DAY)"},
+        {"plan_code": "M200MBS", "amount": 155, "label": "200MB = N155 (1DAY)"},
+        {"plan_code": "M1GBS", "amount": 826, "label": "1GB = N826 (7DAYS)"},
+        {"plan_code": "M2GBS", "amount": 1505, "label": "2GB = N1505 (1MONTH)"},
+        {"plan_code": "M2m5GBS", "amount": 2500, "label": "2.5GB = N2500 (1MONTH)"},
+        {"plan_code": "M6GBS", "amount": 2500, "label": "6GB = N2500 (WEEKLY)"},
+        {"plan_code": "M10GBS", "amount": 4485, "label": "10GB = N4485 (1MONTH)"},
+        {"plan_code": "M11GBS", "amount": 3500, "label": "11GB = N3500 (WEEKLY)"},
+        {"plan_code": "M20GBS", "amount": 7500, "label": "20GB = N7500 (1MONTH)"},
+        {"plan_code": "M25GBS", "amount": 8900, "label": "25GB = N8900 (1MONTH)"},
+    ],
+    "mtn_data_share": [
+        {"plan_code": "M1GBS", "amount": 500, "label": "1GB = N500 (7 Days)"},
+        {"plan_code": "M2GBS", "amount": 800, "label": "2GB = N800 (2 Days)"},
+    ],
+}
+
+
 @router.get("/data/plans")
 async def list_data_plans(network: str = "mtn_gifting_data"):
     """List data plans for a specific network."""
     try:
-        plans = await get_client().get_data_plans(network)
+        plans = await get_public_client().get_data_plans(network)
         return [
             {"plan_code": p.plan_code, "amount": p.amount, "label": p.label}
             for p in plans
         ]
     except PeyflexError as exc:
         logger.error("Failed to fetch data plans for %s: %s", network, exc)
+        fallback = _FALLBACK_PLANS.get(network, [])
+        if fallback:
+            return fallback
         raise HTTPException(status_code=502, detail="Failed to load data plans")
 
 
@@ -292,10 +318,23 @@ async def buy_data(
 async def list_electricity_plans():
     """List electricity DISCOs available on Peyflex."""
     try:
-        return await get_client().get_electricity_plans()
+        return await get_public_client().get_electricity_plans()
     except PeyflexError as exc:
         logger.error("Failed to fetch electricity plans: %s", exc)
-        raise HTTPException(status_code=502, detail="Failed to load electricity plans")
+        return [
+            {"plan_id": "ikeja-electric", "plan_code": "ikeja-electric", "plan_name": "Ikeja Electricity Distribution", "min_amount": 500, "max_amount": 1000000},
+            {"plan_id": "abuja-electric", "plan_code": "abuja-electric", "plan_name": "Abuja Electricity Distribution", "min_amount": 900, "max_amount": 1000000},
+            {"plan_id": "eko-electric", "plan_code": "eko-electric", "plan_name": "Eko Electricity Distribution", "min_amount": 1000, "max_amount": 100000},
+            {"plan_id": "ibadan-electric", "plan_code": "ibadan-electric", "plan_name": "Ibadan Electricity Distribution", "min_amount": 2000, "max_amount": 500000},
+            {"plan_id": "portharcourt-electric", "plan_code": "portharcourt-electric", "plan_name": "Portharcourt Electricity Distribution", "min_amount": 100, "max_amount": 10000000},
+            {"plan_id": "kano-electric", "plan_code": "kano-electric", "plan_name": "Kano Electricity Distribution", "min_amount": 500, "max_amount": 500000},
+            {"plan_id": "kaduna-electric", "plan_code": "kaduna-electric", "plan_name": "Kaduna Electricity Distribution", "min_amount": 1100, "max_amount": 100000},
+            {"plan_id": "jos-electric", "plan_code": "jos-electric", "plan_name": "Jos Electricity Distribution", "min_amount": 1000, "max_amount": 500000},
+            {"plan_id": "enugu-electric", "plan_code": "enugu-electric", "plan_name": "Enugu Electricity Distribution", "min_amount": 500, "max_amount": 500000},
+            {"plan_id": "benin-electric", "plan_code": "benin-electric", "plan_name": "Benin Electricity Distribution", "min_amount": 500, "max_amount": 500000},
+            {"plan_id": "yola-electric", "plan_code": "yola-electric", "plan_name": "Yola Electricity Distribution", "min_amount": 500, "max_amount": 500000},
+            {"plan_id": "aba-electric", "plan_code": "aba-electric", "plan_name": "Aba Electricity Distribution", "min_amount": 100, "max_amount": 400000},
+        ]
 
 
 @router.post("/electricity")
@@ -376,7 +415,7 @@ async def buy_electricity(
 async def list_tv_providers():
     """List cable TV providers available on Peyflex."""
     try:
-        return await get_client().get_cable_providers()
+        return await get_public_client().get_cable_providers()
     except PeyflexError:
         return [
             {"identifier": "dstv", "name": "DSTV"},
@@ -389,7 +428,7 @@ async def list_tv_providers():
 async def list_tv_plans(provider: str = "dstv"):
     """List cable TV plans for a provider."""
     try:
-        return await get_client().get_cable_plans(provider)
+        return await get_public_client().get_cable_plans(provider)
     except PeyflexError as exc:
         logger.error("Failed to fetch TV plans for %s: %s", provider, exc)
         raise HTTPException(status_code=502, detail="Failed to load TV plans")

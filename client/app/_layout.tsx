@@ -125,6 +125,10 @@ export default function RootLayout() {
         <Stack.Screen name="sponsor/tasks/[id]" options={{ headerShown: false, title: 'Task Submissions' }} />
         <Stack.Screen name="forgot-password" options={{ headerShown: false, title: 'Reset Password' }} />
         <Stack.Screen name="reset-password" options={{ headerShown: false, title: 'New Password' }} />
+        <Stack.Screen name="buy-airtime" options={{ headerShown: false, title: 'Buy Airtime' }} />
+        <Stack.Screen name="buy-data" options={{ headerShown: false, title: 'Buy Data' }} />
+        <Stack.Screen name="buy-electricity" options={{ headerShown: false, title: 'Buy Electricity' }} />
+        <Stack.Screen name="buy-tv" options={{ headerShown: false, title: 'Buy TV Subscription' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="auto" />

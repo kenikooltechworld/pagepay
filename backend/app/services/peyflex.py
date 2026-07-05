@@ -237,10 +237,11 @@ class PeyflexClient:
 
 
 _client: PeyflexClient | None = None
+_public_client: PeyflexClient | None = None
 
 
 def get_client() -> PeyflexClient:
-    """Lazily-built module-level PeyflexClient singleton."""
+    """Lazily-built module-level PeyflexClient singleton (auth required)."""
     global _client
     if _client is None:
         key = settings.peyflex_api_key
@@ -250,6 +251,15 @@ def get_client() -> PeyflexClient:
     return _client
 
 
+def get_public_client() -> PeyflexClient:
+    """Client for public GET endpoints (networks/plans lists). No API key needed."""
+    global _public_client
+    if _public_client is None:
+        _public_client = PeyflexClient(settings.peyflex_api_key or "")
+    return _public_client
+
+
 def reset_client_for_tests() -> None:
-    global _client
+    global _client, _public_client
     _client = None
+    _public_client = None
