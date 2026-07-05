@@ -7,7 +7,7 @@ and payment processing.
 
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -233,3 +233,4 @@ async def reject_payout(
         "refunded_amount": refund_amount,
         "user_new_balance": user.points_balance,
     }
+
