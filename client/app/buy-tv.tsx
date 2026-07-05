@@ -13,12 +13,15 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PagePay } from '@/constants/theme';
 
 type Bouquet = {
-  id: string;
-  provider: string;
-  name: string;
-  price_naira: number;
-  channels: string | null;
-  commission_rate: number;
+  id?: string;
+  plan_id?: string;
+  plan_code?: string;
+  provider?: string;
+  name?: string;
+  price_naira?: number;
+  amount?: number;
+  channels?: string | null;
+  commission_rate?: number;
 };
 
 type PurchaseResult = {
@@ -43,29 +46,32 @@ export default function BuyTvScreen() {
   const qc = useQueryClient();
 
   const [smartcard, setSmartcard] = useState('');
+  const [phone, setPhone] = useState('');
   const [provider, setProvider] = useState('dstv');
   const [selectedBouquet, setSelectedBouquet] = useState<string | null>(null);
 
   const bouquetsQ = useQuery({
-    queryKey: ['tv-bouquets', provider],
+    queryKey: ['tv-plans', provider],
     queryFn: async () => {
-      const res = await apiFetch(`/api/v1/bills/tv-bouquets?provider=${provider}`);
-      if (!res.ok) throw new Error('Failed to load bouquets');
+      const res = await apiFetch(`/api/v1/bills/tv/plans?provider=${provider}`);
+      if (!res.ok) throw new Error('Failed to load plans');
       return (await res.json()) as Bouquet[];
     },
   });
 
-  const selectedPkg = bouquetsQ.data?.find((b) => b.id === selectedBouquet);
+  const selectedPkg = bouquetsQ.data?.find((b) => (b.plan_code || b.id) === selectedBouquet);
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPkg) throw new Error('Select a bouquet');
+      if (!phone) throw new Error('Phone number required');
       const res = await apiFetch('/api/v1/bills/tv', {
         method: 'POST',
         body: JSON.stringify({
           smartcard_number: smartcard,
           provider,
-          variation_id: selectedBouquet,
+          plan_code: selectedPkg.plan_code || selectedBouquet,
+          phone: phone,
         }),
       });
       if (!res.ok) {
@@ -87,9 +93,9 @@ export default function BuyTvScreen() {
     },
   });
 
-  const canSubmit = smartcard.length >= 8 && selectedBouquet !== null;
+  const canSubmit = smartcard.length >= 8 && phone.length >= 10 && selectedBouquet !== null;
   const estPoints = selectedPkg
-    ? Math.floor(selectedPkg.price_naira * 0.018 * 0.67 * 100)
+    ? Math.floor((selectedPkg.price_naira || selectedPkg.amount || 0) * 0.018 * 0.67 * 100)
     : 0;
 
   return (
@@ -135,13 +141,13 @@ export default function BuyTvScreen() {
           <View style={{ gap: 8 }}>
             {(bouquetsQ.data ?? []).map((b) => (
               <TouchableOpacity
-                key={b.id}
-                onPress={() => setSelectedBouquet(b.id)}
+                key={b.plan_code || b.id}
+                onPress={() => setSelectedBouquet(b.plan_code || b.id)}
                 style={[
                   styles.bundleCard,
                   {
-                    backgroundColor: selectedBouquet === b.id ? tokens.mintSoft : tokens.card,
-                    borderColor: selectedBouquet === b.id ? tokens.mint : tokens.border,
+                    backgroundColor: selectedBouquet === (b.plan_code || b.id) ? tokens.mintSoft : tokens.card,
+                    borderColor: selectedBouquet === (b.plan_code || b.id) ? tokens.mint : tokens.border,
                   },
                 ]}
               >
@@ -151,7 +157,9 @@ export default function BuyTvScreen() {
                     <Text style={[styles.bundleMeta, { color: tokens.inkMuted }]}>{b.channels}</Text>
                   )}
                 </View>
-                <Text style={[styles.bundlePrice, { color: tokens.mint }]}>₦{b.price_naira.toLocaleString()}</Text>
+                <Text style={[styles.bundlePrice, { color: tokens.mint }]}>
+                  ₦{((b.price_naira || b.amount || 0).toLocaleString())}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -167,6 +175,18 @@ export default function BuyTvScreen() {
           onChangeText={setSmartcard}
           keyboardType="number-pad"
           maxLength={15}
+        />
+
+        {/* Phone Number */}
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
+          placeholder="08012345678"
+          placeholderTextColor={tokens.inkMuted}
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+          maxLength={11}
         />
 
         {/* Earn notice */}
@@ -200,7 +220,7 @@ export default function BuyTvScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {selectedPkg ? `Pay ₦${selectedPkg.price_naira.toLocaleString()}` : 'Select a bouquet'}
+                {selectedPkg ? `Pay ₦${((selectedPkg.price_naira || selectedPkg.amount || 0).toLocaleString())}` : 'Select a bouquet'}
               </Text>
             </>
           )}

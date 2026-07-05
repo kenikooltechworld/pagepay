@@ -13,8 +13,13 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PagePay } from '@/constants/theme';
 
 type Disco = {
-  code: string;
-  name: string;
+  plan_id?: string;
+  plan_code?: string;
+  plan_name?: string;
+  code?: string;
+  name?: string;
+  min_amount?: number;
+  max_amount?: number;
 };
 
 type PurchaseResult = {
@@ -36,15 +41,16 @@ export default function BuyElectricityScreen() {
   const qc = useQueryClient();
 
   const [meterNumber, setMeterNumber] = useState('');
-  const [disco, setDisco] = useState('ikedc');
+  const [phone, setPhone] = useState('');
+  const [planId, setPlanId] = useState('ikeja-electric');
   const [meterType, setMeterType] = useState<'prepaid' | 'postpaid'>('prepaid');
   const [amount, setAmount] = useState<number | null>(null);
 
   const discosQ = useQuery({
-    queryKey: ['discos'],
+    queryKey: ['electricity-plans'],
     queryFn: async () => {
-      const res = await apiFetch('/api/v1/bills/discos');
-      if (!res.ok) throw new Error('Failed to load discos');
+      const res = await apiFetch('/api/v1/bills/electricity/plans');
+      if (!res.ok) throw new Error('Failed to load electricity plans');
       return (await res.json()) as Disco[];
     },
   });
@@ -52,13 +58,15 @@ export default function BuyElectricityScreen() {
   const purchaseMutation = useMutation({
     mutationFn: async () => {
       if (!amount) throw new Error('Select an amount');
+      if (!phone) throw new Error('Phone number required');
       const res = await apiFetch('/api/v1/bills/electricity', {
         method: 'POST',
         body: JSON.stringify({
           meter_number: meterNumber,
-          disco,
+          plan_id: planId,
           meter_type: meterType,
           amount_naira: amount,
+          phone: phone,
         }),
       });
       if (!res.ok) {
@@ -80,7 +88,7 @@ export default function BuyElectricityScreen() {
     },
   });
 
-  const canSubmit = meterNumber.length >= 6 && amount !== null;
+  const canSubmit = meterNumber.length >= 6 && phone.length >= 10 && amount !== null;
   const estPoints = amount ? Math.floor(amount * 0.012 * 0.67 * 100) : 0;
 
   return (
@@ -102,23 +110,23 @@ export default function BuyElectricityScreen() {
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
             {(discosQ.data ?? []).map((d) => (
               <TouchableOpacity
-                key={d.code}
-                onPress={() => setDisco(d.code)}
+                key={d.plan_code || d.code}
+                onPress={() => setPlanId(d.plan_code || d.code)}
                 style={[
                   styles.discoChip,
                   {
-                    backgroundColor: disco === d.code ? tokens.mint : tokens.card,
-                    borderColor: disco === d.code ? tokens.mint : tokens.border,
+                    backgroundColor: planId === (d.plan_code || d.code) ? tokens.mint : tokens.card,
+                    borderColor: planId === (d.plan_code || d.code) ? tokens.mint : tokens.border,
                   },
                 ]}
               >
                 <Text style={[
                   styles.chipText,
                   {
-                    color: disco === d.code ? tokens.mintText : tokens.ink,
+                    color: planId === (d.plan_code || d.code) ? tokens.mintText : tokens.ink,
                     fontSize: 11,
                   },
-                ]}>{d.name.split('(')[0].trim()}</Text>
+                ]}>{(d.plan_name || d.name).split('(')[0].trim()}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -161,6 +169,18 @@ export default function BuyElectricityScreen() {
           onChangeText={setMeterNumber}
           keyboardType="number-pad"
           maxLength={20}
+        />
+
+        {/* Phone Number */}
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
+          placeholder="08012345678"
+          placeholderTextColor={tokens.inkMuted}
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+          maxLength={11}
         />
 
         {/* Amount */}
