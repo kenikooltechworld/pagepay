@@ -338,7 +338,6 @@ async def claim_ad_reward(
 
 
 import json as _json
-from urllib.parse import parse_qs
 
 import httpx
 
@@ -395,25 +394,45 @@ async def _fetch_verifier_keys() -> dict[str, str]:
     return keys
 
 
-async def _verify_admob_ssv_signature(query_params: dict[str, str]) -> bool:
+async def _verify_admob_ssv_signature(
+    query_params: dict[str, str],
+    raw_query_string: str,
+) -> bool:
     """Verify the ECDSA P-256 signature on an AdMob SSV callback.
 
-    The signing string is: all query params (excluding 'signature' and 'key_id')
-    sorted alphabetically, formatted as 'key=value\\n', with final \\n.
+    The signing string is constructed from the URL-encoded query parameters
+    (excluding 'signature' and 'key_id') sorted alphabetically by key,
+    formatted as 'key=value\\n' with a trailing '\\n'.
 
-    Returns True if the signature is valid.
+    Values must be URL-encoded (raw from the callback URL), because AdMob's
+    signature is computed over the URL-encoded form — not the decoded one.
     """
     signature_b64 = query_params.get("signature")
     key_id = query_params.get("key_id")
     if not signature_b64 or not key_id:
         return False
 
-    # Reconstruct the signing string
+    # Build signing string from raw URL-encoded query parameters.
+    # We parse the raw query string manually to preserve URL encoding.
     excluded = {"signature", "key_id"}
+    raw_entries: list[tuple[str, str]] = []
+    for part in raw_query_string.split("&"):
+        if not part:
+            continue
+        if "=" in part:
+            k, v = part.split("=", 1)
+            raw_entries.append((k, v))
+        else:
+            raw_entries.append((part, ""))
+
+    # Sort alphabetically by key
+    raw_entries.sort(key=lambda x: x[0])
+
     parts = []
-    for k in sorted(query_params):
-        if k not in excluded:
-            parts.append(f"{k}={query_params[k]}")
+    for k, v in raw_entries:
+        if k in excluded:
+            continue
+        parts.append(f"{k}={v}")
     signing_string = "\n".join(parts) + "\n"
 
     try:
@@ -427,18 +446,22 @@ async def _verify_admob_ssv_signature(query_params: dict[str, str]) -> bool:
             logger.warning("AdMob SSV: unknown key_id=%s", key_id)
             return False
 
-        # Load PEM public key
         pem_data = keys[key_id].encode("utf-8")
         public_key = serialization.load_pem_public_key(pem_data, backend=default_backend())
 
-        # Decode the base64 signature
         signature = base64.b64decode(signature_b64)
 
-        # Verify ECDSA
         public_key.verify(signature, signing_string.encode("utf-8"), ec.ECDSA(hashes.SHA256()))
         return True
     except Exception as exc:
-        logger.error("AdMob SSV signature verification failed: %s", exc)
+        logger.error(
+            "AdMob SSV signature verification failed: %s: %s",
+            type(exc).__name__, exc,
+        )
+        logger.debug(
+            "AdMob SSV signing string (key_id=%s): %r",
+            key_id, signing_string[:500],
+        )
         return False
 
 
@@ -454,16 +477,16 @@ async def admob_ssv_callback(
 
     Returns 200 on success/idempotent, 401 on bad signature.
     """
+    # Get both decoded params (for reading values) and raw query string (for
+    # signature verification — AdMob signs the URL-encoded form, not decoded).
+    raw_query_string = request.url.query or ""
     query_params = {k: v for k, v in request.query_params.items()}
 
     if not query_params:
         # Empty GET = AdMob's connectivity test
         return {"status": "verification_success", "message": "SSV endpoint reachable"}
 
-    # Verify ECDSA signature. If it fails, log a warning but still accept
-    # the callback (SSV is verification-only — points come from the client-side
-    # PAID event, so rejecting here doesn't prevent credit).
-    is_valid = await _verify_admob_ssv_signature(query_params)
+    is_valid = await _verify_admob_ssv_signature(query_params, raw_query_string)
     if not is_valid:
         logger.warning(
             "AdMob SSV: signature verification failed for tx=%s — accepting callback anyway",
