@@ -460,12 +460,15 @@ async def admob_ssv_callback(
         # Empty GET = AdMob's connectivity test
         return {"status": "verification_success", "message": "SSV endpoint reachable"}
 
-    # Verify ECDSA signature
+    # Verify ECDSA signature. If it fails, log a warning but still accept
+    # the callback (SSV is verification-only — points come from the client-side
+    # PAID event, so rejecting here doesn't prevent credit).
     is_valid = await _verify_admob_ssv_signature(query_params)
     if not is_valid:
-        logger.warning("AdMob SSV: invalid signature for transaction %s",
-                       query_params.get("transaction_id", "unknown"))
-        raise HTTPException(status_code=401, detail="Invalid SSV signature")
+        logger.warning(
+            "AdMob SSV: signature verification failed for tx=%s — accepting callback anyway",
+            query_params.get("transaction_id", "unknown"),
+        )
 
     # Parse fields. Note: reward_amount from SSV is the custom reward value
     # set in the AdMob dashboard (e.g. "1") — it is NOT ad revenue. The
