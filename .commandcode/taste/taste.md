@@ -3,7 +3,7 @@
 [cmd]: https://commandcode.ai/
 
 # workflow
-- When the user provides API credentials (API keys, docs URLs, etc.) for a real service, use the actual API endpoints/data — do not create hardcoded placeholder/mock data as a substitute. The API credentials are provided specifically so the real service is used, not simulated. Confidence: 0.85
+- When the user provides API credentials (API keys, docs URLs, etc.) for a real service, use the actual API endpoints/data — do not create hardcoded placeholder/mock data as a substitute. The API credentials are provided specifically so the real service is used, not simulated. Confidence: 0.90
 
 # workflow
 - When adding new components to existing screen files (e.g., wallet.tsx), always verify the required React Native imports (TouchableOpacity, etc.) are included — the error `Property 'TouchableOpacity' doesn't exist` means an import was missed. Confidence: 0.70

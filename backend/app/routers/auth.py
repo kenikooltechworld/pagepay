@@ -111,8 +111,8 @@ async def me(current_user: User = Depends(get_current_user)):
         points_balance=current_user.points_balance,
         tier=current_user.tier.value,
         created_at=current_user.created_at,
-        is_worker=current_user.is_worker,
-        is_sponsor=current_user.is_sponsor,
+        is_worker=getattr(current_user, 'is_worker', True),  # default True for old users
+        is_sponsor=getattr(current_user, 'is_sponsor', False),  # default False for old users
     )
 
 

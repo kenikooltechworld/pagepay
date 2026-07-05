@@ -79,16 +79,23 @@ class PeyflexClient:
     """HTTP client for the Peyflex VTU API (client.peyflex.com.ng)."""
 
     def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
         self._headers = {
             "Authorization": f"Token {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "PagePay/1.0",
+        }
+        self._public_headers = {
+            "Accept": "application/json",
+            "User-Agent": "PagePay/1.0",
         }
 
     async def _get(self, path: str, params: dict | None = None) -> dict:
         """Make a public GET request (no auth needed for reads)."""
         url = f"{_API_BASE}/{path.lstrip('/')}"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, headers=self._public_headers)
         if resp.status_code != 200:
             raise PeyflexError(f"Peyflex GET {path} returned {resp.status_code}: {resp.text[:200]}")
         return resp.json()
