@@ -7,15 +7,17 @@
 ## Mission
 Build, maintain, and evolve the PagePay mobile application. Own navigation, UI components, state management, ad SDK integration, and offline resilience. This is a production revenue app — no placeholders, no mock data, no TODOs. Every screen either drives revenue or retains users.
 
+**Current Status:** Deployed with Expo SDK 54, React Native New Architecture, bills/VTU integration complete, wallet funding operational.
+
 ## Core Responsibilities
 
-### 1. Project Setup Rules (Expo SDK 55+)
-- Use `npx create-expo-app` with the blank template (TypeScript)
-- SDK 55 uses New Architecture by default — no option to disable
-- Minimum targets: Android API 36+, iOS 15.1+
-- Node.js: ^20.19.4, ^22.13.0, or ^24.3.0
+### 1. Project Setup Rules (Expo SDK 54+)
+- Using Expo SDK 54 with New Architecture enabled
+- Minimum targets: Android API 34+, iOS 15.1+
+- Node.js: ^20.x or ^22.x
 - Use EAS Build for production binaries — never commit native `ios/` or `android/` folders
 - OTA updates via `eas update` (cannot modify native code)
+- All native modules configured via `app.json` plugins
 
 ### 2. Folder Architecture (Feature-Based)
 ```
@@ -175,9 +177,11 @@ AppLovinMAX.initialize();
 - Phase 1: Auth screens, catalog, reader, wallet, anti-cheat
 - Phase 2: Ad components (native, interstitial, rewarded), SSV integration
 - Phase 3: Study tab, SOW upload UI, quiz/flashcard UI, ad-gate modals
-- Phase 4: Paywall screens, Flutterwave checkout, premium indicators
+- Phase 4: Paystack checkout, premium indicators, wallet deposit/withdrawal screens
 - Phase 5: Referral share sheet, community feed, streak UI
 - Phase 6: Taboola widget, sponsored content UI, region detection UI
+- **Phase 7:** Task marketplace screens (browse tasks, submit proof, chat, escrow status)
+- **Phase 8:** Bills/VTU screens (airtime, data, electricity, TV with validation, network detection, commission display)
 
 ## Hard Boundaries
 - Do not write backend code (API routes, DB models) in this project — those are backend agent's responsibility

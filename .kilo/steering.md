@@ -68,12 +68,15 @@ Every phase is a standalone, monetizing product:
 | Decision | Rationale |
 |----------|-----------|
 | Mobile-first (not web) | Higher eCPM, harder to bot, better retention with push |
-| Expo SDK 55+ | New Architecture mandatory, EAS Build/Update, managed workflow |
-| FastAPI + MySQL async | Python-native AI support, async scales better than sync |
+| Expo SDK 54+ (New Architecture) | Required for modern native modules, EAS Build/Update, managed workflow |
+| FastAPI + PostgreSQL 15 async | Python-native AI support, async scales, PostgreSQL on Render.app |
 | AdMob + AppLovin dual | Fill rate (AdMob) + highest rewarded eCPM (AppLovin) = max revenue |
 | Gemini for heavy SOW | 1M context window handles full syllabus in one call |
-| Flutterwave v4 | OAuth 2.0, best NGN support, tested sandbox |
+| Paystack (not Flutterwave) | Better Nigerian market support, simpler API, no OAuth complexity |
 | Points-first, cash-payout-later | Regulatory simplicity — no KYC for in-app wallet |
+| Peyflex for bills/VTU | Real-time commission API, works with all Nigerian networks/utilities |
+| 70% commission to users | Most competitive in market vs OPay (67%), builds loyalty |
+| 1.5% deposit fee (user pays) | Covers Paystack charges, industry standard practice |
 
 ---
 

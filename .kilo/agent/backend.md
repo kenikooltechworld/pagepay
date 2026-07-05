@@ -10,7 +10,8 @@ Build, maintain, and evolve the PagePay backend API. Own database schema, API co
 ## Core Responsibilities
 
 ### 1. Database Layer
-- Use `asyncmy` driver with SQLAlchemy 2.0 async engine
+- **Database:** PostgreSQL 15 on Render.app (NOT MySQL)
+- Use `asyncpg` driver with SQLAlchemy 2.0 async engine
 - All models inherit from `DeclarativeBase`
 - Use `Mapped` and `mapped_column` for typing (never raw `Column` without type)
 - Use `AsyncSession` injected via FastAPI `Depends(get_db)`
@@ -61,28 +62,67 @@ Build, maintain, and evolve the PagePay backend API. Own database schema, API co
 - Only credit points after `watched_fully=true` and SSV confirms
 - Log all failures with reason for debugging
 
-### 7. Payments (Flutterwave v4)
-- OAuth 2.0: exchange client credentials for access token at runtime
-- Initiate: `POST /api/v1/payments/initiate` → returns `payment_url`
-- Webhook: `POST /api/v1/payments/flutterwave/callback` → verify signature, update tier
-- Store `flutterwave_tx_ref` with unique constraint
-- Test mode: use sandbox keys; verify all flows before live
+### 7. Payments & Wallet (Paystack)
+- **Wallet Deposits:**
+  - `POST /api/v1/wallet/deposit` → returns Paystack payment URL
+  - User pays: deposit amount + 1.5% processing fee (capped at ₦2,000)
+  - User receives: deposit amount in points (100 points = ₦1)
+  - Webhook: `POST /api/v1/payments/webhook` → credits wallet after payment
+  - Paystack signature verification required (HMAC-SHA512 with secret key)
+  
+- **Withdrawals:**
+  - `POST /api/v1/payouts/withdraw` → sends money to user's bank via Paystack Transfers
+  - Fee tiers: ≤₦5k = ₦15, ≤₦50k = ₦35, >₦50k = ₦70
+  - Minimum withdrawal: ₦1,000
+  - Webhook: `POST /api/v1/payouts/webhook` → confirms transfer, handles failures
+  
+- **Premium Subscriptions:**
+  - `POST /api/v1/payments/initiate` → returns payment URL
+  - Monthly: ₦500, Yearly: ₦5,000
+  - Webhook upgrades user tier after successful payment
+
+### 8. Bills & VTU (Peyflex Integration)
+- **Endpoints:**
+  - `POST /api/v1/bills/airtime` → buy airtime
+  - `POST /api/v1/bills/data` → buy data bundle
+  - `POST /api/v1/bills/electricity` → buy electricity tokens
+  - `POST /api/v1/bills/tv` → buy TV subscription
+  - `GET /api/v1/bills/data/networks` → list networks
+  - `GET /api/v1/bills/data/plans` → list plans for network
+  - `POST /api/v1/bills/detect-network` → detect phone network from number
+  - `POST /api/v1/bills/validate-meter` → validate meter (Paystack API)
+  - `POST /api/v1/bills/validate-smartcard` → validate smartcard (Paystack API)
+
+- **Commission Model:**
+  - Real-time commission from Peyflex `discount` field
+  - User gets 70% of commission as points
+  - Platform keeps 30%
+  - All prices come from Peyflex API (no hardcoded fallbacks)
+  
+- **Payment Flow:**
+  1. Debit user's points balance
+  2. Call Peyflex to fulfill purchase
+  3. Extract commission from response
+  4. Credit user 70% of commission back as points
+  5. Record BillTransaction for audit
 
 ### 8. Testing Requirements
 - Unit tests with `pytest` + `httpx.AsyncClient` (test FastAPI routes)
-- Database tests: use separate SQLite in-memory or test MySQL container
-- Mock external APIs (AI providers, ad webhooks, Flutterwave)
-- Coverage target: 80%+ for critical paths (auth, payments, reading engine)
+- Database tests: use separate PostgreSQL test container
+- Mock external APIs (AI providers, ad webhooks, Paystack, Peyflex)
+- Coverage target: 80%+ for critical paths (auth, payments, bills, reading engine)
 - Never test against production AI providers (use sandbox keys or mock)
+- Test all bill purchase flows with Peyflex sandbox credentials
 
 ### 9. Docker & Deployment
 - `Dockerfile` multi-stage build:
   - Stage 1: `python:3.11-slim` (builder) — install dependencies
   - Stage 2: `python:3.11-slim` (runner) — copy installed packages
-- `docker-compose.yml` for local dev (FastAPI + MySQL)
+- `docker-compose.yml` for local dev (FastAPI + PostgreSQL)
 - Environment variables via `.env` file (never hardcode secrets)
 - Health check: `/api/v1/health` returns 200 if DB reachable
 - Gunicorn + Uvicorn workers: `CMD ["gunicorn", "main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker"]`
+- **Production:** Deployed on Render.app with auto-deploy from GitHub main branch
 
 ### 10. Code Style
 - Line length: 100
@@ -95,22 +135,30 @@ Build, maintain, and evolve the PagePay backend API. Own database schema, API co
 - Phase 1: Auth, reading engine, content API, Dockerfile running
 - Phase 2: Ad SSV webhooks, dual ad tracking tables, rotation logic
 - Phase 3: AI router, SOW upload, streaming chat, circuit breaker
-- Phase 4: Flutterwave v4 OAuth flow, webhook handler, tier logic
+- Phase 4: Paystack payments (deposits, withdrawals, subscriptions), webhook handlers
 - Phase 5: Referral code generation, validation logic
 - Phase 6: Content provider abstraction layer
+- **Phase 7:** Task marketplace (sponsors, workers, submissions, chat, escrow)
+- **Phase 8:** Bills & VTU integration (Peyflex: airtime, data, electricity, TV with real-time commission)
 
 ## Anti-Patterns to Avoid
-- Don't use sync database drivers in async code (`pymysql` → use `asyncmy`)
+- Don't use sync database drivers in async code (use `asyncpg` for PostgreSQL)
 - Don't create engines per request (singleton pattern in `database.py`)
 - Don't trust client-side point calculations (always recalculate server-side)
 - Don't use bare `except Exception:` — catch specific exceptions
 - Don't log secrets, tokens, or PII
+- Don't hardcode bill prices — always fetch from Peyflex API in real-time
+- Don't credit commission before verifying purchase success from provider
+- Don't use `paystack_webhook_secret` (doesn't exist) — Paystack signs with `secret_key`
 
 ## Quality Gates (Non-Negotiable)
 - **No placeholders:** Never commit TODO comments, placeholder strings, mock responses, or fake data. If an integration is missing, raise an explicit error. Do not silently return empty objects.
-- **Real data only:** Tests must run against real database (Docker MySQL) and real provider test environments. Mock only third-party secrets, never business logic.
+- **Real data only:** Tests must run against real database (Docker PostgreSQL) and real provider test environments. Mock only third-party secrets, never business logic.
 - **Test before merge:**
   1. `pytest tests/ --cov=app --cov-report=term` — 80%+ coverage, 0 failures
   2. `docker compose up --build` — backend boots, `/api/v1/health` returns 200
   3. E2E smoke: auth → create content → start session → heartbeat → end → wallet updates
-- **Production mindset:** Every line of code is revenue-affecting. A bug in point calculation is a lawsuit. A bug in ad verification is a banned account. Write code as if you are handing it to a regulatory auditor.
+  4. Bills smoke: deposit wallet → buy airtime → verify commission credited
+- **Production mindset:** Every line of code is revenue-affecting. A bug in point calculation is a lawsuit. A bug in ad verification is a banned account. A bug in bill purchase loses user money. Write code as if you are handing it to a regulatory auditor.
+- **Real-time validation:** All meter/smartcard numbers validated via Paystack before purchase. Phone network detected from Nigerian prefixes.
+- **Commission integrity:** Always extract commission from provider's response, never assume fixed rates. Users must receive exactly 70% of actual commission earned.
