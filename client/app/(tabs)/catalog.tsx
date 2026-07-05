@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ActivityIndicator,
@@ -23,7 +23,11 @@ import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-const FILTERS = ['All', 'Fiction', 'Classics', 'News', 'Study'] as const;
+// Anonymous-browse fallback for the per-user sponsored shuffle. Any
+// fixed value works — the shuffle is stable per-id so the same
+// anonymous user sees the same ad order between page refreshes.
+// 0 is reserved server-side (no user has id=0) so it's a safe sentinel.
+const ANONYMOUS_USER_ID = 0;
 
 // Anonymous-browse fallback for the per-user sponsored shuffle. Any
 // fixed value works — the shuffle is stable per-id so the same
@@ -85,6 +89,19 @@ export default function CatalogScreen() {
     staleTime: 5 * 60 * 1000,
   });
   const userId = meQuery.data?.id ?? ANONYMOUS_USER_ID;
+
+  // Fetch distinct categories from the backend for filter chips
+  const { data: categories = [] } = useQuery<string[]>({
+    queryKey: ['content', 'categories'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/content/categories');
+      if (!res.ok) return [];
+      return (await res.json()) as string[];
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const filters = useMemo(() => ['All', ...categories] as const, [categories]);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['feed', userId, storeCategory],
@@ -151,7 +168,7 @@ export default function CatalogScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
         >
-          {FILTERS.map((f) => {
+          {filters.map((f) => {
             const value = f === 'All' ? null : f;
             return (
               <CategoryChip

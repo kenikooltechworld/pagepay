@@ -169,6 +169,36 @@ async def get_current_user_optional(
     return user
 
 
+@router.get("/categories")
+async def get_categories(db: AsyncSession = Depends(get_db)):
+    """Return distinct, cleaned-up category names from the content catalog.
+
+    Gutendex stores categories as comma-separated strings like
+    `"Category: British Literature, Category: Novels"`. This endpoint
+    splits them apart, strips prefixes, deduplicates, sorts, and returns
+    a flat list so the client can populate its filter chips dynamically.
+    """
+    rows = await db.execute(
+        select(ContentCatalog.category).distinct().where(ContentCatalog.category.isnot(None))
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    for (cat_str,) in rows.all():
+        for part in cat_str.split(","):
+            cleaned = part.strip()
+            # Strip common Gutendex prefixes like "Category: "
+            for prefix in ("Category: ", "Best Books Ever Listings, ", "Banned Books List from the American Library Association, ",
+                           "Banned Books from Anne Haight's list, ", "Bestsellers, American, 1895-1923, "):
+                if cleaned.startswith(prefix):
+                    cleaned = cleaned[len(prefix):].strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            out.append(cleaned)
+    out.sort()
+    return out
+
+
 @router.get("/feed/{user_id}", response_model=list[ContentItem])
 async def get_content_feed(
     user_id: int,
@@ -205,7 +235,7 @@ async def get_content_feed(
     # Organic items: same query as /catalog.
     organic_stmt = select(ContentCatalog).where(ContentCatalog.parent_work_id.is_(None))
     if category:
-        organic_stmt = organic_stmt.where(ContentCatalog.category == category)
+        organic_stmt = organic_stmt.where(ContentCatalog.category.ilike(f"%{category}%"))
     organic_stmt = organic_stmt.order_by(ContentCatalog.id.asc())
     organic_stmt = organic_stmt.offset((page - 1) * limit).limit(limit)
     organic_rows = (await db.execute(organic_stmt)).scalars().all()
