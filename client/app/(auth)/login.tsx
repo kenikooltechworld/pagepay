@@ -17,6 +17,7 @@ import { apiFetch } from '@/src/shared/api/client';
 import { saveToken } from '@/src/shared/lib/storage';
 import { PageMark } from '@/components/PageMark';
 import { AnimatedInput } from '@/components/AnimatedInput';
+import { PasswordToggle } from '@/components/Field';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { AuthScreenEntrance, AnimatedSubmitButton, ErrorShake, SuccessRedirect } from '@/components/animations';
 import { PagePay } from '@/constants/theme';
@@ -164,13 +165,19 @@ export default function LoginScreen() {
                       value={password}
                       onChangeText={onChangePassword}
                       placeholder="Your password"
-                      secureTextEntry={true}
+                      secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
                       textContentType="password"
                       returnKeyType="go"
                       onSubmitEditing={handleLogin}
                       error={errors.password}
+                      rightIcon={
+                        <PasswordToggle
+                          visible={showPassword}
+                          onToggle={() => setShowPassword((p) => !p)}
+                        />
+                      }
                     />
                   </View>
 

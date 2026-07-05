@@ -15,22 +15,6 @@ import { setOnUnauthenticated } from '@/src/shared/api/client';
 
 const queryClient = new QueryClient();
 
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
-import { useFonts, SpaceGrotesk_500Medium, SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk';
-import 'react-native-reanimated';
-
-import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
-import { useAdsConfig } from '@/src/shared/hooks/use-ads-config';
-import { bootstrapPreferences } from '@/src/shared/lib/preferences';
-import { getToken } from '@/src/shared/lib/storage';
-import { initializeAdMob } from '@/src/shared/lib/ads-native';
-
-const queryClient = new QueryClient();
-
 export const unstable_settings = {
   // Intentionally no anchor — the auth gate in useAuthGate controls
   // the initial route. Setting anchor here would let Expo Router
@@ -68,9 +52,16 @@ function useAuthGate() {
 
   // Register the global 401 → login redirect so apiFetch can
   // redirect the user when the server rejects their token.
+  // Only redirect if we're NOT already on an auth screen, otherwise
+  // login/register error responses cause a blank refresh instead of
+  // showing the error to the user.
   useEffect(() => {
-    setOnUnauthenticated(() => router.replace('/(auth)/login'));
-  }, [router]);
+    setOnUnauthenticated(() => {
+      if (segments[0] !== '(auth)') {
+        router.replace('/(auth)/login');
+      }
+    });
+  }, [router, segments]);
 
   return isReady;
 }

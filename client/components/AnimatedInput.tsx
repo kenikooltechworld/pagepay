@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { ReactNode, useEffect, useState } from 'react';
 import {
   TextInput as RNTextInput,
   TextInputProps,
@@ -21,6 +21,7 @@ type AnimatedInputProps = TextInputProps & {
   label?: string;
   error?: string;
   borderColor?: string;
+  rightIcon?: ReactNode;
 };
 
 /**
@@ -37,6 +38,7 @@ export function AnimatedInput({
   label,
   error,
   borderColor: customBorderColor,
+  rightIcon,
   ...props
 }: AnimatedInputProps) {
   const scheme = useEffectiveScheme();
@@ -210,30 +212,38 @@ export function AnimatedInput({
             animatedBorderStyle,
           ]}
         >
-          <RNTextInput
-            {...props}
-            onFocus={(e) => {
-              setIsFocused(true);
-              props.onFocus?.(e);
-            }}
-            onBlur={(e) => {
-              setIsFocused(false);
-              props.onBlur?.(e);
-            }}
-            placeholderTextColor={tokens.inkMuted}
-            selectionColor={tokens.mint}
-            cursorColor={tokens.mint}
-            style={[
-              {
-                fontSize: 16,
-                color: tokens.ink,
-                paddingVertical: 12,
-                paddingHorizontal: 12,
-                backgroundColor: 'transparent',
-              },
-              props.style,
-            ]}
-          />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <RNTextInput
+              {...props}
+              onFocus={(e) => {
+                setIsFocused(true);
+                props.onFocus?.(e);
+              }}
+              onBlur={(e) => {
+                setIsFocused(false);
+                props.onBlur?.(e);
+              }}
+              placeholderTextColor={tokens.inkMuted}
+              selectionColor={tokens.mint}
+              cursorColor={tokens.mint}
+              style={[
+                {
+                  flex: 1,
+                  fontSize: 16,
+                  color: tokens.ink,
+                  paddingVertical: 12,
+                  paddingHorizontal: 12,
+                  backgroundColor: 'transparent',
+                },
+                props.style,
+              ]}
+            />
+            {rightIcon && (
+              <View style={{ paddingRight: 8 }}>
+                {rightIcon}
+              </View>
+            )}
+          </View>
         </Animated.View>
 
         {/* Underline animation — sits below the border so the border reads
