@@ -6,7 +6,7 @@ All endpoints use Bearer JWT authentication for subsequent requests.
 
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

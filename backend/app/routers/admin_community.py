@@ -7,7 +7,7 @@ Track all moderation decisions in audit logs.
 
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -202,7 +202,7 @@ async def approve_note(
 
     old_status = note.status
     note.status = "approved"
-    note.updated_at = datetime.now(timezone.utc)
+    note.updated_at = datetime.utcnow()
 
     db.add(
         _log_admin_action(
@@ -305,3 +305,4 @@ async def delete_note(
     await db.commit()
 
     return {"success": True, "message": "Note deleted permanently"}
+

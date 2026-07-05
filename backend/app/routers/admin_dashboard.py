@@ -6,7 +6,7 @@ Real-time data aggregation from multiple sources.
 """
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,7 @@ async def dashboard_stats(
 
     today_start = datetime.combine(
         date.today(), datetime.min.time()
-    ).replace(tzinfo=timezone.utc)
+    )
 
     # Basic stats
     total_users = (await db.execute(select(func.count(User.id)))).scalar_one()

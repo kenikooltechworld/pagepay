@@ -6,7 +6,7 @@ reading sessions, and transaction history. Includes user filtering and search.
 
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,7 +157,7 @@ async def ban_user(
         raise HTTPException(status_code=404, detail="User not found")
     
     user.status = "banned"
-    user.banned_at = datetime.now(timezone.utc)
+    user.banned_at = datetime.utcnow()
     user.ban_reason = reason
     user.banned_by = current_admin.id
     
@@ -332,3 +332,4 @@ async def get_user_transactions(
         })
     
     return {"items": items, "total": len(items), "page": page, "limit": limit}
+

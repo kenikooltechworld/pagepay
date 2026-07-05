@@ -13,7 +13,7 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -76,7 +76,7 @@ async def _get_tier_pricing(db: AsyncSession, tier: str) -> dict:
 def _compute_subscription_expiry(tier: str) -> datetime:
     """Calculate subscription expiry date."""
     duration = TIER_PRICING[tier].get("duration_days", 30)
-    return datetime.now(timezone.utc) + timedelta(days=duration)
+    return datetime.utcnow() + timedelta(days=duration)
 
 
 # ── GET /payments/tiers ────────────────────────────────────────────────
@@ -109,7 +109,7 @@ async def get_tier_info(
     days_remaining = None
     
     if is_premium and current_user.subscription_expires_at:
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         delta = current_user.subscription_expires_at - now
         days_remaining = max(0, delta.days)
         if days_remaining == 0:
@@ -263,7 +263,7 @@ async def handle_payment_webhook(
         await db.execute(
             update(Payment)
             .where(Payment.id == payment.id)
-            .values(status="failed", confirmed_at=datetime.now(timezone.utc))
+            .values(status="failed", confirmed_at=datetime.utcnow())
         )
         await db.commit()
         logger.warning("Payment failed in Paystack: %s", provider_tx_ref)
@@ -288,7 +288,7 @@ async def handle_payment_webhook(
         .values(
             status="success",
             webhook_confirmed=True,
-            confirmed_at=datetime.now(timezone.utc),
+            confirmed_at=datetime.utcnow(),
         )
     )
     

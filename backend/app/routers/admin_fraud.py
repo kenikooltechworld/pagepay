@@ -153,7 +153,7 @@ async def resolve_fraud_flag(
 
     old_status = flag.status
     flag.status = "resolved"
-    flag.reviewed_at = datetime.now(timezone.utc)
+    flag.reviewed_at = datetime.utcnow()
     flag.reviewed_by = current_admin.id
 
     # Append resolution notes to details

@@ -2,7 +2,7 @@
 
 import logging
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func

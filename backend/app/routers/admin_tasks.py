@@ -290,7 +290,7 @@ async def admin_approve_submission(
     # Update submission
     submission.status = "approved"
     submission.reviewed_by = current_admin.id
-    submission.reviewed_at = datetime.now(timezone.utc)
+    submission.reviewed_at = datetime.utcnow()
 
     # Credit worker
     worker_result = await db.execute(
@@ -316,7 +316,7 @@ async def admin_approve_submission(
 
     if task.completed_count >= task.max_completions:
         task.status = "completed"
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.utcnow()
 
     # Update reputation
     rep_result = await db.execute(
@@ -396,7 +396,7 @@ async def admin_reject_submission(
     submission.status = "rejected"
     submission.rejection_reason = reason
     submission.reviewed_by = current_admin.id
-    submission.reviewed_at = datetime.now(timezone.utc)
+    submission.reviewed_at = datetime.utcnow()
 
     # Update task stats
     task.rejected_count += 1
@@ -453,7 +453,7 @@ async def tasks_analytics(
     db: AsyncSession = Depends(get_db),
 ):
     """Get Phase 7 tasks analytics."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.utcnow() - timedelta(days=days)
 
     # Task stats
     total_tasks = (await db.execute(

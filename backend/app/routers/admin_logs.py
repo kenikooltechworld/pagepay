@@ -6,7 +6,7 @@ target type, admin, and date range.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,12 +44,12 @@ async def list_audit_logs(
     if start_date:
         q = q.where(
             AdminAuditLog.created_at >=
-            datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
+            datetime.fromisoformat(start_date)
         )
     if end_date:
         q = q.where(
             AdminAuditLog.created_at <=
-            datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+            datetime.fromisoformat(end_date)
         )
     
     total = (
