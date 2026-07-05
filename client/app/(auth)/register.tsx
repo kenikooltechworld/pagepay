@@ -312,11 +312,11 @@ export default function RegisterScreen() {
                     </View>
                     <Text style={[styles.termsText, { color: tokens.inkMuted }]}>
                       I agree to the{' '}
-                      <Pressable onPress={() => router.push({ pathname: '/terms', params: { title: 'Terms of Service' } })}>
+                      <Pressable onPress={() => router.push({ pathname: '/legal', params: { slug: 'terms' } })}>
                         <Text style={{ color: tokens.mint, fontWeight: '600' }}>Terms</Text>
                       </Pressable>
                       {' '}and{' '}
-                      <Pressable onPress={() => router.push({ pathname: '/privacy', params: { title: 'Privacy Policy' } })}>
+                      <Pressable onPress={() => router.push({ pathname: '/legal', params: { slug: 'privacy' } })}>
                         <Text style={{ color: tokens.mint, fontWeight: '600' }}>Privacy Policy</Text>
                       </Pressable>
                       .

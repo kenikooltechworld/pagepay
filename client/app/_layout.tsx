@@ -103,8 +103,6 @@ export default function RootLayout() {
         <Stack.Screen name="sponsor/tasks/[id]" options={{ headerShown: false, title: 'Task Submissions' }} />
         <Stack.Screen name="forgot-password" options={{ headerShown: false, title: 'Reset Password' }} />
         <Stack.Screen name="reset-password" options={{ headerShown: false, title: 'New Password' }} />
-        <Stack.Screen name="terms" options={{ headerShown: false, title: 'Terms of Service' }} />
-        <Stack.Screen name="privacy" options={{ headerShown: false, title: 'Privacy Policy' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="auto" />
