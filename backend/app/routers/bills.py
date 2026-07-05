@@ -43,15 +43,6 @@ from app.services.peyflex import get_client, get_public_client, PeyflexError
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/bills", tags=["bills"])
 
-# Commission rates by network (as fraction of amount).
-# Estimated from Peyflex API user tier — actual commission varies.
-_COMMISSION_RATES: dict[str, float] = {
-    "mtn": 0.03,
-    "airtel": 0.034,
-    "glo": 0.04,
-    "9mobile": 0.04,
-}
-
 _USER_SHARE = settings.bills_user_share  # default 0.67
 
 # Points conversion: 100 points = ₦1
@@ -59,7 +50,16 @@ _POINTS_PER_NAIRA = 100
 
 
 def _compute_points(commission_kobo: int) -> int:
-    """Compute user's point share from a commission amount in kobo."""
+    """Compute user's point share from a commission amount in kobo.
+    
+    The commission comes from Peyflex's `discount` field in the API response,
+    which reflects the real-time discount rate for your account tier:
+    - Free API tier: 0.5-3% depending on service
+    - Top Reseller tier: 1-6% (higher earnings for your users)
+    
+    Users receive 67% of the commission as points (100 pts = ₦1).
+    Platform keeps 33% to cover infrastructure costs.
+    """
     user_share_kobo = int(commission_kobo * _USER_SHARE)
     return user_share_kobo * _POINTS_PER_NAIRA // 100
 
@@ -123,9 +123,15 @@ async def buy_airtime(
         await db.rollback()
         raise HTTPException(status_code=502, detail=f"Purchase failed: {result.message}")
 
-    # 3. Compute commission and points
-    rate = _COMMISSION_RATES.get(payload.network, 0.03)
-    commission_kobo = int(payload.amount_naira * 100 * rate)
+    # Extract real commission from Peyflex's discount field.
+    # This reflects your actual account tier discount (Free API: 1%, Top Reseller: 2%).
+    # If discount is missing or invalid, fall back to 0 commission.
+    try:
+        commission_kobo = int(float(result.discount) * 100)
+    except (ValueError, TypeError):
+        logger.warning("Peyflex airtime discount field missing or invalid: %s", result.discount)
+        commission_kobo = 0
+
     points = _compute_points(commission_kobo)
 
     # 4. Record transaction and credit points
@@ -301,11 +307,13 @@ async def buy_data(
         await db.rollback()
         raise HTTPException(status_code=502, detail=f"Purchase failed: {result.message}")
 
-    # Estimate commission from discount field
+    # Extract real commission from Peyflex's discount field.
+    # This reflects your actual account tier discount (Free API: 0.5-3%, Top Reseller: 1-6%).
     try:
         commission_kobo = int(float(result.discount) * 100)
     except (ValueError, TypeError):
-        commission_kobo = int(price_naira * 100 * 0.034)
+        logger.warning("Peyflex data discount field missing or invalid: %s", result.discount)
+        commission_kobo = 0
 
     points = _compute_points(commission_kobo)
 
@@ -403,7 +411,22 @@ async def buy_electricity(
         await db.rollback()
         raise HTTPException(status_code=502, detail=f"Purchase failed: {result.get('message', 'Unknown')}")
 
-    commission_kobo = 0  # Will compute from actual discount if available
+    # Extract real commission from Peyflex's response.
+    # Electricity has very low commission (Free API: 0.1%, Top Reseller: 0.5%).
+    # Peyflex may return this in 'discount', 'charged', or a computed field.
+    commission_kobo = 0
+    try:
+        # Try to extract discount if available
+        if "discount" in result and result["discount"]:
+            commission_kobo = int(float(result["discount"]) * 100)
+        elif "charged" in result and result["charged"]:
+            # Some APIs return charged = amount - discount
+            charged = float(result["charged"])
+            commission_kobo = int((payload.amount_naira - charged) * 100)
+    except (ValueError, TypeError, KeyError) as e:
+        logger.warning("Could not extract electricity commission from response: %s. Error: %s", result, e)
+        commission_kobo = 0
+
     points = _compute_points(commission_kobo)
 
     tx = BillTransaction(
@@ -513,7 +536,22 @@ async def buy_tv(
         await db.rollback()
         raise HTTPException(status_code=502, detail=f"Purchase failed: {result.get('message', 'Unknown')}")
 
+    # Extract real commission from Peyflex's response.
+    # Cable TV commission varies: DStv/GOtv 0.1%, Startimes 0.5% (Free API tier).
+    # Top Reseller: 0.5% for all providers.
     commission_kobo = 0
+    try:
+        # Try to extract discount if available
+        if "discount" in result and result["discount"]:
+            commission_kobo = int(float(result["discount"]) * 100)
+        elif "charged" in result and result["charged"]:
+            # Some APIs return charged = amount - discount
+            charged = float(result["charged"])
+            commission_kobo = int((price_naira - charged) * 100)
+    except (ValueError, TypeError, KeyError) as e:
+        logger.warning("Could not extract TV commission from response: %s. Error: %s", result, e)
+        commission_kobo = 0
+
     points = _compute_points(commission_kobo)
 
     tx = BillTransaction(
