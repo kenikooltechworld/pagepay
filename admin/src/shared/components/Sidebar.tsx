@@ -70,8 +70,8 @@ export function Sidebar({ onNavigate, onClose }: SidebarProps) {
   };
 
   return (
-    <div className="flex h-full w-64 flex-col overflow-y-auto bg-bg-card text-text-main">
-      <div className="flex items-center justify-between border-b border-border px-6 py-5">
+    <div className="flex h-full w-64 flex-col bg-bg-card text-text-main">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-5">
         <div className="flex items-center gap-2">
           <span
             className="text-xl font-bold text-text-main"
@@ -94,7 +94,7 @@ export function Sidebar({ onNavigate, onClose }: SidebarProps) {
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-3">
+      <nav className="sidebar-nav flex-1 overflow-y-auto overscroll-contain px-3 py-3">
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.path}
@@ -115,10 +115,10 @@ export function Sidebar({ onNavigate, onClose }: SidebarProps) {
         ))}
       </nav>
 
-      <div className="border-t border-border p-3">
+      <div className="shrink-0 border-t border-border p-3">
         <button
           onClick={handleLogout}
-          className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted hover:bg-bg-hover hover:text-text-main"
+          className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-red-50 hover:text-red-600"
         >
           <LogOut size={18} />
           <span>Logout</span>
