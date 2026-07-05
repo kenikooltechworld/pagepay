@@ -2,11 +2,18 @@ import Constants from 'expo-constants';
 import { getToken, saveToken, clearToken } from '@/src/shared/lib/storage';
 
 // Read API URL from expo-constants (loaded from app.config.js -> .env).
-// Mirrors Earn9ja/services/api/client.ts:17-18.
 const API_URL =
   Constants.expoConfig?.extra?.apiUrl ||
   process.env.EXPO_PUBLIC_API_URL ||
   'http://localhost:8000';
+
+/** Global callback the layout registers so apiFetch can redirect
+ *  to the login screen when the server rejects a token (401).
+ *  Set from _layout.tsx via setOnUnauthenticated. */
+let _onUnauthenticated: (() => void) | null = null;
+export function setOnUnauthenticated(cb: () => void) {
+  _onUnauthenticated = cb;
+}
 
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const token = await getToken();
@@ -32,6 +39,9 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 
   if (res.status === 401) {
     await clearToken();
+    // Redirect to login so the user isn't left stranded on a
+    // broken authenticated screen.
+    _onUnauthenticated?.();
   }
 
   return res;

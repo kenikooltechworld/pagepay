@@ -14,7 +14,7 @@ module.exports = {
         projectId: "b43a48ba-f084-472f-ac1c-3db5fa470326",
       },
       apiUrl:
-        process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000/api/v1",
+        process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000",
       // `dev` returns Google's test unit IDs (safe for dev builds).
       // `prod` returns the PagePay IDs seeded in app_config. CI sets
       // this to `prod` for the staging EAS build.
