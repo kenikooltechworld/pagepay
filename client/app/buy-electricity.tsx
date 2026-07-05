@@ -45,6 +45,7 @@ export default function BuyElectricityScreen() {
   const [planId, setPlanId] = useState('ikeja-electric');
   const [meterType, setMeterType] = useState<'prepaid' | 'postpaid'>('prepaid');
   const [amount, setAmount] = useState<number | null>(null);
+  const [customAmount, setCustomAmount] = useState('');
 
   const discosQ = useQuery({
     queryKey: ['electricity-plans'],
@@ -57,7 +58,8 @@ export default function BuyElectricityScreen() {
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
-      if (!amount) throw new Error('Select an amount');
+      const finalAmount = amount ?? (parseInt(customAmount) || 0);
+      if (finalAmount < 1000) throw new Error('Minimum amount is ₦1,000');
       if (!phone) throw new Error('Phone number required');
       const res = await apiFetch('/api/v1/bills/electricity', {
         method: 'POST',
@@ -65,7 +67,7 @@ export default function BuyElectricityScreen() {
           meter_number: meterNumber,
           plan_id: planId,
           meter_type: meterType,
-          amount_naira: amount,
+          amount_naira: finalAmount,
           phone: phone,
         }),
       });
@@ -77,9 +79,10 @@ export default function BuyElectricityScreen() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['me'] });
+      const finalAmount = amount ?? parseInt(customAmount);
       Alert.alert(
         'Tokens Purchased!',
-        `₦${amount} electricity tokens sent to meter ${meterNumber}. You earned +${data.points_earned} points!`,
+        `₦${finalAmount} electricity tokens sent to meter ${meterNumber}. You earned +${data.points_earned} points!`,
         [{ text: 'Done', onPress: () => router.back() }],
       );
     },
@@ -88,8 +91,9 @@ export default function BuyElectricityScreen() {
     },
   });
 
-  const canSubmit = meterNumber.length >= 6 && phone.length >= 10 && amount !== null;
-  const estPoints = amount ? Math.floor(amount * 0.012 * 0.67 * 100) : 0;
+  const finalAmount = amount ?? (parseInt(customAmount) || 0);
+  const canSubmit = meterNumber.length >= 10 && phone.length === 11 && finalAmount >= 1000;
+  const estPoints = finalAmount ? Math.floor(finalAmount * 0.012 * 0.67 * 100) : 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>
@@ -163,13 +167,22 @@ export default function BuyElectricityScreen() {
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Meter Number</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="1234 5678 9012 3456"
+          placeholder="12345678901234"
           placeholderTextColor={tokens.inkMuted}
           value={meterNumber}
-          onChangeText={setMeterNumber}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setMeterNumber(cleaned);
+          }}
           keyboardType="number-pad"
           maxLength={20}
         />
+        {meterNumber.length > 0 && meterNumber.length < 10 && (
+          <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
+            Meter number must be at least 10 digits
+          </Text>
+        )}
 
         {/* Phone Number */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
@@ -178,10 +191,19 @@ export default function BuyElectricityScreen() {
           placeholder="08012345678"
           placeholderTextColor={tokens.inkMuted}
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setPhone(cleaned);
+          }}
           keyboardType="phone-pad"
           maxLength={11}
         />
+        {phone.length > 0 && phone.length < 11 && (
+          <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
+            Phone number must be 11 digits
+          </Text>
+        )}
 
         {/* Amount */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Amount</Text>
@@ -189,7 +211,7 @@ export default function BuyElectricityScreen() {
           {AMOUNTS.map((a) => (
             <TouchableOpacity
               key={a}
-              onPress={() => setAmount(a)}
+              onPress={() => { setAmount(a); setCustomAmount(''); }}
               style={[
                 styles.amtBtn,
                 {
@@ -210,8 +232,25 @@ export default function BuyElectricityScreen() {
           ))}
         </View>
 
+        {/* Custom Amount */}
+        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 4 }]}>Or Enter Custom Amount</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
+          placeholder="Enter amount (min ₦1,000)"
+          placeholderTextColor={tokens.inkMuted}
+          value={customAmount}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setCustomAmount(cleaned);
+            setAmount(null);
+          }}
+          keyboardType="number-pad"
+          maxLength={7}
+        />
+
         {/* Earn notice */}
-        {amount && (
+        {finalAmount >= 1000 && (
           <View style={[styles.earnCard, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
             <Ionicons name="gift-outline" size={20} color={tokens.mint} />
             <View style={{ flex: 1 }}>
@@ -241,7 +280,7 @@ export default function BuyElectricityScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {amount ? `Pay ₦${amount.toLocaleString()}` : 'Select an amount'}
+                {finalAmount >= 1000 ? `Pay ₦${finalAmount.toLocaleString()}` : 'Enter amount (min ₦1,000)'}
               </Text>
             </>
           )}

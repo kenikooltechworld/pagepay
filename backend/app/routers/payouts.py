@@ -596,7 +596,8 @@ async def paystack_webhook(
     """
     raw_body = await request.body()
     signature = request.headers.get("X-Paystack-Signature")
-    secret = settings.paystack_webhook_secret
+    # Paystack signs with your secret key, not a separate webhook secret
+    secret = settings.paystack_secret_key
 
     if not _verify_webhook_signature(raw_body, signature, secret):
         logger.warning(
@@ -706,7 +707,9 @@ async def paystack_webhook(
 def _verify_webhook_signature(
     raw_body: bytes, signature_header: str | None, secret: str | None
 ) -> bool:
-    """HMAC-SHA512(secret, raw_body) === X-Paystack-Signature (hex).
+    """HMAC-SHA512(secret_key, raw_body) === X-Paystack-Signature (hex).
+    
+    Paystack signs webhooks using your SECRET KEY (not a separate webhook secret).
 
     Constant-time compare to prevent timing attacks. Missing header
     or secret → False. Caller treats False as 401.

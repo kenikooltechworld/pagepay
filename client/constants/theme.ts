@@ -44,6 +44,7 @@ export const PagePay = {
     mintText: '#FFFFFF',
     signal: '#C2410C',
     signalSoft: '#FDEFE7',
+    error: '#DC2626',
   },
   dark: {
     ink: '#FBFAF6',
@@ -56,6 +57,7 @@ export const PagePay = {
     mintText: '#0E1116',
     signal: '#F87171',
     signalSoft: '#3B1F1F',
+    error: '#F87171',
   },
 };
 

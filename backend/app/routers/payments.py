@@ -207,14 +207,14 @@ async def handle_payment_webhook(
     # Get raw body for signature verification
     raw_body = await request.body()
     
-    # Verify signature
-    if not settings.paystack_webhook_secret:
-        logger.warning("Paystack webhook secret not configured")
-        return PaymentWebhookResponse(status="skipped", message="Webhook secret not configured")
+    # Verify signature (Paystack signs with your secret key, not a separate webhook secret)
+    if not settings.paystack_secret_key:
+        logger.warning("Paystack secret key not configured")
+        return PaymentWebhookResponse(status="skipped", message="Paystack not configured")
     
     signature = request.headers.get("X-Paystack-Signature", "")
     expected_sig = hmac.new(
-        settings.paystack_webhook_secret.encode(),
+        settings.paystack_secret_key.encode(),
         raw_body,
         hashlib.sha512,
     ).hexdigest()

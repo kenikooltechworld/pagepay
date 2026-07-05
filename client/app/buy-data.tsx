@@ -142,7 +142,7 @@ export default function BuyDataScreen() {
     },
   });
 
-  const canSubmit = phone.length >= 10 && selectedPlan !== null;
+  const canSubmit = phone.length === 11 && selectedPlan !== null;
   
   // Points will come from backend response after purchase
   // For display, show "Earn cashback" without hardcoded calculation
@@ -162,13 +162,22 @@ export default function BuyDataScreen() {
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="0803 123 4567"
+          placeholder="08012345678"
           placeholderTextColor={tokens.inkMuted}
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setPhone(cleaned);
+          }}
           keyboardType="phone-pad"
-          maxLength={15}
+          maxLength={11}
         />
+        {phone.length > 0 && phone.length < 11 && (
+          <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
+            Phone number must be 11 digits
+          </Text>
+        )}
 
         {/* Network with better organization */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Data Network</Text>

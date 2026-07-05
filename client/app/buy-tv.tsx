@@ -93,7 +93,7 @@ export default function BuyTvScreen() {
     },
   });
 
-  const canSubmit = smartcard.length >= 8 && phone.length >= 10 && selectedBouquet !== null;
+  const canSubmit = smartcard.length >= 10 && phone.length === 11 && selectedBouquet !== null;
   const estPoints = selectedPkg
     ? Math.floor((selectedPkg.price_naira || selectedPkg.amount || 0) * 0.018 * 0.67 * 100)
     : 0;
@@ -169,13 +169,22 @@ export default function BuyTvScreen() {
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Smartcard / IUC Number</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="1234 5678 9012"
+          placeholder="1234567890"
           placeholderTextColor={tokens.inkMuted}
           value={smartcard}
-          onChangeText={setSmartcard}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setSmartcard(cleaned);
+          }}
           keyboardType="number-pad"
           maxLength={15}
         />
+        {smartcard.length > 0 && smartcard.length < 10 && (
+          <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
+            Smartcard number must be at least 10 digits
+          </Text>
+        )}
 
         {/* Phone Number */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
@@ -184,10 +193,19 @@ export default function BuyTvScreen() {
           placeholder="08012345678"
           placeholderTextColor={tokens.inkMuted}
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setPhone(cleaned);
+          }}
           keyboardType="phone-pad"
           maxLength={11}
         />
+        {phone.length > 0 && phone.length < 11 && (
+          <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
+            Phone number must be 11 digits
+          </Text>
+        )}
 
         {/* Earn notice */}
         {selectedPkg && (

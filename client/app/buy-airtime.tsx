@@ -73,7 +73,7 @@ export default function BuyAirtimeScreen() {
     },
   });
 
-  const canSubmit = phone.length >= 10 && (amount !== null || parseInt(customAmount) >= 50);
+  const canSubmit = phone.length === 11 && (amount !== null || parseInt(customAmount) >= 50);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>
@@ -90,13 +90,22 @@ export default function BuyAirtimeScreen() {
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="0803 123 4567"
+          placeholder="08012345678"
           placeholderTextColor={tokens.inkMuted}
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(text) => {
+            // Only allow numbers and format
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setPhone(cleaned);
+          }}
           keyboardType="phone-pad"
-          maxLength={15}
+          maxLength={11}
         />
+        {phone.length > 0 && phone.length < 11 && (
+          <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
+            Phone number must be 11 digits
+          </Text>
+        )}
 
         {/* Network */}
         <Text style={[styles.label, { color: tokens.inkMuted }]}>Network</Text>
@@ -151,6 +160,23 @@ export default function BuyAirtimeScreen() {
             );
           })}
         </View>
+
+        {/* Custom Amount */}
+        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 4 }]}>Or Enter Custom Amount</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
+          placeholder="Enter amount (min ₦50)"
+          placeholderTextColor={tokens.inkMuted}
+          value={customAmount}
+          onChangeText={(text) => {
+            // Only allow numbers
+            const cleaned = text.replace(/[^0-9]/g, '');
+            setCustomAmount(cleaned);
+            setAmount(null);
+          }}
+          keyboardType="number-pad"
+          maxLength={6}
+        />
 
         {/* Earn notice */}
         <View style={[styles.earnCard, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>

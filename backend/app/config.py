@@ -29,15 +29,12 @@ class Settings(BaseSettings):
     # surfaced in our backend logs when an operator needs to verify
     # which environment (test vs live) is configured.
     paystack_public_key: str | None = None
-    # Shared secret Paystack uses to sign webhooks. We validate the
-    # `X-Paystack-Signature` header against the raw body with HMAC-SHA512
-    # in `services/paystack.py`. Mismatched signatures return 401.
-    paystack_webhook_secret: str | None = None
     # Base URL we expose to Paystack's dashboard (return URLs after a
     # checkout session; the webhook URL). Defaults to localhost so
     # `paystack-cli listen-forward` works out of the box. In production
     # this must be set to the real public domain (e.g.
     # `https://api.pagepay.ng`).
+    # NOTE: Paystack uses your SECRET KEY to sign webhooks (no separate webhook secret).
     public_base_url: str = "http://localhost:8000"
     # Frontend URL for redirects after payment (wallet funding, subscriptions)
     frontend_url: str = "exp://localhost:8081"  # Expo dev default
