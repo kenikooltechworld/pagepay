@@ -9,6 +9,7 @@
 - When adding new components to existing screen files (e.g., wallet.tsx), always verify the required React Native imports (TouchableOpacity, etc.) are included — the error `Property 'TouchableOpacity' doesn't exist` means an import was missed. Confidence: 0.70
 - Before writing code for business logic decisions (e.g., revenue calculations, ad payout rates, user earnings math), first research thoroughly via web search and present findings to the user for confirmation before making any changes. Do not assume values, rush into implementation, or push code — discuss and align first. Confidence: 0.82
 - Before coding new screens or features, first present a visual design/mockup for the user to review and approve. Do not jump straight into implementation code. Confidence: 0.70
+- When asked to investigate a codebase, do not rely on documentation alone — read the actual code files to verify implementations match what docs claim. Documentation can be stale; code is truth. Confidence: 0.65
 
 # architecture
 See [architecture/taste.md](architecture/taste.md)

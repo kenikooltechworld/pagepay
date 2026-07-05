@@ -75,6 +75,15 @@ class TransferReceipt:
     status: str  # "pending" | "success" | "failed" | ...
 
 
+@dataclass
+class RefundReceipt:
+    """Result of /refund — the Paystack transaction + reference of the refund."""
+    reference: str
+    transaction_id: int | None
+    amount_kobo: int | None
+    status: str  # "pending" | "success" | "failed" | "received" | ...
+
+
 # ── Bank-list cache ───────────────────────────────────────────────────
 # The same TTL pattern as `fx.py` — but longer (1h) because banks
 # rarely change and Paystack's rate limit on /bank is tighter than

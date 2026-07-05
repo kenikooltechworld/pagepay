@@ -127,7 +127,7 @@ async def refund_payment(
     db: AsyncSession = Depends(get_db),
 ):
     """Refund a premium subscription payment via Paystack."""
-    from app.services.paystack import PaystackClient, PaystackError
+    from app.services.paystack import PaystackError, get_client as get_paystack_client
 
     result = await db.execute(
         select(Payment).where(Payment.id == payment_id)
@@ -145,18 +145,12 @@ async def refund_payment(
             detail="Cannot refund pending payment. Wait for confirmation.",
         )
 
-    # Check if already refunded
-    existing_refund = await db.execute(
-        select(Payment).where(
-            Payment.provider_tx_ref == f"refund_{payment.provider_tx_ref}"
-        )
-    )
-    if existing_refund.scalar_one_or_none():
+    if payment.status == "refunded":
         raise HTTPException(status_code=400, detail="Payment already refunded")
 
     # Call Paystack refund API
     try:
-        paystack = PaystackClient()
+        paystack = get_paystack_client()
         refund_receipt = await paystack.refund_charge(
             reference=payment.provider_tx_ref,
             amount_kobo=payment.amount_kobo,
@@ -173,6 +167,11 @@ async def refund_payment(
             user.tier = "free"
             user.subscription_expires_at = None
 
+        # Mark payment as refunded so the duplicate-refund check
+        # above catches re-runs. (We keep the original row as the
+        # source of truth rather than inserting a new negative row.)
+        payment.status = "refunded"
+
         await db.commit()
 
         return {
@@ -180,7 +179,7 @@ async def refund_payment(
             "message": "Payment refunded successfully",
             "refund_reference": (
                 refund_receipt.reference
-                if hasattr(refund_receipt, "reference") else None
+                if refund_receipt.reference else None
             ),
             "amount_refunded_kobo": payment.amount_kobo,
         }
