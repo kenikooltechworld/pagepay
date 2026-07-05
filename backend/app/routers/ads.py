@@ -18,7 +18,7 @@ import hashlib
 import hmac
 import logging
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -325,123 +325,177 @@ async def claim_ad_reward(
 
 
 # ── POST /ads/google/callback — AdMob SSV webhook ──────────────────
-# AdMob Server-Side Verification callback. AdMob POSTs the
-# transaction details; we verify the signature, idempotency-check
-# the transaction_id, find the user's active reading session, and
-# credit the wallet.
+# AdMob Server-Side Verification callback. AdMob sends a GET request
+# with query parameters containing the reward data and an ECDSA P-256
+# signature. We verify the signature against Google's published public
+# keys, then credit the user's wallet.
 #
-# AdMob retries on non-2xx, so this endpoint is structured to
-# return 200 in three cases:
-#   1. Successful credit
-#   2. Duplicate transaction_id (already credited; idempotent no-op)
-#   3. FX failure (we still 200 because retrying with the same
-#      payload will hit the same FX outage; the network should
-#      back off, not double-call)
-# The only non-200 is signature verification failure (401). AdMob
-# itself is the only caller and it does NOT retry on 401, so 401
-# signals a misconfigured shared secret.
+# Reference: https://developers.google.com/admob/ios/rewarded-video-ssv
+#            https://developers.google.com/admob/android/rewarded-video-ssv
+#
+# AdMob retries on non-2xx, so we return 200 in all cases except
+# signature failure (401). Idempotent on transaction_id.
 
 
-def _verify_admob_signature(raw_body: bytes, signature_header: str | None) -> bool:
-    """Verify AdMob's ECDSA webhook signature using public keys.
+import json as _json
+from urllib.parse import parse_qs
 
-    AdMob SSV uses ECDSA P-256 (not HMAC) to sign callbacks. Google publishes
-    public keys at https://www.gstatic.com/admob/reward/verifier-keys.json
-    The signature is in query parameters (key_id, signature) not headers.
-    
-    Production implementation steps:
-    1. Fetch keys from https://www.gstatic.com/admob/reward/verifier-keys.json
-    2. Parse key_id from query params to select correct public key
-    3. Verify ECDSA signature using cryptography.hazmat.primitives.asymmetric.ec
-    4. Parse query string and verify signature matches
-    
-    For development, signature verification is disabled to allow testing with
-    ngrok URLs and test callbacks. AdMob's callback URL is kept secret as the
-    primary security mechanism during development.
-    
-    Returns True to allow callbacks through (signature verification disabled).
+import httpx
+
+
+# Cache Google's SSV public keys so we don't fetch them on every callback.
+# Keys are rotated rarely — a 24-hour cache is safe.
+_GOOGLE_VERIFIER_KEYS: dict[str, str] | None = None
+_VERIFIER_KEYS_URL = "https://www.gstatic.com/admob/reward/verifier-keys.json"
+_VERIFIER_KEYS_TTL_SECONDS = 86400
+_last_keys_fetch: float = 0
+
+
+async def _fetch_verifier_keys() -> dict[str, str]:
+    """Fetch and cache Google's ECDSA P-256 public keys for AdMob SSV.
+
+    Returns a dict mapping key_id → PEM-encoded public key string.
+    Cached in memory for 24 hours. Falls back to stale cache on failure.
     """
-    # TODO: Implement ECDSA verification for production
-    # Reference: https://developers.google.com/admob/android/rewarded-video-ssv
-    logger.info("AdMob SSV callback received (signature verification disabled for development)")
-    return True
+    global _GOOGLE_VERIFIER_KEYS, _last_keys_fetch
+    now = __import__('time').time()
+    if _GOOGLE_VERIFIER_KEYS is not None and (now - _last_keys_fetch) < _VERIFIER_KEYS_TTL_SECONDS:
+        return _GOOGLE_VERIFIER_KEYS
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(_VERIFIER_KEYS_URL)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        logger.warning("Failed to fetch AdMob verifier keys: %s", exc)
+        if _GOOGLE_VERIFIER_KEYS is not None:
+            return _GOOGLE_VERIFIER_KEYS
+        raise
+
+    keys: dict[str, str] = {}
+    try:
+        # Response shape: {"keys": [{"keyId": "...", "pem": "..."}, ...]}
+        for entry in data.get("keys", []):
+            kid = entry.get("keyId")
+            pem = entry.get("pem")
+            if kid and pem:
+                keys[kid] = pem
+    except Exception as exc:
+        logger.error("Failed to parse AdMob verifier keys: %s", exc)
+        raise
+
+    if not keys:
+        logger.error("No valid AdMob verifier keys found in response")
+        raise ValueError("No valid keys")
+
+    _GOOGLE_VERIFIER_KEYS = keys
+    _last_keys_fetch = now
+    return keys
+
+
+async def _verify_admob_ssv_signature(query_params: dict[str, str]) -> bool:
+    """Verify the ECDSA P-256 signature on an AdMob SSV callback.
+
+    The signing string is: all query params (excluding 'signature' and 'key_id')
+    sorted alphabetically, formatted as 'key=value\\n', with final \\n.
+
+    Returns True if the signature is valid.
+    """
+    signature_b64 = query_params.get("signature")
+    key_id = query_params.get("key_id")
+    if not signature_b64 or not key_id:
+        return False
+
+    # Reconstruct the signing string
+    excluded = {"signature", "key_id"}
+    parts = []
+    for k in sorted(query_params):
+        if k not in excluded:
+            parts.append(f"{k}={query_params[k]}")
+    signing_string = "\n".join(parts) + "\n"
+
+    try:
+        import base64
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import serialization, hashes
+        from cryptography.hazmat.backends import default_backend
+
+        keys = await _fetch_verifier_keys()
+        if key_id not in keys:
+            logger.warning("AdMob SSV: unknown key_id=%s", key_id)
+            return False
+
+        # Load PEM public key
+        pem_data = keys[key_id].encode("utf-8")
+        public_key = serialization.load_pem_public_key(pem_data, backend=default_backend())
+
+        # Decode the base64 signature
+        signature = base64.b64decode(signature_b64)
+
+        # Verify ECDSA
+        public_key.verify(signature, signing_string.encode("utf-8"), ec.ECDSA(hashes.SHA256()))
+        return True
+    except Exception as exc:
+        logger.error("AdMob SSV signature verification failed: %s", exc)
+        return False
 
 
 @router.get("/google/callback")
-@router.post("/google/callback")
 async def admob_ssv_callback(
     request: Request,
-    x_admob_signature: str | None = Header(default=None, alias="X-Admob-Signature"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """AdMob SSV webhook. Accepts both GET (for verification) and POST (for actual callbacks).
-    
-    GET requests are sent by AdMob to verify the URL is reachable.
-    POST requests contain the actual reward data.
-    
-    Returns 200 on all valid requests.
+    """AdMob SSV webhook — GET request with query parameters.
+
+    AdMob sends a GET to this URL with the reward data as query params:
+      ?ad_network=...&ad_unit=...&reward_amount=...&user_id=...&transaction_id=...&signature=...&key_id=...
+
+    Returns 200 on success/idempotent, 401 on bad signature.
     """
-    # Handle GET verification request (AdMob testing the URL)
-    if request.method == "GET":
-        # Extract query parameters for verification test
-        query_params = dict(request.query_params)
-        logger.info("AdMob SSV verification GET request: %s", query_params)
-        return {
-            "status": "verification_success",
-            "message": "AdMob SSV endpoint is reachable",
-            "received_params": query_params
-        }
-    
-    # Handle POST - actual callback with reward data
-    raw = await request.body()
-    if not _verify_admob_signature(raw, x_admob_signature):
-        # For now, we log but don't reject (signature verification disabled)
-        logger.warning("AdMob SSV: signature verification skipped (not implemented)")
+    query_params = {k: v for k, v in request.query_params.items()}
 
-    # Parse the body. AdMob's SSV sends x-www-form-urlencoded by
-    # default; some configurations send JSON. We accept both.
-    try:
-        import json as _json
-        body = _json.loads(raw.decode("utf-8") or "{}")
-    except Exception:
-        # Fall back to form parsing.
-        from urllib.parse import parse_qs
-        body = {k: v[0] for k, v in parse_qs(raw.decode("utf-8")).items()}
+    if not query_params:
+        # Empty GET = AdMob's connectivity test
+        return {"status": "verification_success", "message": "SSV endpoint reachable"}
 
-    # Map AdMob's wire field names to our schema.
-    reward_amount = body.get("reward_amount") or body.get("revenue_amount") or 0
-    try:
-        reward_amount = float(reward_amount)
-    except (TypeError, ValueError):
-        reward_amount = 0.0
-    custom_data = body.get("custom_data") or {}
-    if isinstance(custom_data, str):
-        try:
-            custom_data = _json.loads(custom_data)
-        except Exception:
-            custom_data = {}
+    # Verify ECDSA signature
+    is_valid = await _verify_admob_ssv_signature(query_params)
+    if not is_valid:
+        logger.warning("AdMob SSV: invalid signature for transaction %s",
+                       query_params.get("transaction_id", "unknown"))
+        raise HTTPException(status_code=401, detail="Invalid SSV signature")
 
-    user_id_raw = custom_data.get("user_id") or body.get("user_id")
-    if user_id_raw is None:
-        logger.warning("AdMob SSV: missing user_id in custom_data; ignoring")
-        return {"status": "ignored", "reason": "missing_user_id"}
+    # Parse fields
+    reward_amount = float(query_params.get("reward_amount", 0))
+    user_id_raw = query_params.get("user_id", "")
+    transaction_id = query_params.get("transaction_id", "")
+    ad_unit = query_params.get("ad_unit", "admob_unknown")
+    custom_data_raw = query_params.get("custom_data", "{}")
+
     try:
         user_id = int(user_id_raw)
     except (TypeError, ValueError):
+        logger.warning("AdMob SSV: invalid user_id=%s", user_id_raw)
         return {"status": "ignored", "reason": "invalid_user_id"}
 
-    transaction_id = body.get("transaction_id") or body.get("ad_unit_id")
     if not transaction_id:
         return {"status": "ignored", "reason": "missing_transaction_id"}
 
-    ad_unit = body.get("ad_unit_id") or "admob_unknown"
+    # Parse custom_data for extra context
+    try:
+        custom_data = _json.loads(custom_data_raw) if isinstance(custom_data_raw, str) else {}
+    except Exception:
+        custom_data = {}
 
-    # Idempotency. If we've seen this transaction_id, return the
-    # original outcome. AdMob retries on non-2xx so this is the
-    # hot path during an outage.
+    # reward_amount from AdMob is in micro-units (decimal string, e.g. "10000000" = $10)
+    # Convert to USD
+    revenue_usd = reward_amount / 1_000_000
+
+    # Idempotency check
     existing = (
         await db.execute(
-            select(AdEvent).where(AdEvent.transaction_id == str(transaction_id))
+            select(AdEvent).where(AdEvent.transaction_id == transaction_id)
         )
     ).scalar_one_or_none()
     if existing is not None:
@@ -454,14 +508,14 @@ async def admob_ssv_callback(
             "new_balance": me,
         }
 
-    # Link to the active reading session, if any.
+    # Link to active session
     active_session = await ads_service.find_active_session_for_user(db, user_id)
 
-    # Live FX + math. We 200 on FX failure (don't retry-storm).
+    # FX + math
     try:
-        result = await ads_service.compute_ad_credit(reward_amount)
+        result = await ads_service.compute_ad_credit(revenue_usd)
     except Exception as exc:
-        logger.error("AdMob SSV: FX unavailable, dropping credit: %s", exc)
+        logger.error("AdMob SSV: FX unavailable: %s", exc)
         return {"status": "fx_unavailable"}
 
     points = result.points
@@ -473,11 +527,11 @@ async def admob_ssv_callback(
         ad_type="rewarded",
         ad_unit=ad_unit,
         provider="admob",
-        impression_revenue_usd=ads_service.to_micro(reward_amount),
+        impression_revenue_usd=ads_service.to_micro(revenue_usd),
         watched_fully=True,
         reward_granted=(credit_status == "credited"),
-        transaction_id=str(transaction_id),
-        revenue_usd=ads_service.to_micro(reward_amount),
+        transaction_id=transaction_id,
+        revenue_usd=ads_service.to_micro(revenue_usd),
         fx_rate_used=ads_service.to_micro(result.fx_rate),
         user_points_credited=points if credit_status == "credited" else 0,
         credit_status=credit_status,
@@ -495,7 +549,7 @@ async def admob_ssv_callback(
     ).scalar_one()
     logger.info(
         "AdMob SSV credited user=%s unit=%s tx=%s usd=%.6f pts=%d status=%s balance=%d",
-        user_id, ad_unit, transaction_id, reward_amount,
+        user_id, ad_unit, transaction_id, revenue_usd,
         event.user_points_credited or 0, event.credit_status, me,
     )
     return {
@@ -503,6 +557,10 @@ async def admob_ssv_callback(
         "points_credited": event.user_points_credited or 0,
         "new_balance": me,
     }
+
+
+# Remove old POST /google/callback and the old _verify_admob_signature function
+# They're now replaced by the GET handler above.
 
 
 # ── POST /ads/applovin/callback — AppLovin SSV webhook (stub) ──────
