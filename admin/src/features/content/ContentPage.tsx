@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api';
 import type { ContentListResponse } from '@/lib/types';
-import { Trash2 } from 'lucide-react';
+import { Trash2, RefreshCw } from 'lucide-react';
 import React, { useState } from 'react';
 import { Card, Badge, Button, Pagination, ShimmerLoader, Container, Tooltip } from '@/shared/components';
 import { TopHeader } from '@/shared/components/TopHeader';
@@ -36,6 +36,20 @@ export function ContentPage() {
     },
   });
 
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await adminApi.post('/admin/content/refresh');
+      return data as { imported: number; resliced: any };
+    },
+    onSuccess: (result) => {
+      alert(`Imported ${result.imported} books.`);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'content'] });
+    },
+    onError: () => {
+      alert('Refresh failed. Check the backend logs.');
+    },
+  });
+
   const queryClient = useQueryClient();
   const totalPages = data ? Math.ceil(data.total / data.limit) : 0;
 
@@ -65,6 +79,16 @@ export function ContentPage() {
               ]}
               className="lg:max-w-xs"
             />
+            <div className="flex items-end">
+              <Button
+                variant="primary"
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending}
+              >
+                <RefreshCw size={16} className={refreshMutation.isPending ? 'animate-spin' : ''} />
+                {refreshMutation.isPending ? 'Importing...' : 'Import Books'}
+              </Button>
+            </div>
           </div>
         </div>
 

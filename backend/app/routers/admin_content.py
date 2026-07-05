@@ -1,7 +1,8 @@
 """Content management endpoints.
 
-Manage educational content in the catalog: view, filter, and delete content.
-Supports filtering by content type and category with full-text search.
+Manage educational content in the catalog: view, filter, delete, and
+trigger a fresh import from Gutendex to seed the database with books
+and articles.
 """
 
 import logging
@@ -13,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import ContentCatalog, AdminUser, AdminAuditLog
 from app.services.admin_auth import require_permission
+from app.services.content.gutendex import import_gutendex
+from app.services.content.slicing import force_reslice_all
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/content", tags=["admin-content"])
@@ -91,6 +94,39 @@ async def list_content(
     ]
     
     return {"items": items, "total": int(total), "page": page, "limit": limit}
+
+
+@router.post("/refresh")
+async def admin_refresh_catalog(
+    current_admin: AdminUser = Depends(require_permission("content.import")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a fresh batch of books from Gutendex and re-slice the catalog.
+
+    Returns counts the admin UI can show in a toast: how many books
+    were imported, how many parents were re-sliced, total child slices.
+    This can take 10–30s on Render free tier.
+    """
+    imported = await import_gutendex(db, limit=20, start_page=1)
+    reslice_summary = await force_reslice_all(db)
+
+    db.add(
+        _log_admin_action(
+            current_admin.id,
+            current_admin.email,
+            "refresh_catalog",
+            "content",
+            None,
+            {"imported": imported, "resliced": str(reslice_summary)},
+            None,
+        )
+    )
+    await db.commit()
+
+    return {
+        "imported": imported,
+        "resliced": reslice_summary,
+    }
 
 
 @router.delete("/{content_id}")
