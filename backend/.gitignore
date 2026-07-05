@@ -144,3 +144,8 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+
+# Test scratch files
+test_*.py
+output*.txt
+test_result.txt
