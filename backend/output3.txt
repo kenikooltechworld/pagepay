@@ -1,8 +1,0 @@
-=== Test: GET with format=json ===
-Error: 
-
-=== Test: With referer + origin ===
-Error: 
-
-=== Test: Curl-style POST with query params ===
-Error: 
