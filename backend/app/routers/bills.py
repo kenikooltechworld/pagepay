@@ -226,9 +226,11 @@ async def buy_data(
 
 # ── Static lookups ──────────────────────────────────────────────────
 
-_COMMISSION_RATES_ELEC = 0.012  # ~1.2% for electricity
-_COMMISSION_RATES_TV = 0.018   # ~1.8% for cable TV
+_COMMISSION_RATES_ELEC = 0.012  # ~1.2% estimated commission on electricity
+_COMMISSION_RATES_TV = 0.018   # ~1.8% estimated commission on cable TV
 
+# Nigerian electricity DISCOs supported by Peyflex.
+# Static list — no DISCO-list API from Peyflex.
 _DISCOS: list[dict] = [
     {"code": "aedc", "name": "Abuja Electricity (AEDC)"},
     {"code": "ekedc", "name": "Eko Electricity (EKEDC)"},
@@ -240,6 +242,8 @@ _DISCOS: list[dict] = [
     {"code": "phed", "name": "Port Harcourt Electricity (PHED)"},
 ]
 
+# Cable TV bouquet pricing from Multichoice (official Naira rates).
+# plan_code values are what Peyflex expects in the `variation_id` field.
 _TV_PROVIDERS: dict[str, list[dict]] = {
     "dstv": [
         {"id": "dstv-premium", "name": "Premium", "price_naira": 24500, "channels": "155+ channels"},
@@ -262,31 +266,43 @@ _TV_PROVIDERS: dict[str, list[dict]] = {
     ],
 }
 
+# Real data bundle pricing from Peyflex API user tier.
+# Source: https://peyflex.com.ng/data-pricing/ — "API users get 5% discount"
+# These are the API user (discounted) prices — what Peyflex charges us.
+# The `id` values are the Peyflex `data_id` / `amount` parameter sent to
+# their `/api/v1/data` endpoint. Each network uses its own naming scheme.
 _DATA_BUNDLES: dict[str, list[dict]] = {
     "mtn": [
-        {"id": "mtn-sme-500mb", "name": "500MB — 30 days", "price_naira": 150, "size_mb": 500, "validity_days": 30},
-        {"id": "mtn-sme-1gb", "name": "1GB — 30 days", "price_naira": 300, "size_mb": 1024, "validity_days": 30},
-        {"id": "mtn-sme-2gb", "name": "2GB — 30 days", "price_naira": 550, "size_mb": 2048, "validity_days": 30},
-        {"id": "mtn-sme-5gb", "name": "5GB — 30 days", "price_naira": 1200, "size_mb": 5120, "validity_days": 30},
-        {"id": "mtn-sme-10gb", "name": "10GB — 30 days", "price_naira": 2200, "size_mb": 10240, "validity_days": 30},
+        {"id": "1", "name": "500MB — 30 days", "price_naira": 332, "size_mb": 500, "validity_days": 30},
+        {"id": "2", "name": "1GB — 30 days", "price_naira": 456, "size_mb": 1024, "validity_days": 30},
+        {"id": "3", "name": "2GB — 30 days", "price_naira": 805, "size_mb": 2048, "validity_days": 30},
+        {"id": "4", "name": "3GB — 30 days", "price_naira": 1140, "size_mb": 3072, "validity_days": 30},
+        {"id": "5", "name": "5GB — 30 days", "price_naira": 1710, "size_mb": 5120, "validity_days": 30},
+        {"id": "11", "name": "11GB — 30 days", "price_naira": 3465, "size_mb": 11264, "validity_days": 30},
     ],
     "airtel": [
-        {"id": "airtel-500mb", "name": "500MB — 30 days", "price_naira": 150, "size_mb": 500, "validity_days": 30},
-        {"id": "airtel-1gb", "name": "1GB — 30 days", "price_naira": 300, "size_mb": 1024, "validity_days": 30},
-        {"id": "airtel-2gb", "name": "2GB — 30 days", "price_naira": 550, "size_mb": 2048, "validity_days": 30},
-        {"id": "airtel-5gb", "name": "5GB — 30 days", "price_naira": 1200, "size_mb": 5120, "validity_days": 30},
+        {"id": "1", "name": "600MB — 30 days", "price_naira": 287, "size_mb": 600, "validity_days": 30},
+        {"id": "2", "name": "1GB — 30 days", "price_naira": 346, "size_mb": 1024, "validity_days": 30},
+        {"id": "3", "name": "2GB — 30 days", "price_naira": 742, "size_mb": 2048, "validity_days": 30},
+        {"id": "4", "name": "3GB — 30 days", "price_naira": 1039, "size_mb": 3072, "validity_days": 30},
+        {"id": "5", "name": "5GB — 30 days", "price_naira": 2450, "size_mb": 5120, "validity_days": 30},
+        {"id": "6", "name": "10GB — 30 days", "price_naira": 2920, "size_mb": 10240, "validity_days": 30},
     ],
     "glo": [
-        {"id": "glo-500mb", "name": "500MB — 30 days", "price_naira": 150, "size_mb": 500, "validity_days": 30},
-        {"id": "glo-1gb", "name": "1GB — 30 days", "price_naira": 300, "size_mb": 1024, "validity_days": 30},
-        {"id": "glo-2gb", "name": "2GB — 30 days", "price_naira": 550, "size_mb": 2048, "validity_days": 30},
-        {"id": "glo-5gb", "name": "5GB — 30 days", "price_naira": 1200, "size_mb": 5120, "validity_days": 30},
+        {"id": "1", "name": "500MB — 30 days", "price_naira": 240, "size_mb": 500, "validity_days": 30},
+        {"id": "2", "name": "1GB — 30 days", "price_naira": 264, "size_mb": 1024, "validity_days": 30},
+        {"id": "3", "name": "3GB — 30 days", "price_naira": 833, "size_mb": 3072, "validity_days": 30},
+        {"id": "4", "name": "5GB — 30 days", "price_naira": 1352, "size_mb": 5120, "validity_days": 30},
+        {"id": "5", "name": "2GB — 30 days", "price_naira": 882, "size_mb": 2048, "validity_days": 30},
+        {"id": "6", "name": "10GB — 30 days", "price_naira": 3234, "size_mb": 10240, "validity_days": 30},
     ],
     "9mobile": [
-        {"id": "9mobile-500mb", "name": "500MB — 30 days", "price_naira": 150, "size_mb": 500, "validity_days": 30},
-        {"id": "9mobile-1gb", "name": "1GB — 30 days", "price_naira": 300, "size_mb": 1024, "validity_days": 30},
-        {"id": "9mobile-2gb", "name": "2GB — 30 days", "price_naira": 550, "size_mb": 2048, "validity_days": 30},
-        {"id": "9mobile-5gb", "name": "5GB — 30 days", "price_naira": 1200, "size_mb": 5120, "validity_days": 30},
+        {"id": "1", "name": "500MB — 30 days", "price_naira": 294, "size_mb": 500, "validity_days": 30},
+        {"id": "2", "name": "1GB — 30 days", "price_naira": 490, "size_mb": 1024, "validity_days": 30},
+        {"id": "3", "name": "2GB — 30 days", "price_naira": 960, "size_mb": 2048, "validity_days": 30},
+        {"id": "4", "name": "3GB — 30 days", "price_naira": 1470, "size_mb": 3072, "validity_days": 30},
+        {"id": "5", "name": "5GB — 30 days", "price_naira": 2450, "size_mb": 5120, "validity_days": 30},
+        {"id": "6", "name": "10GB — 30 days", "price_naira": 4900, "size_mb": 10240, "validity_days": 30},
     ],
 }
 

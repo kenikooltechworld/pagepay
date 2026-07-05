@@ -216,45 +216,64 @@
 
 ### 10. **Product Review & User-Generated Content**
 
-| Service | Pay Rate | Integration | Nigeria Support |
-|---------|----------|-------------|----------------|
-| **Bazaarvoice (Influenster)** | $5-50/review | API + SDK | ✅ Global (Nigeria works) |
-| **Capterra** | $10-25/software review | Review API | ✅ Global |
-| **G2** | $10-25/software review | Review API | ✅ Global |
-| **ReviewStream** | $1-10/review | API | ✅ Global |
-| **Trustpilot** | Free service | Review widget | ✅ Works in Nigeria |
-| **Google Reviews (Local Guides)** | Points (not cash) | Maps API | ✅ Active in Nigeria |
+#### A. NIGERIAN-SPECIFIC PLATFORMS (BEST FOR LOCAL INTEGRATION)
 
-**Best Choice for Nigeria**: **Bazaarvoice/Influenster** — Pays cash, accepts Nigeria
+| Platform | Pay Rate | Popularity | Integration | Notes |
+|----------|----------|------------|-------------|-------|
+| **OpinionPadi** 🇳🇬 | ₦5,000-₦25,000/month | ⭐⭐⭐⭐ Growing | Direct API | Nigerian-owned, bank payout |
+| **TGM Panel Nigeria** 🇳🇬 | $0.50-$2.50/survey | ⭐⭐⭐⭐ Active | Panel API | 1,800+ daily users, 80+ countries |
+| **Toluna Nigeria** | $0.50-$3/survey | ⭐⭐⭐ Medium | API available | Community features |
+| **Survey Junkie** | $1-$3/survey | ⭐⭐⭐ Medium | Redirect | Limited Nigeria surveys |
 
-**Revenue Model**:
-- Brand posts review campaign for product (e.g., new phone)
-- User writes 200-word review + uploads 3 photos
-- Brand pays $10 per approved review
-- User gets $7 (70%)
-- Platform keeps $3 (30%)
+#### B. GLOBAL REVIEW PLATFORMS (NIGERIA SUPPORTED)
 
-**Alternative: Direct Brand Partnerships** (HIGHER REVENUE)
-Instead of using third-party platforms, partner directly with Nigerian brands:
-- **Jumia Vendors** — Pay ₦500-2,000 per verified review
-- **Konga Vendors** — Similar
-- **Local Restaurants** — ₦200-500 per Google review
-- **Hotels/Travel** — ₦500-1,000 per TripAdvisor review
-- **Beauty Products** — ₦1,000-3,000 per Instagram/YouTube review
+| Platform | Pay Model | Popularity | Nigeria Support | Integration |
+|----------|-----------|------------|----------------|-------------|
+| **Bazaarvoice/Influenster** | Free products + reviews | ⭐⭐⭐⭐⭐ (9M users) | ✅ Global | Sampling API |
+| **Trustpilot** | Free service | ⭐⭐⭐⭐⭐ (29.5% market share Nigeria) | ✅ Yes | Review widget |
+| **Capterra** | $10-25/software review | ⭐⭐⭐⭐ High | ✅ Global | Review API |
+| **G2** | $10-25/software review | ⭐⭐⭐⭐ High | ✅ Global | Review API |
+| **ReviewStream** | $1-10/review | ⭐⭐ Low | ⚠️ Limited | API |
 
-**How Direct Brand Partnerships Work:**
-1. Brands contact PagePay to run review campaign
-2. Brand deposits campaign budget (e.g., ₦500,000 for 500 reviews at ₦1,000 each)
-3. PagePay shows review task to verified users
-4. Users buy product (or get sample), write review, upload proof
-5. PagePay verifies review quality + authenticity
-6. User gets ₦700, platform keeps ₦300
+**POPULARITY RANKING (Nigeria):**
+1. **Trustpilot** — 29.5% market share (most popular review platform in Nigeria)
+2. **TGM Panel** — 1,800+ daily Nigerian users, $2.50 per survey
+3. **OpinionPadi** — Nigerian startup, claims ₦5,000-₦25,000/month earnings
+4. **Bazaarvoice** — 9M+ global users, but samples (not cash) for reviews
+5. **Toluna** — Medium activity in Nigeria
 
-**Why This Works Better Than Third-Party:**
-- No middleman (higher margins)
-- Nigerian brands need reviews badly
-- Can verify reviews are real (link to actual purchase)
-- Builds local brand partnerships
+**RECOMMENDED APPROACH: HYBRID MODEL**
+
+**Option 1: Partner with OpinionPadi (Nigerian Platform)**
+- **Why**: Already established in Nigeria, direct bank payouts
+- **Integration**: Embed their surveys in your app, revenue share
+- **User Experience**: Seamless (no external redirect)
+- **Revenue Split**: Negotiate 20-30% platform fee
+
+**Option 2: Partner with TGM Panel**
+- **Why**: Active 1,800 daily Nigerian users, proven payout ($2.50/survey)
+- **Integration**: API for survey feed
+- **Revenue**: Per-completion fee ($0.50-$1 per survey)
+
+**Option 3: Build Direct Brand Review Marketplace (BEST)**
+- **Why**: Highest margins, no middleman
+- **How**: Nigerian brands pay you directly for verified reviews
+- **Revenue**: ₦500-2,000 per review × 70/30 split
+- **Brands**: Jumia vendors, Konga sellers, local restaurants, hotels
+
+**Revenue Model (Direct Brand Partnership — RECOMMENDED):**
+- Brand posts review campaign (e.g., new phone launch, needs 100 reviews)
+- Brand pays ₦100,000 (₦1,000 per review)
+- Users write reviews, get ₦700 each
+- Platform keeps ₦300 each = ₦30,000 profit per campaign
+
+**Why Direct Partnerships Beat Third-Party:**
+1. Higher margins (30-40% vs 10-20%)
+2. Control review quality
+3. Verify reviews are real (linked to actual purchases)
+4. Build direct relationships with Nigerian brands
+5. No dependency on foreign platforms
+6. Faster payouts (no international wire delays)
 
 ---
 

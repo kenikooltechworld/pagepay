@@ -6,13 +6,16 @@ electricity, and cable TV purchases.
 `httpx.AsyncClient` is reused across calls. Module-level singleton
 built lazily on first use.
 
-Reference: https://peyflex.com.ng (API docs at portal.peyflex.com.ng)
+Base URL: https://client.peyflex.com.ng
+Auth: Authorization: Token <api_key> (header)
+Body: application/json
+
+Reference: https://documenter.getpostman.com/view/17835214/2sB34imLMn
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 
 import httpx
@@ -21,7 +24,7 @@ from app.config import settings
 
 logger = logging.getLogger("uvicorn.error")
 
-_PEYFLEX_BASE_URL = "https://portal.peyflex.com.ng/api/v1"
+_PEYFLEX_BASE_URL = "https://client.peyflex.com.ng"
 _HTTP_TIMEOUT_SECONDS = 15.0
 
 
@@ -48,16 +51,16 @@ class PeyflexClient:
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
         self._headers = {
-            "Authorization": api_key,
-            "source-domain": "pagepay.app",
+            "Authorization": f"Token {api_key}",
+            "Content-Type": "application/json",
         }
 
-    async def _post(self, endpoint: str, params: dict) -> dict:
-        """Make a POST to Peyflex and return the JSON body."""
-        url = f"{_PEYFLEX_BASE_URL}/{endpoint}"
+    async def _post(self, endpoint: str, payload: dict) -> dict:
+        """Make a JSON POST to Peyflex and return the JSON body."""
+        url = f"{_PEYFLEX_BASE_URL}/{endpoint.lstrip('/')}"
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
-            resp = await client.post(url, params=params, headers=self._headers)
-        if resp.status_code != 200:
+            resp = await client.post(url, json=payload, headers=self._headers)
+        if resp.status_code not in (200, 201):
             raise PeyflexError(
                 f"Peyflex returned {resp.status_code}: {resp.text[:200]}"
             )
@@ -66,97 +69,79 @@ class PeyflexClient:
     async def buy_airtime(
         self, phone: str, amount_naira: int, network: str,
     ) -> PurchaseReceipt:
-        """Purchase airtime. Network: mtn_airtime, airtel_airtime, glo_airtime, 9mobile_airtime."""
-        body = await self._post("airtime", {
-            "format": "json",
+        """Purchase airtime. Network: mtn, airtel, glo, 9mobile."""
+        body = await self._post("/api/v1/airtime", {
             "phone": phone,
-            "amount": str(amount_naira),
-            "network": f"{network}_airtime",
+            "amount": amount_naira,
+            "network": network,
         })
         return PurchaseReceipt(
-            status="success" if body.get("status") == "success" else "failed",
-            external_ref=str(body.get("ref", "")),
+            status="success" if body.get("status") in ("success", True) else "failed",
+            external_ref=str(body.get("ref", body.get("reference", ""))),
             message=str(body.get("message", "")),
         )
 
     async def buy_data(
         self, phone: str, data_id: str, network: str,
     ) -> PurchaseReceipt:
-        """Purchase data bundle. Network: mtn_sme_data, airtel_data, glo_data, 9mobile_data."""
-        body = await self._post("data", {
-            "format": "json",
+        """Purchase data bundle."""
+        body = await self._post("/api/v1/data", {
             "phone": phone,
             "amount": data_id,
             "network": network,
         })
         return PurchaseReceipt(
-            status="success" if body.get("status") == "success" else "failed",
-            external_ref=str(body.get("ref", "")),
+            status="success" if body.get("status") in ("success", True) else "failed",
+            external_ref=str(body.get("ref", body.get("reference", ""))),
             message=str(body.get("message", "")),
         )
-
-    # ── Electricity ──────────────────────────────────────────────────
 
     async def check_meter(
         self, meter_number: str, disco: str,
     ) -> dict:
-        """Validate a meter number with the DISCO. Returns customer info dict.
-
-        DISCO values: aedc, ekedc, ibedc, ikedc, jed, kaedco, kedco, phed.
-        """
-        body = await self._post("check-meter", {
-            "format": "json",
+        """Validate a meter number with the DISCO."""
+        return await self._post("/api/v1/check-meter", {
             "meter_no": meter_number,
             "disco": disco,
         })
-        return body
 
     async def buy_electricity(
         self, meter_number: str, disco: str, meter_type: str, amount_naira: int,
     ) -> PurchaseReceipt:
         """Purchase electricity tokens. meter_type: prepaid | postpaid."""
-        body = await self._post("electricity", {
-            "format": "json",
+        body = await self._post("/api/v1/electricity", {
             "meter_no": meter_number,
             "disco": disco,
             "meter_type": meter_type,
-            "amount": str(amount_naira),
+            "amount": amount_naira,
         })
         return PurchaseReceipt(
-            status="success" if body.get("status") == "success" else "failed",
-            external_ref=str(body.get("ref", "")),
+            status="success" if body.get("status") in ("success", True) else "failed",
+            external_ref=str(body.get("ref", body.get("reference", ""))),
             message=str(body.get("message", "")),
         )
-
-    # ── Cable TV ─────────────────────────────────────────────────────
 
     async def check_cable_customer(
         self, smartcard_number: str, service: str,
     ) -> dict:
-        """Validate a smartcard/IUC number. service: dstv, gotv, startimes.
-
-        Returns customer_name, smart_no, status, customer_number, invoice, etc.
-        """
-        body = await self._post("check-cable-customer", {
-            "format": "json",
+        """Validate a smartcard/IUC number. service: dstv | gotv | startimes."""
+        return await self._post("/api/v1/check-cable-customer", {
             "smart_no": smartcard_number,
             "service": service,
         })
-        return body
 
     async def buy_tv(
         self, smartcard_number: str, service: str, variation_id: str,
     ) -> PurchaseReceipt:
-        """Subscribe cable TV. variation_id is the bouquet code."""
-        body = await self._post("cable", {
-            "format": "json",
+        """Subscribe cable TV. variation_id is the bouquet plan code."""
+        body = await self._post("/api/v1/cable", {
             "smart_no": smartcard_number,
             "service": service,
             "variation_id": variation_id,
         })
         return PurchaseReceipt(
-            status="success" if body.get("status") == "success" else "failed",
-            external_ref=str(body.get("ref", "")),
+            status="success" if body.get("status") in ("success", True) else "failed",
+            external_ref=str(body.get("ref", body.get("reference", ""))),
             message=str(body.get("message", "")),
         )
 
