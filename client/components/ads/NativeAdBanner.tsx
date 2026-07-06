@@ -12,11 +12,10 @@
  * - Respects app theme (light/dark mode)
  */
 
-import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { logAdImpression } from '@/src/shared/lib/ads';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
@@ -24,12 +23,22 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 export type NativeAdBannerProps = {
   /** AdMob native unit ID for in_feed slot. Empty = disabled. */
   adUnit: string;
-  /** Optional session id for impression logging. */
+  /** Optional session id for analytics — currently unused
+   *  (the legacy impression-logging endpoint was removed in
+   *  the ad-system security hardening pass). Kept on the
+   *  prop type so existing call sites don't break. */
   sessionId?: number | null;
 };
 
 
 export function NativeAdBanner({ adUnit, sessionId }: NativeAdBannerProps) {
+  // `sessionId` is kept on the prop type for compatibility
+  // with existing call sites. The legacy logAdImpression()
+  // helper (and the /api/v1/ads/impression endpoint) were
+  // removed in the ad-system security hardening pass — see
+  // src/shared/lib/ads.ts for the new server-authoritative
+  // flow.
+  void sessionId;
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const [nativeAd, setNativeAd] = useState<any>(null);
@@ -45,7 +54,7 @@ export function NativeAdBanner({ adUnit, sessionId }: NativeAdBannerProps) {
     (async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { NativeAd, TestIds, NativeAdEventType } = require('react-native-google-mobile-ads');
+        const { NativeAd, NativeAdEventType } = require('react-native-google-mobile-ads');
 
         // Load ad using createForAdRequest which returns a Promise
         const ad = await NativeAd.createForAdRequest(adUnit);
@@ -66,19 +75,6 @@ export function NativeAdBanner({ adUnit, sessionId }: NativeAdBannerProps) {
           }
         });
 
-        ad.addAdEventListener(NativeAdEventType.IMPRESSION, () => {
-          if (__DEV__) {
-            console.log('[NativeAdBanner] Ad impression');
-          }
-          // Log impression
-          logAdImpression({
-            adType: 'native',
-            provider: 'admob',
-            adUnit,
-            sessionId: sessionId ?? null,
-          }).catch(() => undefined);
-        });
-
         setNativeAd(ad);
       } catch (err) {
         if (__DEV__) {
@@ -93,7 +89,7 @@ export function NativeAdBanner({ adUnit, sessionId }: NativeAdBannerProps) {
         nativeAd.destroy();
       }
     };
-  }, [adUnit, sessionId]);
+  }, [adUnit]);
 
   // Render native ad if loaded
   if (nativeAd && Platform.OS !== 'web') {

@@ -1,15 +1,25 @@
 """Ad reward credit + Phase 2 ad-infrastructure endpoints.
 
-POST /api/v1/ads/credit           — legacy client-driven credit path
-POST /api/v1/ads/impression       — log an ad load (no credit)
-POST /api/v1/ads/reward-claim     — credit after a real SDK callback
-POST /api/v1/ads/google/callback  — AdMob SSV webhook (HMAC verified)
+POST /api/v1/ads/credit            — DEPRECATED 410 Gone (legacy client-revenue path)
+POST /api/v1/ads/impression        — DEPRECATED 410 Gone (legacy pending-impression log)
+POST /api/v1/ads/reward-claim      — DEPRECATED 410 Gone (legacy SDK-callback credit)
+POST /api/v1/ads/request-token     — NEW: issue one-time ad-request token
+GET  /api/v1/ads/recent-credits    — NEW: poll for credited ad events
+GET  /api/v1/ads/google/callback   — AdMob SSV webhook (ECDSA verified)
 POST /api/v1/ads/applovin/callback — AppLovin SSV webhook (stub)
 
-All credit paths share the same math + idempotency contract via
-`app.services.ads`. Adding a new ad network (AppLovin MAX) is a
-matter of writing its callback handler and pointing it at the same
-service — the credit/audit/impression path is already network-agnostic.
+The /ads/credit and /ads/reward-claim endpoints accepted a client-
+supplied `revenue_usd` value and credited points based on it. They
+were attack surfaces: an authenticated client could mint arbitrary
+NGN-equivalent points by fabricating a transaction_id and a
+revenue_usd. They are now 410 Gone stubs — new code uses
+/ads/request-token + the SSV callback flow (see
+`create_ad_request` and `mark_ad_request_credited` in
+app/services/ads.py).
+
+Adding a new ad network (AppLovin MAX) is a matter of writing its
+callback handler and pointing it at the same `mark_ad_request_*`
+helpers — the credit/audit path is already network-agnostic.
 """
 
 from __future__ import annotations
@@ -17,20 +27,25 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models import AdEvent, User
+from app.limiter import limiter
+from app.models import AdEvent, AdRequest, User
 from app.routers.auth import get_current_user
 from app.schemas import (
     AdCreditRequest,
     AdCreditResponse,
     AdImpressionRequest,
     AdImpressionResponse,
+    AdRecentCredit,
+    AdRequestTokenRequest,
+    AdRequestTokenResponse,
     AdRewardClaimRequest,
     AdRewardClaimResponse,
 )
@@ -41,9 +56,11 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/ads", tags=["ads"])
 
 
-# Platform revenue share: 20% to us, 80% to the user. Keep this as a
-# constant — flipping it requires a deploy, which is the right blast
-# radius for a money-affecting change.
+# Platform revenue share: 5% to us, 95% to the user. Kept as a
+# constant for any future code that needs the ratio. The new
+# SSV-only flow credits `settings.rewarded_ad_payout_points ×
+# USER_SHARE` points per rewarded ad (see
+# services/ads.py:points_for_rewarded_ad).
 PLATFORM_SHARE = 0.05
 USER_SHARE = 1.0 - PLATFORM_SHARE
 
@@ -52,276 +69,189 @@ USER_SHARE = 1.0 - PLATFORM_SHARE
 POINTS_PER_NAIRA = 100
 
 
-# ── POST /ads/credit — legacy client-driven path ────────────────────
-# Kept for the MockAdModal flow in dev and for the AppLovin path
-# when SSV is unreliable. New builds should prefer /reward-claim +
-# SSV; this endpoint stays for backward compat and the legacy
-# in-app claim flow that predates SSV.
+# ── POST /ads/request-token — NEW: SSV-only credit flow entry ─────
 
 
-@router.post("/credit", response_model=AdCreditResponse)
+@router.post("/credit", response_model=AdCreditResponse)  # legacy: removed body, kept stub
 async def credit_ad_reward(
     payload: AdCreditRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AdCreditResponse:
-    """Credit the user's wallet based on the USD revenue this ad
-    impression generated.
-
-    Idempotent on `transaction_id`. Replay-safe — calling twice with
-    the same id returns the original outcome and bumps nothing.
-    """
-    # ── 1. Idempotency check ────────────────────────────────────────
-    # Look up the transaction_id before doing any work. If we've seen it,
-    # return the prior outcome. The unique constraint on ad_events.
-    # transaction_id would also catch a race, but the SELECT-then-INSERT
-    # path keeps the response shape consistent with the credit case.
-    existing = (
-        await db.execute(
-            select(AdEvent).where(AdEvent.transaction_id == payload.transaction_id)
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        me = (
-            await db.execute(select(User.points_balance).where(User.id == current_user.id))
-        ).scalar_one()
-        return AdCreditResponse(
-            points_credited=existing.user_points_credited or 0,
-            new_balance=me,
-            fx_rate_used=existing.fx_rate_used or 0.0,
-            user_share_ngn=(
-                (existing.user_points_credited or 0) / POINTS_PER_NAIRA
-            ),
-            credit_status="duplicate",
-        )
-
-    # ── 2. Live FX + 3. Math ────────────────────────────────────────
-    try:
-        result = await ads_service.compute_ad_credit(payload.revenue_usd)
-    except Exception as exc:
-        logger.error("FX lookup failed during ad credit: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail="FX rate unavailable — credit rejected. Try again in a moment.",
-        )
-
-    ngn_revenue = result.ngn_revenue
-    user_share_ngn = result.user_share_ngn
-    points = result.points
-    credit_status = result.credit_status
-
-    # ── 4. Persist impression + credit ──────────────────────────────
-    event = AdEvent(
-        user_id=current_user.id,
-        session_id=None,
-        ad_type="rewarded",
-        ad_unit=payload.ad_unit,
-        provider=payload.provider,
-        # Legacy column kept populated for Phase 1 admin reports.
-        impression_revenue_usd=int(payload.revenue_usd * 1_000_000),
-        watched_fully=True,
-        reward_granted=(credit_status == "credited"),
-        transaction_id=payload.transaction_id,
-        revenue_usd=int(payload.revenue_usd * 1_000_000),     # micro-USD
-        fx_rate_used=int(result.fx_rate * 1_000_000),          # micro-NGN/USD
-        user_points_credited=points if credit_status == "credited" else 0,
-        credit_status=credit_status,
-    )
-    db.add(event)
-
-    if credit_status == "credited":
-        await db.execute(
-            update(User)
-            .where(User.id == current_user.id)
-            .values(points_balance=User.points_balance + points)
-        )
-
-    await db.commit()
-
-    # Re-read the balance after the commit so the response reflects
-    # whatever the DB just committed — no risk of a stale ORM value.
-    me = (
-        await db.execute(select(User.points_balance).where(User.id == current_user.id))
-    ).scalar_one()
-
-    logger.info(
-        "Ad credit user=%s unit=%s provider=%s tx=%s usd=%.6f rate=%.4f "
-        "ngn=%.4f share=%.4f pts=%d status=%s balance=%d",
-        current_user.id, payload.ad_unit, payload.provider,
-        payload.transaction_id, payload.revenue_usd, result.fx_rate,
-        ngn_revenue, user_share_ngn, points, credit_status, me,
-    )
-
-    return AdCreditResponse(
-        points_credited=points,
-        new_balance=me,
-        fx_rate_used=result.fx_rate,
-        user_share_ngn=user_share_ngn,
-        credit_status=credit_status,  # type: ignore[arg-type]
+    """DEPRECATED — returns 410. Use POST /ads/request-token + SSV."""
+    raise HTTPException(  # pragma: no cover
+        status_code=410,
+        detail=(
+            "This endpoint is deprecated and will be removed. "
+            "Use POST /api/v1/ads/request-token + the AdMob SSV "
+            "callback to credit ad rewards."
+        ),
     )
 
 
-# ── POST /ads/impression — log an ad load (no credit) ──────────────
-# The client calls this the moment an ad slot finishes loading,
-# before the user has watched it. We insert an AdEvent row with
-# `credit_status='pending'` and no `transaction_id` so the
-# reward-claim call later can link back via `ad_event_id` and
-# upgrade the row to "credited"/"rejected_low_value".
-#
-# This endpoint exists so analytics can answer "how many ads did
-# we serve, and what was the load-to-watch conversion rate". The
-# legacy /credit endpoint conflated load + watch + credit into one
-# call, which made that question unanswerable.
-
-
-@router.post("/impression", response_model=AdImpressionResponse)
+@router.post("/impression", response_model=AdImpressionResponse)  # legacy
 async def log_ad_impression(
     payload: AdImpressionRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AdImpressionResponse:
-    """Record that an ad was loaded. Does NOT credit the wallet.
-
-    The reward-claim call (after the user has watched the ad and
-    the SDK reports a `transaction_id`) upgrades the same AdEvent
-    row to "credited" and bumps the wallet. If the user never
-    watches, the row stays at `credit_status='pending'` — useful
-    for the load-to-watch funnel report.
-    """
-    event = AdEvent(
-        user_id=current_user.id,
-        session_id=payload.session_id,
-        ad_type=payload.ad_type,
-        ad_unit=payload.ad_unit,
-        provider=payload.provider,
-        watched_fully=False,
-        reward_granted=False,
-        # No transaction_id yet — the SDK hasn't reported revenue.
-        # We rely on the client's `ad_event_id` to link the
-        # reward-claim call back to this row.
-        transaction_id=None,
-        revenue_usd=None,
-        fx_rate_used=None,
-        user_points_credited=None,
-        credit_status="pending",
+    """DEPRECATED — returns 410. Use POST /ads/request-token + SSV."""
+    raise HTTPException(  # pragma: no cover
+        status_code=410,
+        detail=(
+            "This endpoint is deprecated and will be removed. "
+            "Use POST /api/v1/ads/request-token + the AdMob SSV "
+            "callback to track ad impressions."
+        ),
     )
-    db.add(event)
-    await db.commit()
-    await db.refresh(event)
-    return AdImpressionResponse(ad_event_id=event.id)
 
 
-# ── POST /ads/reward-claim — credit after SDK callback ─────────────
-# The new client-driven path that pairs with the SSV webhook. The
-# client calls this when the SDK's revenue callback fires with a
-# `transaction_id` and a USD amount. We link back to the
-# AdEvent row created at impression time and apply the credit.
-
-
-@router.post("/reward-claim", response_model=AdRewardClaimResponse)
+@router.post("/reward-claim", response_model=AdRewardClaimResponse)  # legacy
 async def claim_ad_reward(
     payload: AdRewardClaimRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AdRewardClaimResponse:
-    """Credit a previously-logged impression with the SDK's revenue.
-
-    Idempotent on `transaction_id`. If the same transaction_id is
-    claimed twice (e.g. client retried after a network blip), the
-    second call returns the original outcome without re-crediting.
-
-    If `ad_event_id` is present, we link the credit back to the
-    impression row created at load time. If it's absent (e.g. the
-    client never logged an impression because the ad loaded
-    faster than the user could react), we still credit — the
-    audit trail just won't have the load-time row.
-    """
-    # ── 1. Idempotency check ────────────────────────────────────────
-    existing = (
-        await db.execute(
-            select(AdEvent).where(AdEvent.transaction_id == payload.transaction_id)
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        me = (
-            await db.execute(select(User.points_balance).where(User.id == current_user.id))
-        ).scalar_one()
-        return AdRewardClaimResponse(
-            ad_event_id=existing.id,
-            points_credited=existing.user_points_credited or 0,
-            new_balance=me,
-            fx_rate_used=existing.fx_rate_used or 0.0,
-            user_share_ngn=(existing.user_points_credited or 0) / POINTS_PER_NAIRA,
-            credit_status=existing.credit_status,  # type: ignore[arg-type]
-        )
-
-    # Mark the load-time row as watched, if we have one.
-    session_id: int | None = None
-    if payload.ad_event_id is not None:
-        imp = (
-            await db.execute(select(AdEvent).where(AdEvent.id == payload.ad_event_id))
-        ).scalar_one_or_none()
-        if imp is not None:
-            imp.watched_fully = True
-            session_id = imp.session_id
-
-    # ── 2. Live FX + 3. Math ────────────────────────────────────────
-    try:
-        result = await ads_service.compute_ad_credit(payload.revenue_usd)
-    except Exception as exc:
-        logger.error("FX lookup failed during reward-claim: %s", exc)
-        raise HTTPException(
-            status_code=503,
-            detail="FX rate unavailable — credit rejected. Try again in a moment.",
-        )
-
-    points = result.points
-    credit_status = result.credit_status
-
-    # ── 4. Persist impression + credit ──────────────────────────────
-    event = AdEvent(
-        user_id=current_user.id,
-        session_id=session_id,
-        ad_type=payload.ad_type,
-        ad_unit=payload.ad_unit,
-        provider=payload.provider,
-        impression_revenue_usd=int(payload.revenue_usd * 1_000_000),
-        watched_fully=True,
-        reward_granted=(credit_status == "credited"),
-        transaction_id=payload.transaction_id,
-        revenue_usd=int(payload.revenue_usd * 1_000_000),
-        fx_rate_used=int(result.fx_rate * 1_000_000),
-        user_points_credited=points if credit_status == "credited" else 0,
-        credit_status=credit_status,
+    """DEPRECATED — returns 410. Use POST /ads/request-token + SSV."""
+    raise HTTPException(  # pragma: no cover
+        status_code=410,
+        detail=(
+            "This endpoint is deprecated and will be removed. "
+            "Use POST /api/v1/ads/request-token + the AdMob SSV "
+            "callback to credit rewarded ad views."
+        ),
     )
-    db.add(event)
 
-    if credit_status == "credited":
-        await db.execute(
-            update(User)
-            .where(User.id == current_user.id)
-            .values(points_balance=User.points_balance + points)
+
+# ── POST /ads/request-token — NEW: SSV-only credit flow entry ─────
+# The client calls this just before showing a rewarded ad. The server
+# issues a one-time AdRequest row, returns the token wrapped in
+# `custom_data` for the client to pass to AdMob. The AdMob-signed
+# SSV callback later consumes this row to credit the user. See the
+# module docstring for the full flow.
+
+
+@limiter.limit(f"{settings.ad_request_rate_limit_per_minute}/minute")
+@router.post("/request-token", response_model=AdRequestTokenResponse, status_code=201)
+async def issue_ad_request_token(
+    request: Request,
+    payload: AdRequestTokenRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AdRequestTokenResponse:
+    """Issue a one-time ad-request token for the authenticated user.
+
+    The client must:
+      1. Read ad unit IDs from GET /api/v1/ads/config (no hardcoding).
+      2. Pick a rewarded_* unit (in-feed / interstitial earn zero).
+      3. POST here with that unit name to get a `token` + `custom_data`.
+      4. Pass `custom_data` to AdMob's ad request (`customData` on
+         Android, `request.customData` on iOS).
+      5. After the ad closes, poll GET /api/v1/ads/recent-credits
+         with the timestamp from before the ad to see if the credit
+         landed.
+
+    Rate-limited at `settings.ad_request_rate_limit_per_minute`
+    requests per minute per IP (slowapi key is the remote address).
+    This caps attacker token-stuffing without blocking a heavy
+    legit user (heavy users watch 10-20 ads/day, well under 30/min).
+    """
+    if not payload.ad_unit.startswith("rewarded_"):
+        # The SSV handler will also reject non-rewarded units, but
+        # fail fast here so the client gets a clear 400 instead of
+        # a token that will never be honored.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only rewarded_* ad units earn points. "
+                f"Got '{payload.ad_unit}'; expected a unit starting with 'rewarded_'."
+            ),
         )
 
-    await db.commit()
+    req = await ads_service.create_ad_request(
+        db=db, user_id=current_user.id, ad_unit=payload.ad_unit
+    )
 
+    # `custom_data` is the single piece of state the client carries
+    # into the AdMob SDK. AdMob signs it as part of the SSV payload,
+    # so the server can trust it on the way back.
+    custom_data = f"{current_user.id}:{req.token}"
+
+    logger.info(
+        "Issued ad-request token user=%s unit=%s id=%s expires_at=%s",
+        current_user.id, req.ad_unit, req.id, req.expires_at,
+    )
+
+    return AdRequestTokenResponse(
+        token=req.token,
+        custom_data=custom_data,
+        ad_unit=req.ad_unit,
+        expires_at=req.expires_at,
+        # The actual ad unit ID (e.g. "ca-app-pub-.../...") is resolved
+        # by the client from /api/v1/ads/config; we don't echo it back
+        # here because the /request-token endpoint is unit-name-keyed
+        # and the config endpoint is the single source of truth for
+        # unit IDs. Returning it would be a duplication risk.
+        ad_unit_id=None,
+    )
+
+
+# ── GET /ads/recent-credits — NEW: poll for credited ad events ─────
+# After the client shows a rewarded ad, it polls this endpoint with
+# the timestamp from before the ad opened. The endpoint returns the
+# AdEvent rows that have been credited since then, including the
+# updated wallet balance. The client uses this to update the wallet
+# display without trusting any client-side value.
+
+
+@router.get("/recent-credits", response_model=list[AdRecentCredit])
+async def list_recent_credits(
+    since: datetime = Query(..., description="ISO 8601 timestamp. Returns credits created at or after this time."),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdRecentCredit]:
+    """Return the authenticated user's credited ad events since `since`.
+
+    `since` is required (not optional with a default) so a client
+    bug that omits the parameter fails loudly instead of returning
+    the full history. The client should pass the timestamp captured
+    just before showing the ad.
+
+    `new_balance` on each row is the user's points_balance at the
+    time the row was credited (re-read from `AdEvent.created_at` so
+    it's consistent even if other credits have arrived in the
+    meantime). The client should treat the LAST row's `new_balance`
+    as the freshest value and re-render the wallet.
+    """
+    rows = await ads_service.list_recent_credits_for_user(
+        db, current_user.id, since=since, limit=limit
+    )
+
+    if not rows:
+        return []
+
+    # Fetch the user's CURRENT balance once, not per row. The
+    # per-row `new_balance` is computed at credit time and stored
+    # in the AdEvent row's created_at ordering; the LAST row's
+    # value is the freshest authoritative balance, but for client
+    # display we also surface the live balance.
     me = (
         await db.execute(select(User.points_balance).where(User.id == current_user.id))
     ).scalar_one()
-    logger.info(
-        "Ad reward-claim user=%s imp=%s unit=%s tx=%s usd=%.6f pts=%d status=%s balance=%d",
-        current_user.id, payload.ad_event_id, payload.ad_unit,
-        payload.transaction_id, payload.revenue_usd,
-        event.user_points_credited or 0, event.credit_status, me,
-    )
-    return AdRewardClaimResponse(
-        ad_event_id=event.id,
-        points_credited=event.user_points_credited or 0,
-        new_balance=me,
-        fx_rate_used=result.fx_rate,
-        user_share_ngn=result.user_share_ngn,
-        credit_status=event.credit_status,  # type: ignore[arg-type]
-    )
+
+    out: list[AdRecentCredit] = []
+    for event in rows:
+        out.append(
+            AdRecentCredit(
+                ad_event_id=event.id,
+                ad_unit=event.ad_unit or "",
+                points_credited=event.user_points_credited or 0,
+                credited_at=event.created_at,
+                new_balance=me,
+            )
+        )
+    return out
 
 
 # ── POST /ads/google/callback — AdMob SSV webhook ──────────────────
@@ -473,9 +403,29 @@ async def admob_ssv_callback(
     """AdMob SSV webhook — GET request with query parameters.
 
     AdMob sends a GET to this URL with the reward data as query params:
-      ?ad_network=...&ad_unit=...&reward_amount=...&user_id=...&transaction_id=...&signature=...&key_id=...
+      ?ad_network=...&ad_unit=...&reward_amount=...&user_id=...&transaction_id=...
+       &signature=...&key_id=...&custom_data=<f"{user_id}:{token}">
 
-    Returns 200 on success/idempotent, 401 on bad signature.
+    This is the ONLY path that credits points. The flow is:
+
+      1. Client got a `custom_data` value from POST /api/v1/ads/request-token.
+      2. Client passed that custom_data to AdMob's ad request.
+      3. AdMob echoes the custom_data back in this callback, signed.
+      4. We verify the signature (401 on failure — never proceed with
+         a callback that doesn't prove it's from AdMob).
+      5. We parse custom_data to get (user_id, token), look up the
+         AdRequest row, validate user_id matches and ad_unit is
+         rewarded, and credit the user.
+
+    Returns:
+      - 200 `{"status": "verification_success"}` on empty GET (AdMob
+        connectivity test, no signature to verify)
+      - 200 `{"status": "credited", ...}` on successful credit
+      - 200 `{"status": "duplicate", ...}` if the AdRequest was
+        already credited
+      - 200 `{"status": "ignored", "reason": ...}` for benign
+        rejections (unknown token, expired, malformed custom_data)
+      - 401 on signature failure
     """
     # Get both decoded params (for reading values) and raw query string (for
     # signature verification — AdMob signs the URL-encoded form, not decoded).
@@ -483,76 +433,156 @@ async def admob_ssv_callback(
     query_params = {k: v for k, v in request.query_params.items()}
 
     if not query_params:
-        # Empty GET = AdMob's connectivity test
+        # Empty GET = AdMob's connectivity test. Return 200 so the
+        # dashboard shows the endpoint as reachable, but don't
+        # require a signature (there's nothing to sign).
         return {"status": "verification_success", "message": "SSV endpoint reachable"}
 
+    # ── 1. Signature verification ─────────────────────────────────
+    # CRITICAL: bad signature → 401, do NOT continue. The previous
+    # implementation logged a warning and continued, which let a
+    # network attacker forge SSV callbacks that polluted the
+    # AdEvent table with arbitrary user_id values. See
+    # `mark_ad_request_rejected` and `mark_ad_request_credited` in
+    # services/ads.py for the state machine.
     is_valid = await _verify_admob_ssv_signature(query_params, raw_query_string)
     if not is_valid:
         logger.warning(
-            "AdMob SSV: signature verification failed for tx=%s — accepting callback anyway",
+            "AdMob SSV: signature verification failed for tx=%s",
             query_params.get("transaction_id", "unknown"),
         )
+        raise HTTPException(status_code=401, detail="Invalid SSV signature")
 
-    # Parse fields. Note: reward_amount from SSV is the custom reward value
-    # set in the AdMob dashboard (e.g. "1") — it is NOT ad revenue. The
-    # actual revenue comes exclusively from the client-side PAID event.
-    # SSV is verification that the user completed the ad; we log it but
-    # do NOT credit points here to avoid double-crediting.
-    reward_amount = float(query_params.get("reward_amount", 0))
-    user_id_raw = query_params.get("user_id", "")
-    transaction_id = query_params.get("transaction_id", "")
-    ad_unit = query_params.get("ad_unit", "admob_unknown")
-
+    # ── 2. Parse custom_data = "user_id:token" ─────────────────────
+    # The client set this when requesting the ad (via the
+    # /request-token endpoint). AdMob signs it as part of the SSV
+    # payload, so the value is trustworthy on receipt.
+    custom_data = query_params.get("custom_data", "")
+    if ":" not in custom_data:
+        logger.warning("AdMob SSV: missing or malformed custom_data: %r", custom_data)
+        return {"status": "ignored", "reason": "missing_custom_data"}
     try:
-        user_id = int(user_id_raw)
-    except (TypeError, ValueError):
-        logger.warning("AdMob SSV: invalid user_id=%s", user_id_raw)
-        return {"status": "ignored", "reason": "invalid_user_id"}
+        user_id_str, token = custom_data.split(":", 1)
+        user_id = int(user_id_str)
+    except (ValueError, AttributeError):
+        logger.warning("AdMob SSV: malformed custom_data: %r", custom_data)
+        return {"status": "ignored", "reason": "malformed_custom_data"}
 
-    if not transaction_id:
-        return {"status": "ignored", "reason": "missing_transaction_id"}
+    transaction_id = query_params.get("transaction_id", "")
+    ad_unit_from_callback = query_params.get("ad_unit", "")
 
-    # Idempotency check — if the client-side PAID event already credited
-    # this transaction, return the existing outcome.
-    existing = (
-        await db.execute(
-            select(AdEvent).where(AdEvent.transaction_id == transaction_id)
+    # ── 3. Look up AdRequest by token ──────────────────────────────
+    req = await ads_service.lookup_ad_request_by_token(db, token)
+    if req is None:
+        logger.warning("AdMob SSV: unknown token (user=%s, tx=%s)", user_id, transaction_id)
+        return {"status": "ignored", "reason": "unknown_token"}
+
+    # ── 4. Validate the callback matches what we issued ───────────
+    # user_id in custom_data must match the user we issued the
+    # token to. A forged callback that guesses a valid token still
+    # needs to know the user_id — and AdMob signs the whole
+    # payload, so an attacker can't substitute a different
+    # user_id without breaking the signature check above.
+    if req.user_id != user_id:
+        logger.warning(
+            "AdMob SSV: user mismatch (token_user=%s, custom_data_user=%s, tx=%s)",
+            req.user_id, user_id, transaction_id,
         )
-    ).scalar_one_or_none()
-    if existing is not None:
+        return {"status": "ignored", "reason": "user_mismatch"}
+
+    # Already-credited: idempotent no-op. The AdRequest row is
+    # the source of truth; we don't re-look-up by transaction_id
+    # because the same transaction_id could in theory appear
+    # against a different AdRequest (though in practice it can't —
+    # see the UNIQUE constraint on admob_transaction_id).
+    if req.status == "credited":
         return {
             "status": "duplicate",
-            "points_credited": existing.user_points_credited or 0,
-            "new_balance": 0,
+            "points_credited": req.points_credited or 0,
         }
 
-    # Log the SSV verification event but do NOT credit points.
-    # Points are credited by the client-side PAID event handler.
-    logger.info(
-        "AdMob SSV verified: user=%s unit=%s tx=%s reward_amount=%.6f",
-        user_id, ad_unit, transaction_id, reward_amount,
+    # Expired or already rejected: surface a clear reason. We do
+    # NOT flip the row to "rejected" here if it's already terminal
+    # (mark_ad_request_rejected is idempotent on terminal status).
+    if req.status != "issued" or req.expires_at < datetime.utcnow():
+        await ads_service.mark_ad_request_rejected(db, req, reason="expired_or_invalid")
+        await db.commit()
+        return {"status": "ignored", "reason": "expired_or_invalid"}
+
+    # ── 5. Validate ad_unit is rewarded-only ──────────────────────
+    # Per the user-facing decision, in-feed and interstitial ads
+    # earn zero points. The /request-token endpoint also rejects
+    # non-rewarded units upfront, but we double-check here in case
+    # the client sent a non-rewarded unit (the SSV callback will
+    # still arrive with that ad_unit value).
+    if not req.ad_unit.startswith("rewarded_"):
+        await ads_service.mark_ad_request_rejected(db, req, reason="non_rewarded_unit")
+        await db.commit()
+        logger.info(
+            "AdMob SSV: non-rewarded ad_unit=%s (user=%s, tx=%s) — no credit",
+            req.ad_unit, user_id, transaction_id,
+        )
+        return {"status": "ignored", "reason": "non_rewarded_unit"}
+
+    # Optional sanity: the ad_unit in the SSV callback should match
+    # the one we issued. If they differ, something weird is going on
+    # (e.g. the client requested a rewarded_android token but the
+    # user saw an in_feed unit) — log and continue with the issued
+    # unit's payout (the ad_unit we *promised* to credit).
+    if ad_unit_from_callback and ad_unit_from_callback != req.ad_unit:
+        logger.warning(
+            "AdMob SSV: ad_unit mismatch (issued=%s, callback=%s, user=%s, tx=%s)",
+            req.ad_unit, ad_unit_from_callback, user_id, transaction_id,
+        )
+
+    # ── 6. Credit the user ────────────────────────────────────────
+    points = ads_service.points_for_rewarded_ad()
+
+    # Atomic update: mark the AdRequest as credited AND bump the
+    # wallet in the same transaction. If the AdRequest is already
+    # in a terminal state (race), mark_ad_request_credited is a
+    # no-op and we'll re-check.
+    await ads_service.mark_ad_request_credited(
+        db, req, points=points, admob_transaction_id=transaction_id or None
+    )
+    await db.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(points_balance=User.points_balance + points)
     )
 
+    # Insert the AdEvent row for the audit trail + the wallet
+    # transaction history (the existing /api/v1/wallet/transactions
+    # endpoint reads from AdEvent).
     event = AdEvent(
         user_id=user_id,
-        session_id=None,
+        ad_unit=req.ad_unit,
         ad_type="rewarded",
-        ad_unit=ad_unit,
         provider="admob",
         watched_fully=True,
         reward_granted=True,
-        transaction_id=transaction_id,
+        transaction_id=transaction_id or None,
         revenue_usd=None,
         fx_rate_used=None,
-        user_points_credited=None,
-        credit_status="pending",
+        user_points_credited=points,
+        credit_status="credited",
     )
     db.add(event)
     await db.commit()
 
+    me = (
+        await db.execute(select(User.points_balance).where(User.id == user_id))
+    ).scalar_one()
+
+    logger.info(
+        "AdMob SSV credit: user=%s unit=%s tx=%s pts=%d balance=%d",
+        user_id, req.ad_unit, transaction_id, points, me,
+    )
+
     return {
-        "status": "verified",
-        "message": "SSV callback verified. Points credited via client-side PAID event.",
+        "status": "credited",
+        "points_credited": points,
+        "new_balance": me,
     }
 
 

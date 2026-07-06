@@ -347,6 +347,60 @@ class AdRewardClaimResponse(BaseModel):
     credit_status: Literal["credited", "rejected_low_value", "duplicate"]
 
 
+# ── SSV-only credit flow: request-token + recent-credits ────────────
+# Replaces /api/v1/ads/credit and /api/v1/ads/reward-claim. The client
+# is never trusted with revenue — it asks the server for a one-time
+# token, passes it to AdMob as `custom_data`, and the server credits
+# points only on receipt of an AdMob-signed SSV callback that
+# references a real, unexpired, uncredited AdRequest row. See
+# routers/ads.py and models/__init__.py:AdRequest.
+
+
+class AdRequestTokenRequest(BaseModel):
+    """POST /ads/request-token body.
+
+    The client must specify which ad slot it intends to show. The
+    server stores this on the AdRequest row and the SSV handler
+    validates the callback refers to the same slot (and that it
+    is a rewarded_* unit; in-feed and interstitial earn nothing).
+    """
+    ad_unit: str = Field(
+        min_length=1,
+        max_length=100,
+        description="The ad slot the client wants to show (e.g. 'rewarded_android').",
+    )
+
+
+class AdRequestTokenResponse(BaseModel):
+    """Returned by POST /ads/request-token.
+
+    `custom_data` is the exact string the client passes to AdMob's
+    ad request (as the `customData` parameter on Android or
+    `request.customData` on iOS). AdMob echoes it back in the SSV
+    callback, signed. The server parses it as `f"{user_id}:{token}"`
+    on receipt.
+    """
+    token: str
+    custom_data: str
+    ad_unit: str
+    expires_at: datetime
+    # The ad unit ID the client should request from AdMob. Comes from
+    # app_config (env=prod) or Google's test inventory (env=dev). The
+    # client must NEVER hardcode this value — always read from
+    # /api/v1/ads/config and pass the matched unit through this
+    # request-token endpoint.
+    ad_unit_id: str | None = None
+
+
+class AdRecentCredit(BaseModel):
+    """One row in the GET /ads/recent-credits response."""
+    ad_event_id: int
+    ad_unit: str
+    points_credited: int
+    credited_at: datetime
+    new_balance: int
+
+
 class AdSsvCallbackRequest(BaseModel):
     """Internal Pydantic shape for the AdMob SSV webhook body.
 

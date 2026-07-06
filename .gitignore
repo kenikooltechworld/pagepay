@@ -9,14 +9,26 @@ frontend/dist/
 # Environment
 backend/.env
 frontend/.env
+.env
 
 # IDE
 .vscode/
 .idea/
-.env
+
 # OS
 .DS_Store
 Thumbs.db
 
 # Docker
 backend/mysql_data/
+
+# Secrets & Credentials
+credentials.json
+**/credentials.json
+*.json
+!package*.json
+!tsconfig*.json
+!*config*.json
+!.vscode/*.json
+pagepay-submit-*.json
+*-submit-*.json

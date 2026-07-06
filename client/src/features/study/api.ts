@@ -71,11 +71,12 @@ export async function uploadSowText(text: string): Promise<SowUploadResponse> {
 
 export async function uploadSowImage(file: { uri: string; name: string; type: string }): Promise<SowUploadResponse> {
   const form = new FormData();
+  // React Native requires this specific format for file uploads
   form.append('file', {
     uri: file.uri,
     name: file.name,
-    type: file.type,
-  } as unknown as Blob);
+    type: file.type || 'image/jpeg',
+  } as any);
 
   const res = await apiFetch('/api/v1/study/sow/upload-image', {
     method: 'POST',
@@ -90,13 +91,14 @@ export async function uploadSowImage(file: { uri: string; name: string; type: st
 
 export async function uploadSowDocument(file: { uri: string; name: string; type: string }): Promise<SowUploadResponse> {
   const form = new FormData();
+  // React Native requires this specific format for file uploads
   form.append('file', {
     uri: file.uri,
     name: file.name,
-    type: file.type,
-  } as unknown as Blob);
+    type: file.type || 'application/pdf',
+  } as any);
 
-  const res = await apiFetch('/api/v1/study/sow/upload', {
+  const res = await apiFetch('/api/v1/study/sow/upload-image', {
     method: 'POST',
     body: form,
   });

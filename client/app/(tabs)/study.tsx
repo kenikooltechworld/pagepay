@@ -58,51 +58,104 @@ export default function StudyScreen() {
   const uploadMutation = useUploadSow();
   const uploadImageMutation = useUploadSowImage();
   const uploadDocumentMutation = useUploadSowDocument();
-  const { pickImage } = useImagePicker();
+  const { pickImage, takePhoto } = useImagePicker();
   const { pickDocument } = useDocumentPicker();
   const claimBonusMutation = useClaimQuizBonus();
 
   const handleUploadText = async (text: string) => {
     setError(null);
-    setUploadProgress(undefined);
-    const result = await uploadMutation.mutateAsync({ text });
-    setSelectedMaterialId(result.material_id);
-    const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
-    if (res.ok) {
-      setSelectedMaterial(await res.json());
+    setUploadProgress(0);
+    try {
+      // Simulate initial progress
+      setUploadProgress(20);
+      const result = await uploadMutation.mutateAsync({ text });
+      setUploadProgress(80);
+      setSelectedMaterialId(result.material_id);
+      const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
+      if (res.ok) {
+        setSelectedMaterial(await res.json());
+      }
+      setUploadProgress(100);
+      setTimeout(() => setUploadProgress(undefined), 2000);
+    } catch (err) {
+      setUploadProgress(undefined);
+      setError(err instanceof Error ? err.message : 'Upload failed');
     }
-    setUploadProgress(100);
-    setTimeout(() => setUploadProgress(undefined), 2000);
   };
 
   const handleUploadImage = async () => {
     setError(null);
-    setUploadProgress(undefined);
-    const file = await pickImage();
-    if (!file) return;
-    const result = await uploadImageMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
-    setSelectedMaterialId(result.material_id);
-    const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
-    if (res.ok) {
-      setSelectedMaterial(await res.json());
+    setUploadProgress(0);
+    try {
+      const file = await pickImage();
+      if (!file) {
+        setUploadProgress(undefined);
+        return;
+      }
+      setUploadProgress(20);
+      const result = await uploadImageMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
+      setUploadProgress(80);
+      setSelectedMaterialId(result.material_id);
+      const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
+      if (res.ok) {
+        setSelectedMaterial(await res.json());
+      }
+      setUploadProgress(100);
+      setTimeout(() => setUploadProgress(undefined), 2000);
+    } catch (err) {
+      setUploadProgress(undefined);
+      setError(err instanceof Error ? err.message : 'Upload failed');
     }
-    setUploadProgress(100);
-    setTimeout(() => setUploadProgress(undefined), 2000);
+  };
+
+  const handleTakePhoto = async () => {
+    setError(null);
+    setUploadProgress(0);
+    try {
+      const file = await takePhoto();
+      if (!file) {
+        setUploadProgress(undefined);
+        return;
+      }
+      setUploadProgress(20);
+      const result = await uploadImageMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
+      setUploadProgress(80);
+      setSelectedMaterialId(result.material_id);
+      const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
+      if (res.ok) {
+        setSelectedMaterial(await res.json());
+      }
+      setUploadProgress(100);
+      setTimeout(() => setUploadProgress(undefined), 2000);
+    } catch (err) {
+      setUploadProgress(undefined);
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    }
   };
 
   const handleUploadDocument = async () => {
     setError(null);
-    setUploadProgress(undefined);
-    const file = await pickDocument();
-    if (!file) return;
-    const result = await uploadDocumentMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
-    setSelectedMaterialId(result.material_id);
-    const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
-    if (res.ok) {
-      setSelectedMaterial(await res.json());
+    setUploadProgress(0);
+    try {
+      const file = await pickDocument();
+      if (!file) {
+        setUploadProgress(undefined);
+        return;
+      }
+      setUploadProgress(20);
+      const result = await uploadDocumentMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
+      setUploadProgress(80);
+      setSelectedMaterialId(result.material_id);
+      const res = await apiFetch(`/api/v1/study/materials/${result.material_id}`);
+      if (res.ok) {
+        setSelectedMaterial(await res.json());
+      }
+      setUploadProgress(100);
+      setTimeout(() => setUploadProgress(undefined), 2000);
+    } catch (err) {
+      setUploadProgress(undefined);
+      setError(err instanceof Error ? err.message : 'Upload failed');
     }
-    setUploadProgress(100);
-    setTimeout(() => setUploadProgress(undefined), 2000);
   };
 
   const handleGenerateAsset = async (materialId: number, assetType: string, count = 5) => {
@@ -299,6 +352,7 @@ export default function StudyScreen() {
               uploadProgress={uploadProgress}
               onUploadText={handleUploadText}
               onUploadImage={handleUploadImage}
+              onTakePhoto={handleTakePhoto}
               onUploadDocument={handleUploadDocument}
             />
 

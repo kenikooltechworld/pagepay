@@ -3,7 +3,7 @@
 Pulled out of `routers/ads.py` so the SSV webhook and the new
 `/api/v1/ads/reward-claim` endpoint reuse the exact same math, FX
 fetch, and idempotency contract that the legacy `/api/v1/ads/credit`
-endpoint already implements. Any change to the 80/20 share or the
+endpoint already implements. Any change to the 95/5 share or the
 FX-cache TTL goes here, not in three routers.
 
 Unit conversion:
@@ -21,21 +21,27 @@ old schema.
 from __future__ import annotations
 
 import logging
+import secrets
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AdEvent, AppConfig, ReadingSession, User
+from app.config import settings
+from app.models import AdEvent, AdRequest, AppConfig, ReadingSession, User
 from app.services import fx as fx_module
 
 
 logger = logging.getLogger("uvicorn.error")
 
 
-# Platform revenue share: 20% to us, 80% to the user. Keep this as a
+# Platform revenue share: 5% to us, 95% to the user. Keep this as a
 # constant — flipping it requires a deploy, which is the right blast
-# radius for a money-affecting change.
+# radius for a money-affecting change. (Legacy /ads/credit and
+# /ads/reward-claim documented this as 80/20 — the actual constants
+# have been 95/5 since the rate was bumped to retain users in
+# mid-2026; this comment is the source of truth.)
 PLATFORM_SHARE = 0.05
 USER_SHARE = 1.0 - PLATFORM_SHARE
 
@@ -81,12 +87,20 @@ class CreditResult:
 
 
 async def compute_ad_credit(revenue_usd: float) -> CreditResult:
-    """Run the FX fetch + 80/20 share for one impression.
+    """Run the FX fetch + 95/5 share for one impression.
 
     Caller is responsible for persisting the AdEvent row and bumping
     the wallet — this function is pure math, no DB writes. The split
     keeps the math testable in isolation and lets both the client-
     driven path and the SSV-driven path use the same numbers.
+
+    NOTE: This function is only used by the legacy /ads/credit and
+    /ads/reward-claim endpoints, which are attack surfaces. The new
+    SSV-only flow (AdRequest + admob_ssv_callback) does NOT use this
+    function — it credits a fixed points value from
+    `settings.rewarded_ad_payout_points × USER_SHARE` so the credit
+    is predictable per ad slot and not variable with FX. The function
+    is kept for backward compat with any in-flight legacy claims.
     """
     try:
         fx = await fx_module.get_usd_to_ngn()
@@ -249,3 +263,159 @@ async def fetch_ads_config(
         else:
             resolved[out_key] = raw.get(db_key, "")
     return resolved
+
+
+# ══════════════════════════════════════════════════════════════════════
+# SSV-ONLY CREDIT FLOW: AdRequest issuance + consumption
+# ══════════════════════════════════════════════════════════════════════
+# Replaces the client-revenue /ads/credit and /ads/reward-claim
+# endpoints. The client is never trusted with revenue. The flow:
+#
+#   1. Client → POST /api/v1/ads/request-token  → create_ad_request()
+#   2. Client passes returned `custom_data` (= "user_id:token") to
+#      AdMob's ad request as the `customData` / `request.customData`
+#      parameter.
+#   3. User watches the ad; AdMob fires an SSV callback to
+#      GET /api/v1/ads/google/callback.
+#   4. SSV handler verifies the ECDSA signature, parses custom_data,
+#      looks up the AdRequest row via consume_ad_request(), and
+#      credits the user. A forged callback that guesses a valid
+#      token still fails the user-mismatch check.
+
+
+def _generate_token() -> str:
+    """Generate a fresh ad-request token.
+
+    32 bytes of randomness, URL-safe base64 (no padding). 43-char
+    string. Effectively un-guessable (256 bits of entropy). The
+    AdRequest.token column is 64 chars to leave headroom.
+    """
+    return secrets.token_urlsafe(32)
+
+
+def points_for_rewarded_ad() -> int:
+    """The integer point value credited for one rewarded ad.
+
+    `int(settings.rewarded_ad_payout_points * USER_SHARE)`. With the
+    defaults (10 × 0.95) this is 9. The `int()` floor is important:
+    we never credit fractional points, and we never over-credit if
+    the user-share ratio is changed in the future.
+
+    Only rewarded_* ad slots earn. The SSV handler rejects any
+    other unit; this function does not need to know.
+    """
+    return int(settings.rewarded_ad_payout_points * USER_SHARE)
+
+
+async def create_ad_request(
+    db: AsyncSession, user_id: int, ad_unit: str
+) -> AdRequest:
+    """Issue a new AdRequest row and return it.
+
+    The caller (the /request-token router) wraps the token in the
+    response payload as `custom_data = f"{user_id}:{token}"`. AdMob
+    signs that string and the SSV handler parses it back.
+
+    Collisions on `token` (UNIQUE) are vanishingly rare at 256 bits
+    of entropy, but if one ever happens, the IntegrityError raised
+    by the commit will surface as a 500 — the caller can retry. We
+    don't loop here; a single retry on the client side is enough.
+
+    `expires_at` is computed from `settings.ad_request_token_ttl_seconds`
+    so the operator can tune it without code changes.
+    """
+    now = datetime.utcnow()
+    token = _generate_token()
+    req = AdRequest(
+        token=token,
+        user_id=user_id,
+        ad_unit=ad_unit,
+        status="issued",
+        created_at=now,
+        expires_at=now + timedelta(seconds=settings.ad_request_token_ttl_seconds),
+    )
+    db.add(req)
+    await db.commit()
+    await db.refresh(req)
+    return req
+
+
+async def lookup_ad_request_by_token(
+    db: AsyncSession, token: str
+) -> AdRequest | None:
+    """Look up an AdRequest by its token. Returns None if not found."""
+    return (
+        await db.execute(
+            select(AdRequest).where(AdRequest.token == token)
+        )
+    ).scalar_one_or_none()
+
+
+async def mark_ad_request_credited(
+    db: AsyncSession,
+    req: AdRequest,
+    *,
+    points: int,
+    admob_transaction_id: str | None,
+) -> None:
+    """Flip an AdRequest row to `credited` and persist the credit
+    amount + AdMob transaction id. Idempotent on `status`: if the row
+    is already `credited`, this is a no-op (caller should check
+    first). The caller is responsible for crediting the user's
+    wallet — this only updates the AdRequest row and the AdEvent
+    audit trail.
+    """
+    if req.status == "credited":
+        return
+    req.status = "credited"
+    req.points_credited = points
+    req.credited_at = datetime.utcnow()
+    req.admob_transaction_id = admob_transaction_id
+
+
+async def mark_ad_request_rejected(
+    db: AsyncSession,
+    req: AdRequest,
+    *,
+    reason: str,
+) -> None:
+    """Flip an AdRequest row to `rejected` with a reason. Used by the
+    SSV handler when a callback arrives for a request that is
+    expired, already-credited, or otherwise invalid. Idempotent on
+    terminal status: if the row is already `credited` or `rejected`,
+    this is a no-op so we never overwrite a successful credit with
+    a stale rejection.
+    """
+    if req.status in ("credited", "rejected", "expired"):
+        return
+    req.status = "rejected"
+    req.rejection_reason = reason
+
+
+async def list_recent_credits_for_user(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    since: datetime,
+    limit: int = 20,
+) -> list[AdEvent]:
+    """Return the user's credited ad events since `since`, newest
+    first. Used by GET /api/v1/ads/recent-credits so the client can
+    refresh the wallet display after an ad closes. We return the
+    AdEvent rows (not AdRequest rows) because the wallet history is
+    keyed on AdEvent — that's what the existing /api/v1/wallet/
+    transactions endpoint surfaces.
+    """
+    rows = (
+        await db.execute(
+            select(AdEvent)
+            .where(AdEvent.user_id == user_id)
+            .where(AdEvent.credit_status == "credited")
+            .where(AdEvent.user_points_credited.is_not(None))
+            .where(AdEvent.user_points_credited > 0)
+            .where(AdEvent.created_at >= since)
+            .order_by(AdEvent.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    return list(rows)

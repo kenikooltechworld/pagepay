@@ -143,7 +143,12 @@ class AdEvent(Base):
     ad_type: Mapped[str] = mapped_column(String(50))
     ad_unit: Mapped[str] = mapped_column(String(100))
     provider: Mapped[str] = mapped_column(String(50))
-    impression_revenue_usd: Mapped[float | None] = mapped_column(BigInteger, nullable=True)
+    # Legacy Phase 1 column. BigInteger micro-USD (i.e. revenue × 1_000_000).
+    # Stored as int at the DB level; the Python type is `int | None` because
+    # `Mapped[float]` over BigInteger silently truncates fractional values
+    # (e.g. 0.000123 → 0). The to_micro() helper in services/ads.py is the
+    # only writer; readers should treat the int as micro-USD and divide.
+    impression_revenue_usd: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     watched_fully: Mapped[bool] = mapped_column(Boolean, default=False)
     reward_granted: Mapped[bool] = mapped_column(Boolean, default=False)
     transaction_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
@@ -160,11 +165,18 @@ class AdEvent(Base):
     # later when the network settled?"
     #
     # `user_points_credited` is what we added to the wallet for this
-    # impression. The math: revenue_usd × fx_rate_used × 0.80 (user share)
-    # × 100 (100 pts = ₦1). Persisted so the wallet transaction list and
-    # any future reconciliation can show the exact value the user earned.
-    revenue_usd: Mapped[float | None] = mapped_column(BigInteger, nullable=True)
-    fx_rate_used: Mapped[float | None] = mapped_column(BigInteger, nullable=True)
+    # impression. The math: revenue_usd × fx_rate_used × 0.95 (user share)
+    # × 100 (100 pts = ₦1) for the legacy /ads/credit path. The new
+    # SSV-only path uses a fixed payout_points × USER_SHARE — see
+    # `AdRequest` below and routers/ads.py. Persisted so the wallet
+    # transaction list and any future reconciliation can show the exact
+    # value the user earned.
+    #
+    # All three columns are BigInteger micro-units at the DB level; the
+    # Python type is `int | None`. See the comment on impression_revenue_usd
+    # above for the rationale.
+    revenue_usd: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fx_rate_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     user_points_credited: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # Lifecycle of the credit itself:
     #   "credited"          — user share > 0, wallet bumped
@@ -1006,10 +1018,70 @@ class TaskAnalytics(Base):
 class PasswordResetToken(Base):
     """Single-use tokens for forgot-password flow."""
     __tablename__ = "password_reset_tokens"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# AD REQUEST TOKENS (SSV-only credit flow)
+# ══════════════════════════════════════════════════════════════════════
+
+
+class AdRequest(Base):
+    """Server-issued ad-request token. One row per client request to show an ad.
+
+    Lifecycle: issued → credited | expired | rejected.
+    - `issued`: client just received the token, hasn't shown the ad yet
+    - `credited`: SSV callback arrived and the user was credited; token is dead
+    - `expired`: > ad_request_token_ttl_seconds old without a matching SSV
+      callback; swept by the cron
+    - `rejected`: SSV callback arrived but the request was malformed,
+      expired, already-credited, or the user_id in custom_data didn't match
+
+    The token is the only thing the client knows. The server binds the token
+    to a user_id and ad_unit at issuance time, so a forged SSV callback that
+    guesses a valid token still needs to match the user_id encoded in
+    `custom_data` (which AdMob signs as part of the SSV payload).
+
+    This table replaces the client-driven /api/v1/ads/credit and
+    /api/v1/ads/reward-claim endpoints. Those endpoints are attack surfaces:
+    they let an authenticated client mint arbitrary NGN-equivalent points by
+    fabricating a transaction_id and a revenue_usd. With this table, the
+    server is the only authority on points — it credits only on receipt of
+    an AdMob-signed SSV callback that references a real, unexpired,
+    uncredited AdRequest row.
+    """
+    __tablename__ = "ad_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # The 32-byte URL-safe token the client passes to AdMob as part of
+    # `custom_data = f"{user_id}:{token}"`. UNIQUE — collisions must
+    # be impossible; the issuance path retries on the (vanishingly rare)
+    # unlikely event of a duplicate.
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Bound at issuance. The SSV handler cross-checks this against the
+    # user_id encoded in `custom_data` so a forged callback that guesses
+    # a valid token still fails the user-mismatch check.
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # Which ad slot the client requested (e.g. "rewarded_android"). The
+    # SSV handler validates this is a rewarded slot before crediting.
+    ad_unit: Mapped[str] = mapped_column(String(100))
+    # See class docstring for the lifecycle.
+    status: Mapped[str] = mapped_column(String(20), default="issued", index=True)
+    # Filled when status=credited. NULL while issued/expired/rejected.
+    points_credited: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    credited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # AdMob's transaction_id from the SSV callback, stored on credit so
+    # the same transaction can never be replayed against a different
+    # AdRequest row.
+    admob_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Set when status=rejected. Surfaces why a legitimate-looking SSV
+    # callback didn't result in a credit.
+    rejection_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)

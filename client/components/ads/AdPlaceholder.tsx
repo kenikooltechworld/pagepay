@@ -5,43 +5,38 @@
  * while the native AdMob SDK is not yet wired. Renders a styled
  * placeholder that:
  *   - Looks like an ad ("Sponsored" eyebrow + body copy)
- *   - Logs an impression to the backend (so the load-to-watch
- *     funnel is populated even without a real SDK)
  *   - Tells the dev (via console + a tiny "DEV" tag) that the
  *     placeholder is intentional
  *
  * Production behavior: when the native SDK lands, this component
  * is replaced with a thin wrapper that mounts the real AdMob view
- * in the same shape (same props, same layout). The impression
- * logging call site moves into the SDK callback so the dev
- * placeholder only runs while `__DEV__ || !unitId`.
+ * in the same shape (same props, same layout).
  *
- * Why not delete this once the SDK is wired: it's the safety net
- * for the "ad failed to load" branch the spec calls out
- * (`.kilo/command/phase2-ads.md` step 6). If the real SDK errors
- * (no fill, network blip, etc.) the wrapper falls back to this
- * component so the screen never has a "missing ad" hole.
+ * Why no impression logging: the legacy
+ * `logAdImpression()` helper was removed in the ad-system
+ * security hardening pass. The /api/v1/ads/impression endpoint
+ * is now 410 Gone, and the new server-authoritative flow
+ * (POST /ads/request-token + AdMob SSV) doesn't need any
+ * client-side impression logging — only the SSV callback
+ * matters, and that fires automatically.
  */
 
-import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
-import { logAdImpression } from '@/src/shared/lib/ads';
 
 
 export type AdPlaceholderProps = {
-  /** Which slot this placeholder fills. Drives the
-   *  impression-logging call so the backend's load
-   *  funnel report can break down by slot. */
+  /** Which slot this placeholder fills. */
   adType: 'banner' | 'native' | 'interstitial' | 'rewarded';
   /** AdMob unit ID for the current slot. If empty,
    *  the placeholder renders the "slot disabled" state. */
   adUnit: string;
-  /** Optional session id so the impression ties back
-   *  to the user's current reading session. */
+  /** Optional session id — currently unused (kept on the
+   *  prop type for compatibility with existing call sites).
+   *  See the file header for why. */
   sessionId?: number | null;
   /** Where the placeholder sits in the layout. */
   variant: 'banner' | 'inline' | 'interstitial' | 'fullscreen';
@@ -54,37 +49,15 @@ export type AdPlaceholderProps = {
 
 
 export function AdPlaceholder({
-  adType,
+  adType: _adType,
   adUnit,
-  sessionId,
+  sessionId: _sessionId,
   variant,
   body,
   onPress,
 }: AdPlaceholderProps) {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
-
-  // Log the impression exactly once per mount. The spec wants
-  // server-side load tracking so the load-to-watch funnel
-  // report can answer "how many ads did we show vs watch".
-  // We dedupe per mount with a ref so a re-render doesn't
-  // double-log.
-  const impressionLogged = useRef(false);
-  useEffect(() => {
-    if (impressionLogged.current) return;
-    impressionLogged.current = true;
-    if (!adUnit) return; // slot disabled — no impression to log
-    logAdImpression({
-      adType,
-      provider: 'mock', // placeholder; the real SDK bumps this
-      adUnit,
-      sessionId: sessionId ?? null,
-    }).catch(() => {
-      // Best-effort — a failed impression log is recoverable
-      // (the reward-claim call creates its own row with
-      // ad_event_id=null).
-    });
-  }, [adType, adUnit, sessionId]);
 
   if (!adUnit) {
     // Slot disabled — render a thin "ad slot disabled" hint
@@ -136,7 +109,7 @@ export function AdPlaceholder({
         onPress={onPress}
         disabled={!onPress}
         accessibilityRole={onPress ? 'button' : 'text'}
-        accessibilityLabel={`Sponsored ${adType} placeholder`}
+        accessibilityLabel={`Sponsored ${_adType} placeholder`}
         style={({ pressed }) => [
           styles.card,
           {

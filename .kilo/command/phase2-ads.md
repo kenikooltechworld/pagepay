@@ -8,8 +8,9 @@
 
 ## Shared Pre-Work
 1. Get AdMob account: create app in Firebase Console, get App ID + test ad unit IDs
-2. Get AppLovin account: generate SDK key + test ad unit IDs
+2. Get AppLovin account: generate SDK key + test ad unit IDs (optional, can defer to later)
 3. branch `FEATURE_BRANCH=phase-2`
+4. Note: Initial launch focuses on AdMob as primary network
 
 ---
 
@@ -20,39 +21,46 @@
 - New table `ad_placements`:
   ```
   id, location (e.g., 'in_feed', 'interstitial', 'rewarded'), 
-  ad_type, priority, primary_provider, fallback_provider, ad_unit_id
+  platform ('android' | 'ios'),
+  ad_type, priority, primary_provider, fallback_provider, ad_unit_id, enabled
   ```
-- New table `ad_impressions`:
+- New table `ad_events` (renamed from ad_impressions):
   ```
   id, user_id, session_id, ad_type, ad_unit, provider, 
-  impression_revenue_usd (INT in micros), watched_fully, 
-  reward_granted, transaction_id (UNIQUE), webhook_payload (JSON), created_at
+  impression_revenue_usd (FLOAT in micro-USD), watched_fully, 
+  reward_granted, transaction_id (UNIQUE), created_at,
+  revenue_usd, fx_rate_used, user_points_credited, credit_status
   ```
+  - `credit_status` values: 'credited', 'rejected_low_value', 'duplicate'
+  - Ad revenue converted to NGN using live FX rate, then to points
+  - User share: 80% of revenue (platform keeps 20%)
+  - Conversion: 100 points = ₦1
 - New table `app_config`:
   ```
-  key (PK), value, updated_at
+  key (PK), value (TEXT), environment ('dev' | 'prod'), description, updated_at
   -- Store ad unit IDs, point rates, prices here for OTA changes
   ```
 - New table `ai_provider_health`:
   ```
   provider_name (PK), consecutive_failures, last_failure_at, 
-  circuit_open_until
+  circuit_open_until, updated_at
   ```
 
-### Step 2: SSV Webhook Endpoints
-- `POST /api/v1/ads/google/callback` (AdMob):
+### Step 2: SSV Webhook Endpoints (AdMob)
+- `POST /api/v1/ads/google/callback` (AdMob Server-Side Verification):
   - Verify request signature using `google-play-billing` helper or manual HMAC
-  - Parse payload: `transaction_id`, `user_id` (from custom data), `reward_amount`
-  - Check `transaction_id` unique constraint
+  - Parse payload: `transaction_id`, `user_id` (from custom data), `reward_amount`, `revenue_usd`
+  - Check `transaction_id` unique constraint (idempotency)
   - If not exists and `reward_amount > 0`:
-    - Find active reading session for user
+    - Fetch live USD→NGN exchange rate
+    - Calculate user points: `revenue_usd * fx_rate * 0.80 * 100` (80% user share, 100 pts = ₦1)
     - Credit points to `User.points_balance`
-    - Set `ad_event.reward_granted = true`
+    - Create `AdEvent` with `credit_status='credited'`, store `revenue_usd`, `fx_rate_used`, `user_points_credited`
+  - Handle edge cases:
+    - Very low revenue rounds to 0 points → `credit_status='rejected_low_value'`
+    - Duplicate `transaction_id` → `credit_status='duplicate'`, no credit
   - Return 200 OK immediately (AdMob retries on failure)
-- `POST /api/v1/ads/applovin/callback` (AppLovin):
-  - Verify using AppLovin webhook secret
-  - Parse: `transaction_id`, `user_id`, `currency`, `revenue`
-  - Same idempotency + point credit logic as AdMob
+- Note: AppLovin SSV deferred to Phase 6 (dual network fully operational)
 
 ### Step 3: Content Feed Rotation
 - `GET /api/v1/content/feed/:user_id`:

@@ -1,13 +1,8 @@
 /**
- * Ad SDK configuration + loader helpers.
- *
- * This is the single source of truth on the client for which ad
- * network we use (AdMob only — AppLovin MAX is stubbed until we
- * have unit IDs and the SDK is wired) and how to fetch the live
- * config from the backend.
+ * Ad SDK configuration + server-token helpers.
  *
  * The split:
- *   - `getAdsConfig()` is a TanStack-Query-friendly fetch of
+ *   - `fetchAdsConfig()` is a TanStack-Query-friendly fetch of
  *     `/api/v1/config/ads?env=<env>`. The result is cached in
  *     QueryClient for 1h — the server response is tiny (a flat
  *     dict of unit IDs) and the call is unauthenticated, so
@@ -18,21 +13,23 @@
  *     (so dev builds never burn real impressions against the
  *     production account); the prod branch returns the PagePay
  *     IDs the ops team seeded in `app_config`.
- *   - `getAdUnitId(slot, platform)` resolves one slot to its
- *     unit ID. Returns an empty string for unknown slots — the
- *     caller treats empty as "this slot is disabled" and falls
- *     back to the MockAdModal (the in-app ad simulation that
- *     has been running since Phase 1).
+ *   - `requestAdToken()` and `pollRecentCredits()` together
+ *     implement the server-authoritative credit flow. The client
+ *     asks the server for a one-time AdRequest token, passes
+ *     that token to AdMob as `custom_data`, and polls the
+ *     `/api/v1/ads/recent-credits` endpoint after the ad
+ *     closes to find out if the credit landed. The client
+ *     NEVER tells the server how much revenue the ad earned —
+ *     the AdMob SSV callback is the only path that credits
+ *     points, and that path runs entirely server-side.
  *
- * Why not use `react-native-google-mobile-ads` directly here:
- * that module is a native dependency, requires `expo prebuild`,
- * and only loads inside an EAS/dev-client build. We keep the
- * loader surface (`getAdUnitId`, `getAdsConfig`) in plain TS so
- * the rest of the client can import and call it before the
- * native module lands — same pattern as the existing
- * `src/shared/lib/*` files. When the native SDK is installed,
- * `loadBannerAd()` / `loadNativeAd()` / `loadRewardedAd()` will
- * be filled in behind the same API and the call sites stay put.
+ * The legacy `logAdImpression` + `claimAdReward` helpers (and
+ * the `revenue_usd` field they sent) were removed because the
+ * server endpoints they called (`/api/v1/ads/impression`,
+ * `/api/v1/ads/reward-claim`) are now 410 Gone. The new flow
+ * doesn't need any client-side impression logging — only the
+ * SSV callback (which the SDK fires automatically) is needed
+ * to land a credit.
  */
 
 import Constants from 'expo-constants';
@@ -93,10 +90,6 @@ export async function fetchAdsConfig(): Promise<AdsConfig> {
   try {
     const res = await apiFetch(url);
     if (!res.ok) {
-      // Surface as a thrown error so the caller's `useQuery`
-      // surfaces the failure in the network inspector. The
-      // empty default below is what `useQuery`'s `placeholderData`
-      // will use while loading.
       throw new Error(`Failed to fetch ads config: HTTP ${res.status}`);
     }
     return (await res.json()) as AdsConfig;
@@ -123,142 +116,133 @@ export async function fetchAdsConfig(): Promise<AdsConfig> {
 }
 
 
-/** Resolve one slot to its unit ID for the current platform.
- *  Returns `''` (the disabled sentinel) for unknown platforms
- *  or slots the server didn't return. */
-export function getAdUnitId(
-  slot: 'in_feed' | 'interstitial' | 'rewarded' | 'banner',
-  platform: AdPlatform,
-  config: AdsConfig | undefined,
-): string {
-  if (!config) return '';
-  const key: AdSlot = `${slot}_${platform}` as AdSlot;
-  return config[key] ?? '';
-}
-
-
-/** Log an impression to the backend. Called the moment the
- *  ad SDK reports the slot finished loading (i.e. before
- *  the user has watched the ad and earned a reward).
- *  `sessionId` is optional because banner ads can fire on
- *  screens that don't have an open reading session.
+/** Response shape from POST /api/v1/ads/request-token.
  *
- *  Returns the `ad_event_id` the reward-claim call needs to
- *  link back to this row. Returns `null` on network failure
- *  — the caller continues regardless because a missing
- *  impression row is recoverable (the reward-claim call
- *  will create its own row with `ad_event_id=null`). */
-export async function logAdImpression(input: {
-  adType: 'banner' | 'native' | 'interstitial' | 'rewarded';
-  provider: 'admob' | 'applovin_max' | 'mock';
-  adUnit: string;
-  sessionId: number | null;
-}): Promise<number | null> {
-  try {
-    const res = await apiFetch('/api/v1/ads/impression', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ad_type: input.adType,
-        provider: input.provider,
-        ad_unit: input.adUnit,
-        session_id: input.sessionId,
-      }),
-    });
-    if (!res.ok) {
-      if (__DEV__) {
-        const text = await res.text();
-        console.warn(`[ads] logAdImpression failed: HTTP ${res.status}`, text.substring(0, 200));
-      }
-      return null;
-    }
-    const contentType = res.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      if (__DEV__) {
-        const text = await res.text();
-        console.warn('[ads] logAdImpression: Non-JSON response', text.substring(0, 200));
-      }
-      return null;
-    }
-    const body = (await res.json()) as { ad_event_id: number };
-    return body.ad_event_id;
-  } catch (err) {
-    if (__DEV__) {
-      console.warn('[ads] logAdImpression failed', err);
-    }
-    return null;
-  }
-}
-
-
-/** Claim the credit for a watched ad. Called when the SDK's
- *  revenue callback fires (AdMob `onAdPaid`, AppLovin MAX
- *  postback). `transactionId` is the SSV-style dedupe key —
- *  replaying the same call is a no-op and returns the same
- *  outcome.
- *
- *  `adEventId` is the impression row created at load time
- *  (pass the value `logAdImpression` returned earlier). It's
- *  optional because the claim can succeed even when the
- *  impression log was lost (network blip on the load call);
- *  the server creates a fresh row in that case and the
- *  audit trail just has a load-less credit. */
-export type RewardClaimResult = {
-  adEventId: number;
-  pointsCredited: number;
-  newBalance: number;
-  fxRate: number;
-  userShareNgn: number;
-  creditStatus: 'credited' | 'rejected_low_value' | 'duplicate';
+ *  `custom_data` is the exact string the client passes to
+ *  AdMob's ad request (the `customData` parameter on Android,
+ *  `request.customData` on iOS). AdMob echoes it back in the
+ *  SSV callback, signed. The server parses it as
+ *  `f"{user_id}:{token}"` on receipt and credits the user
+ *  only if both halves match an unexpired AdRequest row. */
+export type AdRequestTokenResponse = {
+  token: string;
+  custom_data: string;
+  ad_unit: string;
+  expires_at: string;
+  ad_unit_id: string | null;
 };
 
-export async function claimAdReward(input: {
-  adEventId: number | null;
-  adType: 'banner' | 'native' | 'interstitial' | 'rewarded';
-  provider: 'admob' | 'applovin_max' | 'mock';
-  adUnit: string;
-  revenueUsd: number;
-  transactionId: string;
-}): Promise<RewardClaimResult | null> {
-  try {
-    const res = await apiFetch('/api/v1/ads/reward-claim', {
-      method: 'POST',
-      body: JSON.stringify({
-        ad_event_id: input.adEventId,
-        ad_type: input.adType,
-        provider: input.provider,
-        ad_unit: input.adUnit,
-        revenue_usd: input.revenueUsd,
-        transaction_id: input.transactionId,
-      }),
-    });
-    if (!res.ok) {
-      // 401/422/503 — the caller should show the existing
-      // error UI (the MockAdModal already has a "couldn't
-      // credit" branch). We return null so the caller's
-      // `useMutation` knows it failed.
-      return null;
+
+/** One row from GET /api/v1/ads/recent-credits. */
+export type AdRecentCredit = {
+  ad_event_id: number;
+  ad_unit: string;
+  points_credited: number;
+  credited_at: string;
+  new_balance: number;
+};
+
+
+/** Request a one-time ad-request token from the server.
+ *
+ *  Returns the `custom_data` string the caller must pass to
+ *  AdMob's ad request as `serverSideVerificationOptions.customData`.
+ *  The server stores an AdRequest row that the AdMob SSV
+ *  callback will consume to credit the user.
+ *
+ *  Throws on 4xx (e.g. non-rewarded unit → 400) and on network
+ *  failure. The RewardedAd component catches and surfaces the
+ *  error to the user. */
+export async function requestAdToken(adUnit: string): Promise<AdRequestTokenResponse> {
+  const res = await apiFetch('/api/v1/ads/request-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ad_unit: adUnit }),
+  });
+  if (!res.ok) {
+    // Read the error body for a clear message — the server
+    // returns `detail` strings like "Only rewarded_* ad units
+    // earn points." for the non-rewarded case.
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // Non-JSON body (shouldn't happen, but don't crash).
     }
-    const body = (await res.json()) as {
-      ad_event_id: number;
-      points_credited: number;
-      new_balance: number;
-      fx_rate_used: number;
-      user_share_ngn: number;
-      credit_status: 'credited' | 'rejected_low_value' | 'duplicate';
-    };
-    return {
-      adEventId: body.ad_event_id,
-      pointsCredited: body.points_credited,
-      newBalance: body.new_balance,
-      fxRate: body.fx_rate_used,
-      userShareNgn: body.user_share_ngn,
-      creditStatus: body.credit_status,
-    };
-  } catch (err) {
-    if (__DEV__) {
-      console.warn('[ads] claimAdReward failed', err);
-    }
-    return null;
+    throw new Error(`requestAdToken failed: ${detail}`);
   }
+  return (await res.json()) as AdRequestTokenResponse;
+}
+
+
+/** Poll GET /api/v1/ads/recent-credits until a credit lands
+ *  or the budget runs out.
+ *
+ *  `since` is an ISO 8601 timestamp the caller captured just
+ *  before showing the ad (so the response only includes
+ *  credits that arrived during/after the ad). Returns the
+ *  first credited event, or `null` if the poll budget
+ *  exhausted without seeing a credit.
+ *
+ *  `opts.maxAttempts` defaults to 10 (≈ 15s at 1.5s/attempt).
+ *  `opts.intervalMs` defaults to 1500. The default is sized
+ *  for typical AdMob SSV callback latency (1–3s) with margin
+ *  for flaky networks; the RewardedAd component surfaces a
+ *  "credit pending" state on null so the user isn't blocked.
+ *
+ *  Polling (vs server-sent events) is the right primitive
+ *  here: the SSV callback is a server-to-server hop, not
+ *  pushed to the client, and the AdMob SDK has no client-
+ *  visible event for "credit landed." Polling /recent-credits
+ *  is the simplest way to ask the server "has my credit
+ *  arrived yet?" without trusting any client-side timer.
+ */
+export async function pollRecentCredits(
+  since: string,
+  opts?: { maxAttempts?: number; intervalMs?: number; signal?: AbortSignal },
+): Promise<AdRecentCredit | null> {
+  const maxAttempts = opts?.maxAttempts ?? 10;
+  const intervalMs = opts?.intervalMs ?? 1500;
+  const signal = opts?.signal;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (signal?.aborted) return null;
+
+    try {
+      const res = await apiFetch(
+        `/api/v1/ads/recent-credits?since=${encodeURIComponent(since)}&limit=1`,
+      );
+      if (res.ok) {
+        const body = (await res.json()) as AdRecentCredit[];
+        if (body.length > 0) {
+          // First row is the freshest credit since `since`.
+          return body[0];
+        }
+      }
+    } catch (err) {
+      if (__DEV__) {
+        console.warn(`[ads] pollRecentCredits attempt ${attempt + 1} failed`, err);
+      }
+      // Network blip — keep trying. The next attempt may succeed.
+    }
+
+    if (attempt < maxAttempts - 1) {
+      // Wait intervalMs before the next attempt, but bail early
+      // if the caller aborted (e.g. component unmounted).
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, intervalMs);
+        signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      if (signal?.aborted) return null;
+    }
+  }
+  return null;
 }

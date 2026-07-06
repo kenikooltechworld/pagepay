@@ -1,32 +1,60 @@
 /**
  * RewardedAd
  *
- * Professional AdMob rewarded ad implementation with:
- * - Ad preloads ONLY when visible becomes true (no background loading)
- * - State machine UI (loading → ready → showing → completed)
- * - Single ad instance per modal open (no recreation loops)
- * - SSV configuration for production revenue
+ * Server-token SSV flow for AdMob rewarded videos.
+ *
+ * Flow (server-authoritative — the client never tells the
+ * server how much revenue the ad earned):
+ *
+ *   1. User taps "Watch Ad" → handleWatchAd fires.
+ *   2. Client POSTs to /api/v1/ads/request-token with the slot
+ *      name (e.g. "rewarded_android"). Server returns a
+ *      `custom_data` string bound to a one-time AdRequest row.
+ *   3. Client creates the AdMob ad request with that
+ *      `custom_data` in serverSideVerificationOptions. AdMob
+ *      signs the data and fires a server-to-server SSV
+ *      callback when the user finishes watching.
+ *   4. The server's SSV handler verifies the signature, looks
+ *      up the AdRequest by token, and credits the user.
+ *   5. AdEventType.CLOSED fires on the client. Client polls
+ *      /api/v1/ads/recent-credits?since=<tokenIssuedAt> until
+ *      a credit lands (or 15s elapses).
+ *   6. onClaimed fires with the credited amount + new balance,
+ *      and the parent screen invalidates ['me'] so the wallet
+ *      chip updates.
+ *
+ * The previous implementation had the client compute revenue
+ * from the AdMob `PAID` event and POST it to a
+ * `/ads/reward-claim` endpoint. That endpoint was an attack
+ * surface (a client could fabricate `revenue_usd` and mint
+ * arbitrary points) and is now 410 Gone. The new flow has the
+ * client trust the server for everything credit-related.
  */
 
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { Modal, View, Text, StyleSheet, ActivityIndicator, Pressable, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { claimAdReward, logAdImpression } from '@/src/shared/lib/ads';
+import { requestAdToken, pollRecentCredits } from '@/src/shared/lib/ads';
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
 type AdState = 'loading' | 'ready' | 'showing' | 'error';
 
+/** Slot name (e.g. "rewarded_android") used as the `ad_unit`
+ *  argument to /api/v1/ads/request-token. The actual AdMob
+ *  unit ID (ca-app-pub-.../...) is the `adUnit` prop and is
+ *  passed straight to createForAdRequest. */
 export type RewardedAdProps = {
   /** Whether the modal is currently shown. Parent-controlled. */
   visible: boolean;
-  /** AdMob rewarded unit ID. */
+  /** AdMob rewarded unit ID (e.g. "ca-app-pub-.../..."). */
   adUnit: string;
-  /** Current user ID for SSV custom_data. Required for production. */
+  /** Slot name (e.g. "rewarded_android") used when requesting
+   *  the server-issued ad-request token. */
+  adUnitName: string;
+  /** Current user ID for SSV customData. Required. */
   userId: number;
-  /** Optional session id for impression + claim logging. */
-  sessionId?: number | null;
   /** Title shown in modal. */
   title: string;
   /** Eyebrow above the title. */
@@ -39,13 +67,20 @@ export type RewardedAdProps = {
   allowSkip?: boolean;
   /** Skip button label. */
   skipLabel?: string;
-  /** Called when the user completes the ad and earns reward. */
+  /** Called when the credit is confirmed (or, with `pending:
+   *  true`, when the poll budget ran out and the credit is
+   *  still in flight server-side). */
   onClaimed: (info: {
-    adEventId: number;
     pointsCredited: number;
     newBalance: number;
+    /** True if the poll timed out — the credit is still
+     *  expected to land but the client didn't observe it.
+     *  Parents should show a "credit pending" toast and
+     *  still advance the user (the credit will appear on
+     *  the next /auth/me refresh). */
+    pending?: boolean;
   }) => void;
-  /** Called when the user skips without claiming. */
+  /** Called when the user skips without watching. */
   onSkipped?: () => void;
   /** Called when the modal closes. */
   onClose: () => void;
@@ -55,8 +90,8 @@ export function RewardedAd(props: RewardedAdProps) {
   const {
     visible,
     adUnit,
+    adUnitName,
     userId,
-    sessionId,
     title,
     eyebrow,
     body,
@@ -70,43 +105,23 @@ export function RewardedAd(props: RewardedAdProps) {
 
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
-  
+
   const [adState, setAdState] = useState<AdState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const rewardedRef = useRef<any>(null);
   const rewardDataRef = useRef<{ type: string; amount: number } | null>(null);
   const hasLoadedRef = useRef(false); // Track if we've loaded for this modal open
-  // Captures the real revenue from the AdMob PAID event (in micro-units).
-  // Passed to claimAdReward so the backend credits based on actual ad earnings.
-  const paidRevenueRef = useRef<number>(0);
-
-  // Handle reward claim
-  const handleRewardClaim = useCallback(async () => {
-    const transactionId = `rewarded-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    // Convert AdMob micro-units (millionths of USD) to USD.
-    // If no PAID event fired yet, fall back to 0.00035 (Nigeria
-    // AdMob CPM averages ~$0.35 per 1k impressions = $0.00035 per ad).
-    const revenueUsd = paidRevenueRef.current > 0
-      ? paidRevenueRef.current / 1_000_000
-      : 0.00035;
-    const result = await claimAdReward({
-      adEventId: null,
-      adType: 'rewarded',
-      provider: 'admob',
-      adUnit: adUnit || 'unknown',
-      revenueUsd,
-      transactionId,
-    });
-
-    if (result && result.creditStatus === 'credited') {
-      onClaimed({
-        adEventId: result.adEventId,
-        pointsCredited: result.pointsCredited,
-        newBalance: result.newBalance,
-      });
-    }
-    onClose();
-  }, [adUnit, onClaimed, onClose]);
+  // The freshly-issued AdRequest token + the timestamp captured
+  // right before requesting it. The poll uses this timestamp to
+  // scope /recent-credits to "credits that landed during/after
+  // this ad" so we don't accidentally pick up an unrelated
+  // credit from earlier in the session.
+  const tokenIssuedAtRef = useRef<string | null>(null);
+  // AbortController for the in-flight pollRecentCredits. The
+  // AdEventType.CLOSED handler awaits this; if the component
+  // unmounts mid-poll (user navigated away), the controller
+  // aborts and the loop exits cleanly.
+  const pollAbortRef = useRef<AbortController | null>(null);
 
   // Load ad when modal opens
   useEffect(() => {
@@ -134,12 +149,21 @@ export function RewardedAd(props: RewardedAdProps) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const sdk = require('react-native-google-mobile-ads');
-        const { RewardedAd: RealRewardedAd, RewardedAdEventType, AdEventType } = sdk;
+        const { RewardedAd: RealRewardedAd, RewardedAdEventType } = sdk;
+
+        // Step 2: ask the server for a one-time AdRequest token.
+        // The returned `custom_data` carries the token into the
+        // SDK; AdMob signs it as part of the SSV callback. We
+        // capture the timestamp BEFORE the request so the
+        // post-ad poll can scope /recent-credits to "credits
+        // that landed from this point on."
+        tokenIssuedAtRef.current = new Date().toISOString();
+        const { custom_data } = await requestAdToken(adUnitName);
 
         const ad = RealRewardedAd.createForAdRequest(adUnit, {
           serverSideVerificationOptions: {
             userId: userId.toString(),
-            customData: JSON.stringify({ user_id: userId }),
+            customData: custom_data,
           },
         });
 
@@ -159,19 +183,8 @@ export function RewardedAd(props: RewardedAdProps) {
           rewardDataRef.current = reward;
         });
 
-        // Real ad revenue from AdMob (in micro-units — millionths of USD).
-        // This fires after the SDK resolves the impression-level revenue.
-        const unsubPaid = ad.addAdEventListener(AdEventType.PAID, (event: { currency: string; value: number }) => {
-          if (__DEV__) {
-            console.log('[RewardedAd] Paid event:', event);
-          }
-          if (event.value > 0) {
-            paidRevenueRef.current = event.value;
-          }
-        });
-
-        // Ad closed
-        const unsubClosed = ad.addAdEventListener(AdEventType.CLOSED, async () => {
+        // Ad closed. This is where the credit polling kicks in.
+        const unsubClosed = ad.addAdEventListener(RewardedAdEventType.CLOSED, async () => {
           if (__DEV__) {
             console.log('[RewardedAd] Ad closed');
           }
@@ -179,7 +192,6 @@ export function RewardedAd(props: RewardedAdProps) {
           // Cleanup listeners
           unsubLoaded();
           unsubEarned();
-          unsubPaid();
           unsubClosed();
 
           // Cleanup ad
@@ -187,9 +199,12 @@ export function RewardedAd(props: RewardedAdProps) {
 
           // Handle reward or skip
           if (rewardDataRef.current) {
-            await handleRewardClaim();
+            await handleRewardClaimed();
             rewardDataRef.current = null;
           } else {
+            // No EARNED_REWARD event = user closed the ad before
+            // completing it. No credit will land server-side.
+            // Match the legacy behavior: skip → onSkipped.
             onSkipped?.();
             onClose();
           }
@@ -203,10 +218,58 @@ export function RewardedAd(props: RewardedAdProps) {
           console.error('[RewardedAd] Load failed:', err);
         }
         setAdState('error');
-        setErrorMessage('Ad service unavailable');
+        setErrorMessage(err instanceof Error ? err.message : 'Ad service unavailable');
       }
     })();
-  }, [visible, adUnit, userId, handleRewardClaim, onSkipped, onClose]);
+
+    // Cleanup on unmount: abort any in-flight poll so the
+    // /recent-credits loop exits cleanly when the user
+    // navigates away mid-ad.
+    return () => {
+      pollAbortRef.current?.abort();
+      pollAbortRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, adUnit, adUnitName, userId, onSkipped, onClose]);
+
+  // Step 4-6: poll for the credit. This is the core of the
+  // server-authoritative flow — the AdMob SDK has already
+  // fired the SSV callback by now (or is about to), and the
+  // server is the only authority on whether the credit
+  // actually landed. We poll /recent-credits until it shows
+  // up or 15s elapses.
+  const handleRewardClaimed = useCallback(async () => {
+    const since = tokenIssuedAtRef.current ?? new Date(Date.now() - 60_000).toISOString();
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+
+    try {
+      const credit = await pollRecentCredits(since, { signal: controller.signal });
+      if (credit) {
+        onClaimed({
+          pointsCredited: credit.points_credited,
+          newBalance: credit.new_balance,
+        });
+      } else {
+        // Poll budget ran out. The credit may still land — the
+        // next /auth/me refresh will show it. Fire onClaimed
+        // with pending=true so the parent can show a "credit
+        // pending" toast but still advance the user.
+        if (__DEV__) {
+          console.log('[RewardedAd] pollRecentCredits returned null — credit may still be in flight');
+        }
+        onClaimed({ pointsCredited: 0, newBalance: 0, pending: true });
+      }
+    } catch (err) {
+      if (__DEV__) {
+        console.error('[RewardedAd] pollRecentCredits threw', err);
+      }
+      onClaimed({ pointsCredited: 0, newBalance: 0, pending: true });
+    } finally {
+      pollAbortRef.current = null;
+      onClose();
+    }
+  }, [onClaimed, onClose]);
 
   const handleWatchAd = useCallback(() => {
     if (!rewardedRef.current || adState !== 'ready') {
@@ -219,18 +282,10 @@ export function RewardedAd(props: RewardedAdProps) {
     try {
       setAdState('showing');
       rewardedRef.current.show();
-      
+
       if (__DEV__) {
         console.log('[RewardedAd] Ad showing');
       }
-      
-      // Log impression
-      logAdImpression({
-        adType: 'rewarded',
-        provider: 'admob',
-        adUnit,
-        sessionId: sessionId ?? null,
-      }).catch(() => undefined);
     } catch (err) {
       if (__DEV__) {
         console.error('[RewardedAd] Failed to show ad:', err);
@@ -238,7 +293,7 @@ export function RewardedAd(props: RewardedAdProps) {
       setAdState('error');
       setErrorMessage('Failed to display ad');
     }
-  }, [adState, adUnit, sessionId]);
+  }, [adState]);
 
   const handleSkip = useCallback(() => {
     onSkipped?.();

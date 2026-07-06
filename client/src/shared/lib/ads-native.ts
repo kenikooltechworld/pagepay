@@ -26,8 +26,11 @@
  *   - `react-native-google-mobile-ads` is the actual native
  *     SDK with the `MobileAds().initialize()` API, banner /
  *     native / interstitial / rewarded components, and the
- *     `onAdPaid` revenue callback that posts to the backend's
- *     `/api/v1/ads/reward-claim`.
+ *     `RewardedAdEventType` lifecycle events that drive the
+ *     server-side-verification (SSV) flow. The credit math
+ *     is computed entirely server-side via the
+ *     /api/v1/ads/google/callback endpoint when AdMob fires
+ *     the SSV callback; the client never sees revenue.
  *
  * The two packages are the standard Expo + AdMob combination
  * for SDK 50+ — the Expo plugin handles the native config, the

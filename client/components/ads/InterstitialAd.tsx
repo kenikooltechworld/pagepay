@@ -18,13 +18,15 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
-import { logAdImpression } from '@/src/shared/lib/ads';
 
 
 export type InterstitialAdProps = {
   /** AdMob interstitial unit ID. Empty = always no-fill. */
   adUnit: string;
-  /** Optional session id for impression logging. */
+  /** Optional session id for analytics — currently unused
+   *  (the legacy impression-logging endpoint was removed in
+   *  the ad-system security hardening pass). Kept on the
+   *  prop type so existing call sites don't break. */
   sessionId?: number | null;
   /** Whether the ad is currently shown. Parent-controlled. */
   visible: boolean;
@@ -47,10 +49,16 @@ export function InterstitialAd({
   onClose,
   onBeforeClose,
 }: InterstitialAdProps) {
+  // `sessionId` is kept on the prop type for compatibility
+  // with existing call sites. The legacy logAdImpression()
+  // helper (and the /api/v1/ads/impression endpoint) were
+  // removed in the ad-system security hardening pass — see
+  // src/shared/lib/ads.ts for the new server-authoritative
+  // flow.
+  void sessionId;
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const startTimeRef = useRef<number | null>(null);
-  const impressionLoggedRef = useRef(false);
   const [skipReady, setSkipReady] = useState(false);
   const [sdkAvailable, setSdkAvailable] = useState(false);
   const [realAdShown, setRealAdShown] = useState(false);
@@ -64,19 +72,19 @@ export function InterstitialAd({
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { InterstitialAd: RealInterstitialAd, AdEventType } = require('react-native-google-mobile-ads');
-        
+
         const interstitial = RealInterstitialAd.createForAdRequest(adUnit);
-        
+
         // Load ad in background
         const unsubscribeLoaded = interstitial.addAdEventListener(AdEventType.LOADED, () => {
           setSdkAvailable(true);
         });
-        
+
         const unsubscribeClosed = interstitial.addAdEventListener(AdEventType.CLOSED, () => {
           setRealAdShown(false);
           onClose();
         });
-        
+
         interstitial.load();
         interstitialRef.current = interstitial;
 
@@ -98,46 +106,22 @@ export function InterstitialAd({
     if (visible && sdkAvailable && interstitialRef.current && !realAdShown) {
       interstitialRef.current.show();
       setRealAdShown(true);
-      
-      // Log impression
-      logAdImpression({
-        adType: 'interstitial',
-        provider: 'admob',
-        adUnit,
-        sessionId: sessionId ?? null,
-      }).catch(() => undefined);
-      
       return;
     }
-  }, [visible, sdkAvailable, realAdShown, adUnit, sessionId]);
-
-  // If real SDK shown, don't render modal
-  if (realAdShown) {
-    return null;
-  }
+  }, [visible, sdkAvailable, realAdShown, adUnit]);
 
   // Fallback: Mock modal for dev/no SDK
   // Reset the skip button on every open.
   useEffect(() => {
     if (!visible) {
       setSkipReady(false);
-      impressionLoggedRef.current = false;
       startTimeRef.current = null;
       return;
     }
     startTimeRef.current = Date.now();
-    if (adUnit && !impressionLoggedRef.current) {
-      impressionLoggedRef.current = true;
-      logAdImpression({
-        adType: 'interstitial',
-        provider: 'mock',
-        adUnit,
-        sessionId: sessionId ?? null,
-      }).catch(() => undefined);
-    }
     const t = setTimeout(() => setSkipReady(true), MIN_DURATION_MS);
     return () => clearTimeout(t);
-  }, [visible, adUnit, sessionId]);
+  }, [visible]);
 
   const handleClose = useCallback(
     (skipped: boolean) => {
@@ -149,6 +133,11 @@ export function InterstitialAd({
     },
     [skipReady, onBeforeClose, onClose],
   );
+
+  // If real SDK shown, don't render modal
+  if (realAdShown) {
+    return null;
+  }
 
   if (!visible) return null;
 

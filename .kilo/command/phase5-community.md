@@ -8,24 +8,33 @@
 
 ## Backend Tasks
 
-### Step 1: Referral System
-- `POST /api/v1/referral/generate`:
-  - Creates unique referral code (6-char alphanumeric)
-  - Stores `user.referral_code` if empty
-  - Returns `{code, link: "https://pagepay.app/ref/ABC123"}`
+### Step 1: Referral System Implementation
+- Referral code generation (already in Phase 1 auth):
+  - Every user gets unique 6-char alphanumeric code on registration
+  - Stored in `user.referral_code`
+  - New user can provide `referral_code` param during registration
+  - Stored in `user.referred_by`
+- `GET /api/v1/referral/code`:
+  - Returns current user's referral code
+  - Generate if doesn't exist (legacy users)
 - `GET /api/v1/referral/stats`:
-  - Returns `{code, clicks, signups, pending_rewards, claimed_rewards}`
-- On new user registration: `?ref=ABC123` → link to existing user
-  - Store `referee.referred_by = ABC123`
+  - Returns: `{code, total_referrals, active_referrals, pending_rewards, claimed_rewards, total_earned}`
+  - Query `referrals` table joined with `users`
+- Referral validation on registration:
+  - Check referral code exists in database
+  - Prevent self-referral (referee.id != referrer.id)
+  - Daily limit: max 10 referrals per day per user (stored in `user.referrals_today_count`)
 - `POST /api/v1/referral/validate`:
-  - Triggered when referee completes first verified reading session (≥2 minutes)
+  - Triggered automatically when referee completes first verified reading session (≥2 minutes)
   - Awards: referrer gets 500 pts, referee gets 200 pts
-  - Limits: max 10 referrals per day per user
-  - Prevents self-referral (check `user.id != referee.id`)
-- Table `referrals`:
+  - Updates `referrals` table: `referee_completed_first_session=true`, `reward_granted=true`
+  - Creates wallet transaction records for both users
+- Table `referrals` (already exists):
   ```
-  id, referrer_id, referee_id, code, referee_completed_first_session, 
-  reward_granted, created_at
+  id, referrer_id (FK User), referee_id (FK User), code,
+  referee_completed_first_session BOOLEAN DEFAULT FALSE,
+  reward_granted BOOLEAN DEFAULT FALSE,
+  created_at
   ```
 
 ### Step 2: Cron Jobs (Add to docker-compose or separate worker)
@@ -33,17 +42,39 @@
 - Subscription expiry: daily cleanup of expired premium users (as in Phase 4)
 - Referral daily cap: reset `referrals_today_count` if date changed
 
-### Step 3: Community Notes Feed
-- `POST /api/v1/community/upload`:
+### Step 3: Community Notes Feed Implementation
+- `POST /api/v1/community/notes`:
   - Auth required
-  - Request: `{title, content, course_code, university?}`
-  - Save to `community_notes` table
-  - Status: `pending` for moderation (optional in MVP)
-- `GET /api/v1/community/feed`:
-  - Paginated list of approved notes
-  - Filters: `?course_code=CSC201&sort=popular|recent`
-- `POST /api/v1/community/:id/like`:
-  - Toggle like, store in `community_likes`
+  - Request: `{title, content, course_code?, university?}`
+  - Save to `community_notes` table with `status='pending'` (moderation queue)
+  - Returns: created note ID
+- `GET /api/v1/community/notes`:
+  - Paginated list of approved notes only (`status='approved'`)
+  - Query params: `?course_code=CSC201&university=UNILAG&sort=popular|recent&page=1&limit=20`
+  - Returns: `[{id, title, content_preview, author_name, course_code, university, likes_count, created_at}]`
+- `GET /api/v1/community/notes/{id}`:
+  - Full note details with complete content
+- `POST /api/v1/community/notes/{id}/like`:
+  - Toggle like (store in `community_likes` table)
+  - Update `community_notes.likes_count` counter
+  - Returns: new like status and count
+- `GET /api/v1/community/notes/my`:
+  - User's own notes (all statuses: pending, approved, rejected)
+- Admin moderation endpoints:
+  - `GET /api/v1/admin/community/notes/pending`: List notes awaiting approval
+  - `POST /api/v1/admin/community/notes/{id}/approve`: Approve note
+  - `POST /api/v1/admin/community/notes/{id}/reject`: Reject note with reason
+- Table `community_notes` (already exists):
+  ```
+  id, user_id, title, content TEXT, course_code, university,
+  status (pending|approved|rejected), likes_count INTEGER DEFAULT 0,
+  created_at, updated_at
+  ```
+- Table `community_likes`:
+  ```
+  id, user_id, note_id, created_at
+  UNIQUE(user_id, note_id)
+  ```
 
 ### Step 4: Analytics Endpoints (Basic)
 - `GET /api/v1/admin/analytics/dau`:

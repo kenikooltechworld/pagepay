@@ -45,7 +45,10 @@ from app.services.paystack import (
 
 
 TEST_PAYSTACK_SECRET = "sk_test_fake_for_unit_tests_only"
-TEST_WEBHOOK_SECRET = "whsec_test_fake_for_unit_tests_only"
+# Paystack uses the SAME secret key to sign webhooks (no separate webhook
+# secret) — see app/routers/payouts.py:599. Kept here as a sanity
+# reminder; the test fixture injects TEST_PAYSTACK_SECRET into
+# settings.paystack_secret_key and the _sign helper defaults to it.
 
 
 @pytest_asyncio.fixture
@@ -58,13 +61,19 @@ async def live_paystack():
     resets the lazy `_client` singleton so it gets built with the
     test key.
     """
+    # NOTE: Settings has no `paystack_webhook_secret` field — Paystack
+    # uses the same `paystack_secret_key` for webhook signing (the
+    # `_sign` helper below + `PaystackClient.verify_webhook_signature`
+    # both consume TEST_PAYSTACK_SECRET). Setting the non-existent
+    # field used to crash every test in this file with a pydantic
+    # ValueError before the fix. See the matching note in
+    # tests/conftest.py for the parallel bug that was fixed in the
+    # ad-system security hardening pass (task #3).
     settings.paystack_secret_key = TEST_PAYSTACK_SECRET
-    settings.paystack_webhook_secret = TEST_WEBHOOK_SECRET
     paystack_module._client = None
     paystack_module._BANKS_CACHE = None
     yield
     settings.paystack_secret_key = None
-    settings.paystack_webhook_secret = None
     paystack_module._client = None
     paystack_module._BANKS_CACHE = None
 
@@ -94,6 +103,8 @@ def _patch_paystack(
     recipient_error: Exception | None = None,
     transfer_receipt: TransferReceipt | None = None,
     transfer_error: Exception | None = None,
+    balance_kobo: int = 100_000_000,  # ₦1,000,000 — always enough for any test
+    balance_error: Exception | None = None,
 ) -> None:
     """Patch the PaystackClient methods used by the router.
 
@@ -131,6 +142,11 @@ def _patch_paystack(
         assert transfer_receipt is not None, "test must set `transfer_receipt`"
         return transfer_receipt
 
+    async def _fake_get_balance(self) -> int:
+        if balance_error is not None:
+            raise balance_error
+        return balance_kobo
+
     monkeypatch.setattr(
         PaystackClient, "resolve_account", _fake_resolve_account
     )
@@ -140,10 +156,19 @@ def _patch_paystack(
     monkeypatch.setattr(
         PaystackClient, "initiate_transfer", _fake_initiate_transfer
     )
+    monkeypatch.setattr(
+        PaystackClient, "get_balance", _fake_get_balance
+    )
 
 
-def _sign(raw: bytes, secret: str = TEST_WEBHOOK_SECRET) -> str:
-    """Helper: produce the X-Paystack-Signature header for a body."""
+def _sign(raw: bytes, secret: str = TEST_PAYSTACK_SECRET) -> str:
+    """Helper: produce the X-Paystack-Signature header for a body.
+
+    Default signs with `TEST_PAYSTACK_SECRET` — the same value the
+    `live_paystack` fixture injects into `settings.paystack_secret_key`
+    (Paystack signs with the secret key itself, no separate webhook
+    secret).
+    """
     return hmac.new(secret.encode("utf-8"), raw, hashlib.sha512).hexdigest()
 
 
@@ -284,13 +309,13 @@ async def test_link_account_502_when_recipient_create_fails(
 def test_webhook_verify_helper_accepts_correct_signature():
     raw = b'{"event":"transfer.success","data":{}}'
     sig = _sign(raw)
-    assert PaystackClient.verify_webhook_signature(raw, sig, TEST_WEBHOOK_SECRET) is True
+    assert PaystackClient.verify_webhook_signature(raw, sig, TEST_PAYSTACK_SECRET) is True
 
 
 def test_webhook_verify_helper_rejects_bad_signature():
     raw = b'{"event":"transfer.success","data":{}}'
-    assert PaystackClient.verify_webhook_signature(raw, "wronghex", TEST_WEBHOOK_SECRET) is False
-    assert PaystackClient.verify_webhook_signature(raw, None, TEST_WEBHOOK_SECRET) is False
+    assert PaystackClient.verify_webhook_signature(raw, "wronghex", TEST_PAYSTACK_SECRET) is False
+    assert PaystackClient.verify_webhook_signature(raw, None, TEST_PAYSTACK_SECRET) is False
     assert PaystackClient.verify_webhook_signature(raw, _sign(raw), None) is False
 
 

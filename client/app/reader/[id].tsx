@@ -304,7 +304,9 @@ export default function ReaderScreen() {
       //   1. /session/end STAGED pending_points but did not credit.
       //   2. NO auto-claim — points come exclusively from ad revenue,
       //      not from reading time. The post-read ad already credited
-      //      the user via /ads/reward-claim before this runs.
+      //      the user via the AdMob SSV callback (driven by the
+      //      /ads/request-token + /ads/recent-credits flow) before
+      //      this runs.
       //   3. /progress/finish advances the slice pointer regardless of
       //      whether the session earned points (skipped or too-short
       //      sessions still advance — the user did the read).
@@ -409,17 +411,19 @@ export default function ReaderScreen() {
   const potentialPoints = Math.max(0, Math.floor(elapsedSeconds / 600) * 5);
 
   // Pre-read gate handlers.
-  const onPreReadClaimed = async (info: {
-    adEventId: number;
+  const onPreReadClaimed = async (_info: {
     pointsCredited: number;
     newBalance: number;
+    pending?: boolean;
   }) => {
     setPreReadOpen(false);
-    // Ad reward already credited by RewardedAd component
-    // Invalidate queries to refresh balance
+    // Ad reward already credited by the SSV flow (or
+    // pending — the server may still be processing the
+    // callback). Invalidate queries to refresh balance either
+    // way.
     queryClient.invalidateQueries({ queryKey: ['me'] });
     queryClient.invalidateQueries({ queryKey: ['wallet'] });
-    
+
     try {
       await startSession();
     } catch (e) {
@@ -434,20 +438,21 @@ export default function ReaderScreen() {
   };
 
   // Post-read gate handlers.
-  const onPostReadAdClaimed = async (info: {
-    adEventId: number;
+  const onPostReadAdClaimed = async (_info: {
     pointsCredited: number;
     newBalance: number;
+    pending?: boolean;
   }) => {
     console.log('[Reader] Post-read ad claimed, closing modal and ending session...');
     setPostReadAdOpen(false);
     // Reset finish button state
     finishFiredRef.current = false;
-    // Ad reward already credited by RewardedAd component
-    // Invalidate queries to refresh balance
+    // Ad reward already credited (or pending) by the SSV
+    // flow. Invalidate queries to refresh the wallet
+    // display.
     queryClient.invalidateQueries({ queryKey: ['me'] });
     queryClient.invalidateQueries({ queryKey: ['wallet'] });
-    
+
     if (sessionIdRef.current) {
       console.log('[Reader] Calling endSession with ID:', sessionIdRef.current);
       await endSession(sessionIdRef.current);
@@ -620,15 +625,14 @@ export default function ReaderScreen() {
       <RewardedAd
         visible={preReadOpen}
         adUnit={adUnit}
+        adUnitName={Platform.OS === 'android' ? 'rewarded_android' : 'rewarded_ios'}
         userId={user?.id ?? 0}
-        sessionId={sessionIdRef.current}
         title="Watch to start earning"
         eyebrow="Sponsored"
         body="Watch this ad to unlock the reading timer. You'll earn points based on how long you read."
         claimLabel="Watch ad & start"
         allowSkip
         skipLabel="Skip & go home"
-        durationSeconds={30}
         onClaimed={onPreReadClaimed}
         onSkipped={onPreReadSkipped}
         onClose={() => {}}
@@ -636,22 +640,22 @@ export default function ReaderScreen() {
 
       {/* Post-read gate (the second ad). Sits BEFORE /session/end: the
           user watched the timer run for 1 min, tapped Finish, and now
-          this ad is the close-out. Watching → end → auto-claim →
-          progress → navigate. Skipping → end (still advances the slice
-          pointer) but no claim is filed, so the user forfeits the
+          this ad is the close-out. Watching → SSV → credit lands
+          (verified by polling /ads/recent-credits) → end → progress →
+          navigate. Skipping → end (still advances the slice
+          pointer) but no credit is filed, so the user forfeits the
           pending points. Either path returns them to the book detail. */}
       <RewardedAd
         visible={postReadAdOpen}
         adUnit={adUnit}
+        adUnitName={Platform.OS === 'android' ? 'rewarded_android' : 'rewarded_ios'}
         userId={user?.id ?? 0}
-        sessionId={sessionIdRef.current}
         title="One more ad to wrap up"
         eyebrow="Sponsored"
         body="Watch this ad to lock in your points for this read. Skip forfeits the reward but still saves your progress."
         claimLabel="Watch ad & finish"
         allowSkip
         skipLabel="Skip & forfeit"
-        durationSeconds={30}
         onClaimed={onPostReadAdClaimed}
         onSkipped={onPostReadAdSkipped}
         onClose={() => {}}

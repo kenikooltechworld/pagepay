@@ -20,13 +20,15 @@ import { useEffect, useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 
 import { AdPlaceholder } from './AdPlaceholder';
-import { logAdImpression } from '@/src/shared/lib/ads';
 
 
 export type BannerAdProps = {
   /** AdMob banner unit ID. Empty string = "slot disabled". */
   adUnit: string;
-  /** Optional session id for impression logging. */
+  /** Optional session id for analytics — currently unused
+   *  (the legacy impression-logging endpoint was removed in
+   *  the ad-system security hardening pass). Kept on the
+   *  prop type so existing call sites don't break. */
   sessionId?: number | null;
   /** Eyebrow / body copy. Defaults to a generic Premium pitch
    *  in English; pass through to localize later. */
@@ -35,13 +37,19 @@ export type BannerAdProps = {
 
 
 export function BannerAd({ adUnit, sessionId, body }: BannerAdProps) {
+  // `sessionId` is kept on the prop type for compatibility
+  // with existing call sites. The legacy logAdImpression()
+  // helper (and the /api/v1/ads/impression endpoint) were
+  // removed in the ad-system security hardening pass — see
+  // src/shared/lib/ads.ts for the new server-authoritative
+  // flow.
+  void sessionId;
   const [sdkAvailable, setSdkAvailable] = useState(false);
-  const [adLoaded, setAdLoaded] = useState(false);
 
   // Check if real SDK is available (native build only)
   useEffect(() => {
     if (!adUnit) return;
-    
+
     // Try to dynamically import the SDK
     (async () => {
       try {
@@ -62,23 +70,13 @@ export function BannerAd({ adUnit, sessionId, body }: BannerAdProps) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { BannerAd: RealBannerAd, BannerAdSize } = require('react-native-google-mobile-ads');
-      
+
       return (
         <View style={styles.root}>
           <RealBannerAd
             unitId={adUnit}
             size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-            onAdLoaded={() => {
-              setAdLoaded(true);
-              // Log impression when banner loads
-              logAdImpression({
-                adType: 'banner',
-                provider: 'admob',
-                adUnit,
-                sessionId: sessionId ?? null,
-              }).catch(() => undefined);
-            }}
-            onAdFailedToLoad={(error) => {
+            onAdFailedToLoad={(error: unknown) => {
               if (__DEV__) {
                 console.warn('[BannerAd] Failed to load:', error);
               }
@@ -100,7 +98,7 @@ export function BannerAd({ adUnit, sessionId, body }: BannerAdProps) {
       <AdPlaceholder
         adType="banner"
         adUnit={adUnit}
-        sessionId={sessionId}
+        sessionId={null}
         variant="banner"
         body={body}
       />

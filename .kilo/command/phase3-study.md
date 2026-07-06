@@ -8,46 +8,56 @@
 
 ## Backend Tasks
 
-### Step 1: AI Router Refactor
-- Create `app/ai/router.py` with all provider call functions
-- Each provider client:
-  - `client.py` (fastapi-like): `call_gemini(prompt, model, max_tokens)`
-  - `client.py` (openai-compatible): `call_groq(prompt, model, max_tokens)`
-  - Use official SDKs or direct HTTP (`httpx`)
-- Create `app/ai/prompts.py`:
-  - System prompts for: `SOW_PARSER`, `MCQ_GENERATOR`, `FLASHCARD_GENERATOR`, `CHAT_TUTOR`
-  - All prompt templates stored as constants (versioned)
-- `POST /api/v1/ai/route`:
-  - Request: `{"prompt": "...", "task_type": "heavy|fast|chat", "max_tokens": int}`
-  - Returns: `{"response": "...", "provider": "gemini", "model": "..."}`
-- Circuit breaker table + helper functions in `app/ai/circuit_breaker.py`
+### Step 1: AI Router Implementation
+- Create `app/services/ai_router.py` with provider abstraction
+- Provider clients:
+  - **Gemini (Google)**: Primary for heavy tasks (SOW parsing, generation)
+    - Models: `gemini-2.5-flash`, `gemini-2.0-flash-exp`
+    - Supports vision (OCR for SOW images)
+  - **Groq**: Fast inference (chat, quick responses)
+    - Models: `llama-3.3-70b-versatile`, `mixtral-8x7b`
+  - **OpenRouter**: Fallback aggregator
+    - Access to multiple models via single API
+- Implement circuit breaker pattern:
+  - Track consecutive failures per provider in `ai_provider_health` table
+  - Auto-failover to next provider after 3 failures
+  - Exponential backoff: 5min → 15min → 1hr before retry
+- All providers use direct HTTP (`httpx`) for async calls
+- Environment variables: `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`
 
-### Step 2: SOW Upload Endpoint
-- `POST /api/v1/study/sow/upload`:
+### Step 2: SOW Upload & Parsing
+- `POST /api/v1/study/upload`:
   - Accept: `multipart/form-data` (image) OR `application/json` (text)
   - If image:
-    1. Save to `/tmp/sow_upload.jpg`
-    2. Send to Gemini Vision (`gemini-2.5-flash` multimodal) for OCR
-    3. Extract text
+    1. Validate file type (jpg, png, pdf)
+    2. Send to Gemini Vision API for OCR extraction
+    3. Parse extracted text
   - If text: use directly
-  - Send extracted text to `SOW_PARSER` prompt via router
-  - Save: `StudyMaterial(user_id, raw_input=original, parsed_structure=JSON)`
-  - Return: `{material_id, parsed_structure: {topics: [{name, subtopics, key_concepts}]}}`
+  - Send to AI router with `SOW_PARSER` prompt
+  - Expected JSON structure: `{topics: [{name, subtopics[], key_concepts[]}]}`
+  - Save: `StudyMaterial(user_id, title, raw_input, parsed_structure, ai_model_used)`
+  - Return: `{id, title, parsed_structure, created_at}`
+- Error handling:
+  - OCR failure → return error, suggest manual text entry
+  - JSON parsing failure → retry with stricter prompt, or ask user to re-upload
 
-### Step 3: Asset Generation
-- `POST /api/v1/study/generate`:
-  - Request: `{material_id, asset_type: "mcq|flashcard|essay", count: 5}`
-  - Router → appropriate prompt for asset type
-  - MCQ prompt expects JSON: `{"questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correct_index": 0, "explanation": "..."}]}`
-  - Flashcard prompt expects: `{"cards": [{"front": "...", "back": "..."}]}`
-  - Essay prompt expects: `{"questions": ["..."]}`
-  - Save asset data in `quiz_sessions` or new `study_assets` table
-  - Return: `{assets: [...]}`
-- `POST /api/v1/study/chat` (streaming):
-  - Request: `{material_id, message: "..."}`
-  - Include material context in prompt
-  - Use `StreamingResponse` with generator
-  - Yield token-by-token to frontend
+### Step 3: Asset Generation Endpoints
+- `POST /api/v1/study/generate/mcq`:
+  - Request: `{material_id, topic?, count: 5-20}`
+  - AI generates MCQ JSON: `{questions: [{question, options[], correct_index, explanation}]}`
+  - Save to `study_assets` table with `asset_type='mcq'`, `points_to_unlock=50`
+  - Return: questions without correct answers (locked until payment/ad)
+- `POST /api/v1/study/generate/flashcards`:
+  - Request: `{material_id, topic?, count: 10-30}`
+  - AI generates: `{cards: [{front, back}]}`
+  - Save to `study_assets` with `asset_type='flashcard'`, `points_to_unlock=50`
+- `POST /api/v1/study/generate/essay`:
+  - Request: `{material_id, topic?, count: 3-10}`
+  - AI generates: `{questions: ["essay prompt 1", ...]}`
+  - Save to `study_assets` with `asset_type='essay'`, `points_to_unlock=30`
+- `GET /api/v1/study/materials/{id}`:
+  - Return material with all associated assets (questions shown, answers locked)
+- All generation endpoints use circuit breaker pattern for provider failover
 
 ### Step 4: Ad-Gated Access
 - `POST /api/v1/study/unlock`:

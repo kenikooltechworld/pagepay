@@ -1,7 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import Animated, {
+  FadeIn,
+  SlideInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { PagePay } from '@/constants/theme';
@@ -17,6 +28,49 @@ type UnlockModalProps = {
   onWatchAd: () => Promise<void>;
   onClose: () => void;
 };
+
+// Animated lock icon with breathing effect
+function AnimatedLockIcon({ color }: { color: string }) {
+  const scale = useSharedValue(1);
+  const rotate = useSharedValue(0);
+
+  useEffect(() => {
+    // Breathing animation
+    scale.value = withSequence(
+      withTiming(1.1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+      withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) })
+    );
+    
+    // Subtle wiggle
+    rotate.value = withSequence(
+      withTiming(-3, { duration: 150 }),
+      withTiming(3, { duration: 300 }),
+      withTiming(0, { duration: 150 })
+    );
+    
+    const interval = setInterval(() => {
+      scale.value = withSequence(
+        withTiming(1.1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) })
+      );
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: scale.value },
+      { rotate: `${rotate.value}deg` },
+    ],
+  }));
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Ionicons name="lock-closed-outline" size={28} color={color} />
+    </Animated.View>
+  );
+}
 
 export function UnlockModal({
   visible,
@@ -62,9 +116,11 @@ export function UnlockModal({
   }, [adConfig]);
 
   const handlePointsUnlock = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoading(true);
     try {
       await onUnlockPoints();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
     } finally {
       setLoading(false);
@@ -72,16 +128,20 @@ export function UnlockModal({
   };
 
   const handleAdStart = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowAd(true);
   };
 
-  const handleAdClaimed = async (info: {
-    adEventId: number;
+  const handleAdClaimed = async (_info: {
     pointsCredited: number;
     newBalance: number;
+    pending?: boolean;
   }) => {
-    // Ad reward already credited by RewardedAd component
-    // Now unlock the study material
+    // Ad reward already credited by the RewardedAd component
+    // (via the SSV flow). Now unlock the study material —
+    // pending credits still trigger the unlock (the user did
+    // watch the ad; the server will catch up on the next
+    // /auth/me refresh).
     setLoading(true);
     try {
       await onUnlockPoints();
@@ -103,15 +163,14 @@ export function UnlockModal({
       <RewardedAd
         visible
         adUnit={adUnit}
+        adUnitName={Platform.OS === 'android' ? 'rewarded_android' : 'rewarded_ios'}
         userId={user.id}
-        sessionId={null}
         title="Watch to unlock"
         eyebrow="Sponsored"
         body="Watch this ad to unlock the study material for free."
         claimLabel="Claim unlock"
         allowSkip
         skipLabel="Skip"
-        durationSeconds={15}
         onClaimed={handleAdClaimed}
         onSkipped={handleAdClose}
         onClose={handleAdClose}
@@ -120,22 +179,34 @@ export function UnlockModal({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.sheet, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Animated.View 
+        entering={FadeIn.duration(200)}
+        style={styles.overlay}
+      >
+        <Animated.View 
+          entering={SlideInDown.duration(400).springify().damping(20).stiffness(300)}
+          style={[styles.sheet, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+        >
           <View style={styles.headerRow}>
-            <Ionicons name="lock-closed-outline" size={22} color={tokens.mint} />
+            <AnimatedLockIcon color={tokens.mint} />
             <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
               Unlock answer
             </Text>
           </View>
 
-          <Text style={[styles.cost, { color: tokens.inkMuted }]}>
+          <Animated.Text 
+            entering={FadeIn.delay(300).duration(400)}
+            style={[styles.cost, { color: tokens.inkMuted }]}
+          >
             This asset costs <Text style={{ color: tokens.mint, fontWeight: '700' }}>{pointsCost} pts</Text> to unlock.
-            {'\n'}Your balance: <Text style={{ color: tokens.ink, fontWeight: '600' }}>{userBalance} pts</Text>
-          </Text>
+            {'\n'}Your balance: <Text style={{ color: canAfford ? tokens.mint : tokens.signal, fontWeight: '600' }}>{userBalance} pts</Text>
+          </Animated.Text>
 
-          <View style={styles.buttons}>
+          <Animated.View 
+            entering={SlideInDown.delay(400).duration(300).springify()}
+            style={styles.buttons}
+          >
             <PrimaryButton
               title={canAfford ? `Spend ${pointsCost} pts` : 'Not enough points'}
               onPress={handlePointsUnlock}
@@ -147,13 +218,13 @@ export function UnlockModal({
               onPress={handleAdStart}
               loading={loading}
             />
-          </View>
+          </Animated.View>
 
           <Pressable onPress={onClose} style={({ pressed }) => [styles.close, { opacity: pressed ? 0.5 : 1 }]}>
             <Text style={[styles.closeText, { color: tokens.inkMuted }]}>Cancel</Text>
           </Pressable>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }

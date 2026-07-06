@@ -18,3 +18,5 @@ tenacity==8.5.0
 slowapi==0.1.9
 cloudinary==1.41.0
 cryptography==43.0.1
+PyPDF2==3.0.1
+python-docx==1.1.2

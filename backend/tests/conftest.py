@@ -26,7 +26,15 @@ async def setup_db():
     # should use the `live_paystack` fixture below.
     settings.paystack_secret_key = None
     settings.paystack_public_key = None
-    settings.paystack_webhook_secret = None
+    # NOTE: Settings has no `paystack_webhook_secret` field — Paystack
+    # uses the same `paystack_secret_key` for webhook signing. The line
+    # below used to set a non-existent field and crashed the fixture
+    # with a pydantic ValueError on every test in the suite. Removed
+    # in the ad-system security hardening pass (task #3) so tests can
+    # actually run. If a future Paystack integration introduces a
+    # separate webhook secret, restore the line below and add the
+    # field to `app/config.py:Settings`.
+    # settings.paystack_webhook_secret = None
     # Drop the cached lazy client + bank list so the next call sees
     # the (now-None) secret and raises PaystackError rather than
     # leaking between tests.

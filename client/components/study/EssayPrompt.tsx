@@ -1,5 +1,16 @@
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, {
+  FadeInDown,
+  FadeInRight,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withDelay,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -13,23 +24,51 @@ export function EssayPrompt({ prompt, outline }: EssayPromptProps) {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
 
+  // Prompt typing effect
+  const promptOpacity = useSharedValue(0);
+  const promptTranslateY = useSharedValue(10);
+
+  useEffect(() => {
+    promptOpacity.value = withDelay(200, withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }));
+    promptTranslateY.value = withDelay(200, withSpring(0, { damping: 20, stiffness: 200 }));
+  }, []);
+
+  const promptAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: promptOpacity.value,
+    transform: [{ translateY: promptTranslateY.value }],
+  }));
+
   return (
-    <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-      <View style={[styles.labelPill, { backgroundColor: tokens.mintSoft }]}>
+    <Animated.View 
+      entering={FadeInDown.duration(500).springify().damping(20).stiffness(200)}
+      style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+    >
+      <Animated.View 
+        entering={FadeInRight.delay(100).duration(400).springify()}
+        style={[styles.labelPill, { backgroundColor: tokens.mintSoft }]}
+      >
         <Ionicons name="document-text-outline" size={14} color={tokens.mint} />
         <Text style={[styles.labelText, { color: tokens.mint }]}>Essay Question</Text>
-      </View>
-      <Text style={[styles.prompt, { color: tokens.ink }]}>{prompt}</Text>
+      </Animated.View>
+      
+      <Animated.Text style={[styles.prompt, { color: tokens.ink }, promptAnimatedStyle]}>
+        {prompt}
+      </Animated.Text>
+      
       <View style={[styles.outlineBox, { backgroundColor: tokens.paper }]}>
         <Text style={[styles.outlineTitle, { color: tokens.inkMuted }]}>Suggested outline:</Text>
         {outline.map((point, idx) => (
-          <View key={idx} style={styles.outlineRow}>
+          <Animated.View
+            key={idx}
+            entering={FadeInRight.delay(400 + idx * 80).duration(400).springify()}
+            style={styles.outlineRow}
+          >
             <View style={[styles.bullet, { backgroundColor: tokens.mint }]} />
             <Text style={[styles.outlinePoint, { color: tokens.ink }]}>{point}</Text>
-          </View>
+          </Animated.View>
         ))}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

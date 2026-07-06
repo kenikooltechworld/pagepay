@@ -23,35 +23,48 @@
   mkdir -p routers models schemas services
   touch __init__.py main.py database.py
   ```
-- `requirements.txt`: `fastapi uvicorn[standard] gunicorn sqlalchemy[asyncio] asyncmy pydantic python-jose[cryptography] passlib[bcrypt] python-multipart aiofiles alembic httpx tenacity`
+- `requirements.txt`: `fastapi uvicorn[standard] gunicorn sqlalchemy[asyncio] asyncpg psycopg2-binary pydantic python-jose[cryptography] passlib[bcrypt] python-multipart aiofiles alembic httpx tenacity slowapi`
 - `requirements-dev.txt`: add `pytest pytest-asyncio pytest-cov`
 
 ### Step 2: Database Setup
 - Create `app/database.py`:
-  - `DATABASE_URL = "mysql+asyncmy://user:pass@db:3306/pagepay"`
+  - `DATABASE_URL = "postgresql+asyncpg://user:pass@host:5432/pagepay"` (PostgreSQL 15, hosted on Render.app)
   - `create_async_engine` with `pool_size=20, pool_recycle=1800, pool_pre_ping=True`
   - `get_db` async generator with `AsyncSession`
 - Run `alembic init alembic` and configure `env.py` for async
 - Create initial migration with all models from `roadmap.md`:
   - `User`, `ReadingSession`, `ContentCatalog`, `AdEvent`
-  - `User.tier` Enum: FREE (only tier in Phase 1)
+  - `User.tier` Enum: FREE, PREMIUM_MONTHLY, PREMIUM_YEARLY
   - Indexes: `user_id`, `content_id`, `created_at` on relevant tables
+  - User includes referral fields: `referral_code`, `referred_by`, `referrals_today_count`
 
 ### Step 3: Auth Endpoints
 - `POST /api/v1/auth/register`:
-  - Request: `{email/phone, password}`
-  - Validate unique
+  - Request: `{email/phone, password, referral_code?}`
+  - Validate unique email/phone
+  - Validate referral code if provided
+  - Generate unique 6-char referral code for new user
   - Hash password with bcrypt
-  - Create user
+  - Create user with `points_balance=0`, `tier=FREE`
   - Return `{access_token, token_type: "bearer"}`
 - `POST /api/v1/auth/login`:
-  - Request: `{email/phone, password}`
+  - Request: `{email/phone, password}` (OAuth2PasswordRequestForm)
   - Verify hash
   - JWT encode `sub=user.id`, expiry 7 days
   - Return token
 - `GET /api/v1/auth/me`:
-  - Return `{id, email, phone, points_balance, tier, created_at}`
-- Rate limit: 5 attempts per 15 minutes per IP (use `slowapi`)
+  - Return `{id, email, phone, points_balance, tier, created_at, is_worker, is_sponsor}`
+- `POST /api/v1/auth/change-password`:
+  - Request: `{current_password, new_password}`
+  - Verify current password, update hash
+- `POST /api/v1/auth/forgot-password`:
+  - Generate one-time reset token with expiry
+  - In production: send email/SMS (for dev: return token)
+- `POST /api/v1/auth/reset-password`:
+  - Validate token, update password, mark token used
+- `POST /api/v1/auth/logout`:
+  - No-op 204 response (stateless JWT, Phase 4 adds revocation list)
+- Rate limit: 5 attempts per 15 minutes per IP on login (use `slowapi`)
 
 ### Step 4: Content API
 - Content extraction services:
@@ -89,7 +102,7 @@
 
 ### Step 6: Dockerize
 - `Dockerfile` with multi-stage build (see devops agent spec)
-- `docker-compose.yml` with FastAPI + MySQL
+- `docker-compose.yml` with FastAPI + PostgreSQL
 - `.dockerignore` with `__pycache__`, `.git`, `.env`, `alembic/versions/*.py` (migrations handled separately)
 - Verify: `docker compose up --build` → visit `http://localhost:8000/api/v1/health`
 
@@ -103,10 +116,10 @@
 - Target: 80% coverage minimum
 
 ### Step 8: Deploy
-- Push to Railway/Render
-- Run migrations
+- Deploy backend to Render.app with PostgreSQL 15 database
+- Run migrations via `alembic upgrade head`
 - Verify health endpoint returns `{"status": "ok"}`
-- Store production DB URL in platform env vars
+- Store production DB URL in Render environment variables
 
 ---
 
@@ -118,9 +131,10 @@ npx create-expo-app@latest pagepay --template blank-typescript
 cd pagepay
 npx expo install expo-router expo-status-bar expo-secure-store expo-app-state
 npx expo install expo-image expo-document-picker expo-sharing expo-localization
-npx expo install @shopify/flash-list @shopify/react-native-skia react-native-reanimated
+npx expo install @shopify/flash-list react-native-reanimated
 npx expo install @tanstack/react-query zustand react-native-mmkv
-npx expo install expo-dev-client  # Required for AdMob in Phase 2
+npx expo install expo-dev-client  # Required for native modules in Phase 2+
+# Use Expo SDK 54+
 ```
 
 ### Step 2: Folder Structure

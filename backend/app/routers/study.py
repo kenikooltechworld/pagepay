@@ -167,6 +167,95 @@ async def upload_sow_image(
     )
 
 
+@router.post("/sow/upload-document", response_model=SowUploadResponse, status_code=201)
+async def upload_sow_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a SOW document (PDF, DOCX, TXT). Extract text then parse."""
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    extracted_text = ""
+    filename = file.filename or "document"
+
+    # Determine file type and extract text
+    if filename.lower().endswith('.pdf'):
+        # Extract text from PDF
+        try:
+            import PyPDF2
+            from io import BytesIO
+            pdf_reader = PyPDF2.PdfReader(BytesIO(contents))
+            text_parts = []
+            for page in pdf_reader.pages:
+                text_parts.append(page.extract_text())
+            extracted_text = "\n".join(text_parts)
+        except Exception as exc:
+            logger.error("PDF extraction failed: %s", exc)
+            raise HTTPException(status_code=400, detail="Could not extract text from PDF. Try uploading as image or text.") from exc
+
+    elif filename.lower().endswith(('.docx', '.doc')):
+        # Extract text from Word document
+        try:
+            import docx
+            from io import BytesIO
+            doc = docx.Document(BytesIO(contents))
+            text_parts = [para.text for para in doc.paragraphs]
+            extracted_text = "\n".join(text_parts)
+        except Exception as exc:
+            logger.error("DOCX extraction failed: %s", exc)
+            raise HTTPException(status_code=400, detail="Could not extract text from Word document. Try uploading as PDF or text.") from exc
+
+    elif filename.lower().endswith('.txt'):
+        # Plain text file
+        try:
+            extracted_text = contents.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                extracted_text = contents.decode('latin-1')
+            except Exception as exc:
+                logger.error("Text file decode failed: %s", exc)
+                raise HTTPException(status_code=400, detail="Could not decode text file.") from exc
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Upload PDF, DOCX, or TXT.")
+
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from document")
+
+    # Parse the extracted text with AI
+    from app.ai.prompts import SOW_PARSER
+    prompt = SOW_PARSER.format(raw_text=extracted_text)
+    ai_result = await route_ai(prompt, task_type="heavy", db=db)
+
+    parsed = None
+    try:
+        import json as _json
+        parsed = _json.loads(ai_result["response"])
+    except Exception:
+        logger.error("SOW parser returned non-JSON: %s", ai_result["response"][:200])
+
+    title = (parsed or {}).get("title", filename) if isinstance(parsed, dict) else filename
+
+    material = StudyMaterial(
+        user_id=current_user.id,
+        title=title,
+        raw_input=f"[DOCUMENT: {filename}]\n{extracted_text}",
+        parsed_structure=_json.dumps(parsed) if parsed else None,
+        ai_model_used=ai_result.get("provider"),
+    )
+    db.add(material)
+    await db.commit()
+    await db.refresh(material)
+
+    return SowUploadResponse(
+        material_id=material.id,
+        title=material.title,
+        parsed_structure=parsed,
+    )
+
+
 # ── GET /study/materials ────────────────────────────────────────────
 
 
@@ -447,9 +536,12 @@ async def unlock_asset(
 
     elif payload.method == "ad":
         # Create a pending ad-gated transaction. The client must
-        # complete the ad (via /api/v1/ads/credit) and then call
-        # this endpoint again with method="points" to consume the
-        # newly-earned points.
+        # request an ad token (POST /api/v1/ads/request-token), show
+        # the rewarded ad, and the SSV callback will credit the user's
+        # wallet. They then call this endpoint again with
+        # method="points" to consume the newly-earned points. The
+        # ad-credit flow is fully server-side — the client never
+        # reports revenue.
         txn = StudyTransaction(
             user_id=current_user.id,
             asset_id=asset.id,

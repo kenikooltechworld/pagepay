@@ -1,33 +1,23 @@
 """Phase 2 ad-infrastructure tests.
 
-Covers the four new surfaces:
+Covers the still-relevant ad surfaces:
   1. /api/v1/config/ads        — dev returns Google test IDs, prod
                                  returns the seeded PagePay IDs
   2. Sponsored-every-4th rotation in build_feed_with_sponsored
-  3. /api/v1/ads/impression + /api/v1/ads/reward-claim — the
-                                 two-step client-driven credit path
-  4. /api/v1/ads/google/callback — AdMob SSV webhook: HMAC
-                                 verification, duplicate
-                                 transaction_id idempotency, FX
-                                 failure path
+  3. /api/v1/ads/applovin/callback — 501 stub (not yet wired)
 
-These tests are written against the same in-memory sqlite stack
-the rest of the suite uses. The conftest's `setup_db` autouse
-fixture drops + recreates the schema per test, so the seed never
-runs in tests (we seed what each test needs explicitly).
+The /api/v1/ads/impression, /api/v1/ads/reward-claim, and HMAC
+AdMob SSV tests were removed in the ad-system security hardening
+pass (Task #3). The new ECDSA + server-token flow is fully covered
+by tests/test_ads_credit.py.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import json
 import pytest
 
-from app.config import settings
-from app.models import AppConfig, User
+from app.models import AppConfig
 from app.routers.content import build_feed_with_sponsored
-from app.services import ads as ads_service
 from app.services import fx as fx_service
 
 
@@ -209,293 +199,19 @@ async def test_config_ads_rejects_invalid_env(client):
     assert r.status_code == 422
 
 
-# ── 3. Impression + reward-claim two-step path ────────────────────
-# The new client-driven path splits "ad watched" into impression
-# (logged at load time) and reward-claim (logged at revenue
-# callback time). These tests pin both halves.
 
-@pytest.mark.asyncio
-async def test_impression_returns_ad_event_id(client, monkeypatch):
-    headers = await _register_and_login(client, "imp@example.com")
-    r = await client.post(
-        "/api/v1/ads/impression",
-        headers=headers,
-        json={"ad_type": "rewarded", "provider": "admob", "ad_unit": "pagepay_rewarded"},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert isinstance(body["ad_event_id"], int)
-    assert body["ad_event_id"] > 0
-
-
-@pytest.mark.asyncio
-async def test_reward_claim_credits_and_links_to_impression(client, monkeypatch):
-    _stub_fx(monkeypatch)
-    headers = await _register_and_login(client, "rc@example.com")
-
-    # Step 1: log the impression
-    r = await client.post(
-        "/api/v1/ads/impression",
-        headers=headers,
-        json={"ad_type": "rewarded", "provider": "admob", "ad_unit": "pagepay_rewarded"},
-    )
-    ad_event_id = r.json()["ad_event_id"]
-
-    # Step 2: SDK reports revenue, client claims
-    r = await client.post(
-        "/api/v1/ads/reward-claim",
-        headers=headers,
-        json={
-            "ad_event_id": ad_event_id,
-            "ad_type": "rewarded",
-            "provider": "admob",
-            "ad_unit": "pagepay_rewarded",
-            "revenue_usd": 0.001,
-            "transaction_id": "rc-tx-001",
-        },
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["ad_event_id"] == ad_event_id
-    assert body["points_credited"] == 120  # 0.001 × 1500 × 0.80 × 100
-    assert body["credit_status"] == "credited"
-
-    # Wallet reflects the credit
-    me = await client.get("/api/v1/auth/me", headers=headers)
-    assert me.json()["points_balance"] == 120
-
-
-@pytest.mark.asyncio
-async def test_reward_claim_without_impression_still_credits(client, monkeypatch):
-    """A claim that arrives without a prior /impression call
-    still credits the wallet. The audit row just doesn't have
-    the load-time link.
-    """
-    _stub_fx(monkeypatch)
-    headers = await _register_and_login(client, "noimp@example.com")
-
-    r = await client.post(
-        "/api/v1/ads/reward-claim",
-        headers=headers,
-        json={
-            "ad_event_id": None,
-            "ad_type": "rewarded",
-            "provider": "admob",
-            "ad_unit": "pagepay_rewarded",
-            "revenue_usd": 0.001,
-            "transaction_id": "noimp-tx-001",
-        },
-    )
-    assert r.status_code == 200
-    assert r.json()["points_credited"] == 120
-    assert r.json()["credit_status"] == "credited"
-
-
-@pytest.mark.asyncio
-async def test_reward_claim_duplicate_tx_id_is_idempotent(client, monkeypatch):
-    _stub_fx(monkeypatch)
-    headers = await _register_and_login(client, "dupclaim@example.com")
-
-    payload = {
-        "ad_event_id": None,
-        "ad_type": "rewarded",
-        "provider": "admob",
-        "ad_unit": "pagepay_rewarded",
-        "revenue_usd": 0.001,
-        "transaction_id": "dupclaim-tx-001",
-    }
-
-    r1 = await client.post("/api/v1/ads/reward-claim", headers=headers, json=payload)
-    r2 = await client.post("/api/v1/ads/reward-claim", headers=headers, json=payload)
-    assert r1.status_code == 200 and r2.status_code == 200
-    assert r1.json()["points_credited"] == 120
-    assert r2.json()["credit_status"] == "duplicate"
-
-    # Single credit
-    me = await client.get("/api/v1/auth/me", headers=headers)
-    assert me.json()["points_balance"] == 120
-
-
-# ── 4. AdMob SSV webhook ─────────────────────────────────────────
-# The HMAC-SHA256 signature must match for the endpoint to credit.
-# Bad signature → 401, no credit. Good signature → credit. A
-# duplicate transaction_id → 200 with status=duplicate, no
-# re-credit. FX failure → 200 with status=fx_unavailable (we
-# don't retry-storm the FX endpoint).
-
-_ADMOB_WEBHOOK_SECRET = "test-admob-secret-do-not-use-in-prod"
-
-
-def _sign_admob_payload(body: bytes) -> str:
-    """Sign a raw body with the test webhook secret."""
-    return hmac.new(
-        _ADMOB_WEBHOOK_SECRET.encode("utf-8"),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
-
-
-def _admob_callback_body(user_id: int, transaction_id: str) -> bytes:
-    """Shape AdMob SSV sends (JSON variant)."""
-    return json.dumps({
-        "transaction_id": transaction_id,
-        "ad_unit_id": "pagepay_rewarded",
-        "reward_amount": 0.001,
-        "custom_data": {"user_id": str(user_id)},
-    }).encode("utf-8")
-
-
-@pytest.mark.asyncio
-async def test_admob_ssv_credits_with_valid_signature(client, monkeypatch):
-    _stub_fx(monkeypatch)
-    settings.admob_webhook_secret = _ADMOB_WEBHOOK_SECRET
-    try:
-        headers = await _register_and_login(client, "ssv@example.com")
-        # Look up the user id from /me
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        user_id = me.json()["id"]
-
-        body = _admob_callback_body(user_id, "ssv-tx-001")
-        signature = _sign_admob_payload(body)
-        r = await client.post(
-            "/api/v1/ads/google/callback",
-            content=body,
-            headers={
-                "X-Admob-Signature": signature,
-                "Content-Type": "application/json",
-            },
-        )
-        assert r.status_code == 200, r.text
-        body_json = r.json()
-        assert body_json["status"] == "credited"
-        assert body_json["points_credited"] == 120
-
-        # Wallet credited
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        assert me.json()["points_balance"] == 120
-    finally:
-        settings.admob_webhook_secret = None
-
-
-@pytest.mark.asyncio
-async def test_admob_ssv_rejects_bad_signature(client, monkeypatch):
-    _stub_fx(monkeypatch)
-    settings.admob_webhook_secret = _ADMOB_WEBHOOK_SECRET
-    try:
-        headers = await _register_and_login(client, "badsig@example.com")
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        user_id = me.json()["id"]
-
-        body = _admob_callback_body(user_id, "badsig-tx-001")
-        # Sign with a different secret — the signature won't match
-        bad_signature = hmac.new(
-            b"wrong-secret", body, hashlib.sha256
-        ).hexdigest()
-        r = await client.post(
-            "/api/v1/ads/google/callback",
-            content=body,
-            headers={
-                "X-Admob-Signature": bad_signature,
-                "Content-Type": "application/json",
-            },
-        )
-        assert r.status_code == 401
-
-        # No credit
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        assert me.json()["points_balance"] == 0
-    finally:
-        settings.admob_webhook_secret = None
-
-
-@pytest.mark.asyncio
-async def test_admob_ssv_rejects_missing_signature(client, monkeypatch):
-    _stub_fx(monkeypatch)
-    settings.admob_webhook_secret = _ADMOB_WEBHOOK_SECRET
-    try:
-        headers = await _register_and_login(client, "nosig@example.com")
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        user_id = me.json()["id"]
-        body = _admob_callback_body(user_id, "nosig-tx-001")
-        # No X-Admob-Signature header
-        r = await client.post(
-            "/api/v1/ads/google/callback",
-            content=body,
-            headers={"Content-Type": "application/json"},
-        )
-        assert r.status_code == 401
-    finally:
-        settings.admob_webhook_secret = None
-
-
-@pytest.mark.asyncio
-async def test_admob_ssv_duplicate_transaction_id_returns_200_no_credit(client, monkeypatch):
-    """AdMob retries on non-2xx, so the duplicate path MUST
-    return 200. A 5xx would cause AdMob to retry and double-credit.
-    """
-    _stub_fx(monkeypatch)
-    settings.admob_webhook_secret = _ADMOB_WEBHOOK_SECRET
-    try:
-        headers = await _register_and_login(client, "ssvdup@example.com")
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        user_id = me.json()["id"]
-
-        body = _admob_callback_body(user_id, "ssvdup-tx-001")
-        signature = _sign_admob_payload(body)
-
-        r1 = await client.post(
-            "/api/v1/ads/google/callback",
-            content=body,
-            headers={"X-Admob-Signature": signature, "Content-Type": "application/json"},
-        )
-        r2 = await client.post(
-            "/api/v1/ads/google/callback",
-            content=body,
-            headers={"X-Admob-Signature": signature, "Content-Type": "application/json"},
-        )
-        assert r1.status_code == 200
-        assert r2.status_code == 200
-        assert r1.json()["status"] == "credited"
-        assert r2.json()["status"] == "duplicate"
-        assert r2.json()["points_credited"] == 120  # the original
-
-        # Single credit
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        assert me.json()["points_balance"] == 120
-    finally:
-        settings.admob_webhook_secret = None
-
-
-@pytest.mark.asyncio
-async def test_admob_ssv_returns_200_on_fx_failure(client, monkeypatch):
-    """FX outage → 200 with status=fx_unavailable. AdMob would
-    otherwise retry-storm us, hammering the broken FX endpoint.
-    """
-    fx_service.reset_cache_for_tests()
-
-    async def broken_fx():
-        raise RuntimeError("FX endpoint down")
-
-    monkeypatch.setattr(fx_service, "get_usd_to_ngn", broken_fx)
-    settings.admob_webhook_secret = _ADMOB_WEBHOOK_SECRET
-    try:
-        headers = await _register_and_login(client, "ssvfx@example.com")
-        me = await client.get("/api/v1/auth/me", headers=headers)
-        user_id = me.json()["id"]
-
-        body = _admob_callback_body(user_id, "ssvfx-tx-001")
-        signature = _sign_admob_payload(body)
-        r = await client.post(
-            "/api/v1/ads/google/callback",
-            content=body,
-            headers={"X-Admob-Signature": signature, "Content-Type": "application/json"},
-        )
-        # 200 (not 5xx) — AdMob must not retry on FX failure.
-        assert r.status_code == 200
-        assert r.json()["status"] == "fx_unavailable"
-    finally:
-        settings.admob_webhook_secret = None
-
+# The HMAC-SHA256 SSV tests were removed in the ad-system security
+# hardening pass (Task #3). The new flow uses ECDSA P-256 query-
+# param signatures bound to a server-issued ad-request token
+# (`/api/v1/ads/request-token`), not HMAC over a raw body. The
+# replacement coverage is in tests/test_ads_credit.py:
+#   - test_ssv_credits_user_for_valid_request
+#   - test_ssv_rejects_bad_signature
+#   - test_ssv_unknown_token_is_ignored
+#   - test_ssv_user_mismatch_is_ignored
+#   - test_recent_credits_returns_credited_events
+# Plus the 410-Gone checks for the removed /ads/credit, /ads/
+# impression, and /ads/reward-claim endpoints.
 
 @pytest.mark.asyncio
 async def test_applovin_callback_returns_501(client):

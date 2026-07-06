@@ -81,6 +81,25 @@ class Settings(BaseSettings):
     # integration lands when the spec calls for it).
     applovin_webhook_secret: str | None = None
 
+    # ── Ad reward payout (SSV-only flow) ────────────────────────────
+    # How many points one rewarded ad is worth, before the user-share
+    # discount. 10 × USER_SHARE (0.95) = 9 points credited per ad.
+    # 9 points = ₦0.09. Adjust this single number to change the
+    # per-ad payout; the value is read from settings (env-overridable)
+    # and lives in exactly one place. Only rewarded_* ad units earn;
+    # in-feed and interstitial credits are blocked at the SSV handler.
+    rewarded_ad_payout_points: int = 10
+    # Lifetime of an ad-request token. 5 minutes matches AdMob's
+    # recommended window for a rewarded video to complete. Too short =
+    # legit slow networks miss credits. Too long = attackers can
+    # stockpile tokens.
+    ad_request_token_ttl_seconds: int = 300
+    # Per-user rate limit on /api/v1/ads/request-token. 30/min = 1
+    # ad every 2s sustained. Caps attacker token-stuffing without
+    # blocking legit users (a heavy user might watch 10-20 ads/day,
+    # well under 30/min).
+    ad_request_rate_limit_per_minute: int = 30
+
     # ── Phase 3: AI providers ────────────────────────────────────────
     # Free-tier keys for the multi-provider router. All three are
     # optional: if a key is missing the router simply skips that
