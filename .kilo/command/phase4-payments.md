@@ -1,142 +1,92 @@
-# Command: Phase 4 — Payments & Premium Tier
+# Phase 4: Payments & Premium Tier
 
-**Duration:** Weeks 11–13
-**Agents:** Backend + Frontend
-**Goal:** Validate direct revenue with Paystack. One-tap checkout, premium unlock, wallet funding, withdrawals, billing history.
-
-**Status:** ✅ IMPLEMENTED with Paystack (Production-ready on Render.app)
-
----
+## Goal
+Diversify revenue beyond ads with direct user payments for premium subscriptions.
 
 ## Backend Tasks
 
-### Step 1: Paystack Integration ✅ COMPLETE
-- **Wallet Deposits**: `POST /api/v1/wallet/deposit`
-  - User pays deposit amount + 1.5% processing fee (capped at ₦2,000)
-  - Returns Paystack payment URL
-  - Webhook credits wallet after successful payment
-  - User receives deposit amount in points (100 pts = ₦1)
-  
-- **Premium Subscriptions**: `POST /api/v1/payments/initiate`
-  - Monthly: ₦500, Yearly: ₦5,000
-  - Returns Paystack checkout URL
-  - Webhook upgrades user tier after payment
-  
-- **Withdrawals**: `POST /api/v1/payouts/withdraw`
-  - Sends money to user's bank via Paystack Transfers API
-  - Fees: ≤₦5k = ₦15, ≤₦50k = ₦35, >₦50k = ₦70
-  - Minimum: ₦1,000
-  
-- **Webhook Handling**: `POST /api/v1/payments/webhook`, `POST /api/v1/payouts/webhook`
-  - HMAC-SHA512 signature verification using `PAYSTACK_SECRET_KEY`
-  - Credits wallet for deposits
-  - Upgrades tier for subscriptions
-  - Confirms withdrawals, reverses on failure
+### 1. Payment Service (`app/services/subscription.py`)
+- [ ] Paystack initialization helper
+- [ ] Premium tier check helper: `is_premium(user)`
+- [ ] Subscription expiry checker
+- [ ] Tier benefit calculator (2x points, ad-free)
 
-### Step 2: Bank Account Linking ✅ COMPLETE
-- `PUT /api/v1/payouts/account`: Link bank account
-  - Validates account via Paystack `/bank/resolve` API
-  - Creates Paystack transfer recipient
-  - Stores `recipient_code` for withdrawals
-  
-- `GET /api/v1/payouts/banks`: List Nigerian banks
-  - Proxied from Paystack API
-  - Cached for 1 hour
+### 2. Payment Router (`app/routers/payments.py`)
+- [ ] `POST /api/v1/payments/initiate` → Start Paystack checkout
+- [ ] `POST /api/v1/payments/paystack/webhook` → Handle payment confirmation
+- [ ] `GET /api/v1/payments/history` → User's payment history
+- [ ] `GET /api/v1/payments/subscription` → Current subscription status
 
-### Step 3: Subscription Enforcement ✅ COMPLETE
-- Middleware: Checks `user.tier` AND `subscription_expires_at > now()`
-- Premium features: Ad-free, 2x points multiplier
-- Auto-expire: Users revert to free tier after expiry (handled by queries)
+### 3. Subscription Management
+- [ ] Cron job to expire subscriptions
+- [ ] Auto-revert to FREE tier when expired
+- [ ] Grace period logic (3 days)
 
-### Step 4: Transaction History ✅ COMPLETE
-- `GET /api/v1/wallet/transactions`: Unified point history
-  - Reading sessions
-  - Ad rewards
-  - Bill commissions
-  
-- `GET /api/v1/payouts/transactions`: Withdrawal history
-  - Status tracking
-  - Fee details
-  - Settlement timestamps
-
-### Step 5: Security & Resilience ✅ COMPLETE
-- Webhook signature verification (HMAC-SHA512)
-- Idempotent webhook processing
-- Withdrawal balance checks before API calls
-- Paystack balance check before processing withdrawals
-- Payment records with unique `provider_tx_ref`
-
-### Step 6: Testing ✅ COMPLETE
-- Unit tests with mocked Paystack responses
-- Test: initiate → webhook → wallet credit
-- Test: withdraw → webhook → reversal on failure
-- Test: duplicate webhooks (no double credit)
-
----
+### 4. Premium Benefits Integration
+- [ ] Study unlock: skip ads for premium users
+- [ ] Reading points: 2x multiplier for premium
+- [ ] Ad-free indicator in wallet
 
 ## Frontend Tasks
 
-### Step 1: Wallet Screens ✅ COMPLETE
-- `app/(tabs)/wallet.tsx`: Main wallet screen
-  - Shows points balance (100 pts = ₦1)
-  - "Fund Wallet" button
-  - "Withdraw" button
-  - Transaction history
-  
-- `app/fund-wallet.tsx`: Deposit screen
-  - Quick amounts: ₦500 - ₦20,000
-  - Custom amount input
-  - Shows processing fee breakdown
-  - Total payment calculation
-  - Opens Paystack checkout
-  
-- Withdrawal screen: Send to linked bank account
-  - Shows withdrawal fees
-  - Links to bank account setup
+### 1. Paywall Screen (`app/subscription/pricing.tsx`)
+- [ ] Two-column comparison (Free vs Premium)
+- [ ] Feature list with checkmarks
+- [ ] Price display with monthly/yearly toggle
+- [ ] "Upgrade Now" CTA
 
-### Step 2: Premium Status Indicators ✅ COMPLETE
-- Wallet tab: Premium badge if active
-- Study tab: Premium features unlocked
-- Points multiplier: 2x for premium users
+### 2. Checkout Flow
+- [ ] Paystack Web SDK integration
+- [ ] `expo-web-browser` for hosted checkout
+- [ ] Success callback handler
+- [ ] Error handling + retry
 
-### Step 3: Billing History ✅ COMPLETE
-- Transaction list in wallet screen
-- Shows: reading earnings, ad rewards, bill commissions
-- Withdrawal history available
+### 3. Premium UI Indicators
+- [ ] Gold badge in profile
+- [ ] "Premium" pill in wallet
+- [ ] Billing history screen
+- [ ] Subscription management screen
 
-### Step 4: Payment State Handling ✅ COMPLETE
-- Opens Paystack URL via `Linking.openURL()`
-- Webhook handles balance updates automatically
-- Query invalidation refreshes UI after payment
+### 4. Benefit Application
+- [ ] Skip UnlockModal for premium users
+- [ ] Show 2x multiplier in reading rewards
+- [ ] Hide ad CTAs for premium users
 
----
+## Database Changes
+✅ Already exists:
+- `payments` table with Paystack tx_ref
+- `User.tier` enum (FREE | PREMIUM_MONTHLY | PREMIUM_YEARLY)
+- `User.subscription_expires_at` datetime
 
-## Acceptance Criteria (Phase 4 Complete)
-✅ Paystack integration: deposits, withdrawals, subscriptions working
-✅ Wallet deposit with processing fee (user pays total, receives deposit amount)
-✅ Bank account linking with Paystack validation
-✅ Withdrawal to Nigerian bank accounts via Paystack Transfers
-✅ Premium subscriptions upgrade user tier
-✅ Transaction history displays all earnings
-✅ Webhook signature verification prevents fraud
-✅ Idempotent webhooks prevent double-crediting
-✅ All tests passing
-✅ No TODO comments, placeholder strings, or mock data in committed code
-✅ Production deployment on Render.app with live Paystack credentials
+## Configuration
+Add to `.env`:
+```
+PAYSTACK_SECRET_KEY=sk_test_...
+PAYSTACK_PUBLIC_KEY=pk_test_...
+PAYSTACK_WEBHOOK_SECRET=...
+```
 
----
+## Pricing (Nigeria)
+- **Monthly**: ₦500 (~$0.33)
+- **Yearly**: ₦5,000 (~$3.30, save ₦1,000)
 
-## Key Implementation Differences from Original Spec
+## Premium Benefits
+1. **Ad-free study materials** (no unlock modals)
+2. **2x reading points** (10 pts per 10 min vs 5 pts)
+3. **Priority AI generation** (faster MCQ/flashcard creation)
+4. **Gold "Premium" badge**
+5. **Billing history** access
 
-**Changed:** Flutterwave → **Paystack**
-- **Reason:** Simpler API, no OAuth complexity, better Nigerian market fit
-- **Impact:** All payment flows use Paystack (deposits, withdrawals, subscriptions)
+## Test Mode
+Use Paystack test cards:
+- Success: `4084084084084081`
+- Decline: `5060666666666666666`
 
-**Added:** Wallet deposit processing fees
-- **Fee:** 1.5% (capped at ₦2,000), paid by user
-- **Display:** Transparent breakdown shown before payment
-- **Impact:** Platform breaks even on deposits, profits from bills/withdrawals
-
-**Added:** Real-time Paystack balance checking
-- **Purpose:** Prevent withdrawal failures due to insufficient platform funds
-- **Implementation:** Check balance before processing each withdrawal
+## Acceptance Criteria
+- [ ] Free user sees paywall in study unlock flow
+- [ ] Premium user bypasses unlock modals automatically
+- [ ] Reading points 2x for premium (verified in wallet)
+- [ ] Paystack webhook confirms payment + updates tier
+- [ ] Subscription expires → auto-revert to FREE
+- [ ] Billing history shows all transactions
+- [ ] Play Store update: "PagePay: Read, Study, Learn & Earn (Premium)"

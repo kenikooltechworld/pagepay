@@ -7,12 +7,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.limiter import limiter
 from app.models import Base
-from app.routers import auth, content, sessions, health, wallet, progress, ads, study, legal, bills
+from app.routers import auth, content, sessions, health, wallet, progress, ads, study, legal, bills, notifications
 from app.routers.ai import router as ai_router
 from app.routers.referral import router as referral_router
 from app.routers.community import router as community_router
@@ -111,7 +112,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error("Unhandled exception: %s\n%s", exc, traceback.format_exc())
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc)},
+        content={"detail": "Internal server error"},
     )
 
 
@@ -130,14 +131,35 @@ def _rate_limit_handler(request, exc):
     )
 
 
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests with body larger than the configured limit.
+
+    JSON/API payloads: 1 MB
+    Multipart (file uploads): 10 MB
+    """
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            size = int(content_length)
+            content_type = request.headers.get("content-type", "")
+            limit = 10 * 1024 * 1024 if "multipart" in content_type else 1 * 1024 * 1024
+            if size > limit:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Request body too large. Maximum size is {limit // 1024 // 1024} MB."},
+                )
+        return await call_next(request)
+
+
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
+app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 API_PREFIX = "/api/v1"
@@ -164,6 +186,9 @@ app.include_router(legal.router, prefix=API_PREFIX)
 # Phase 7: Social Tasks
 app.include_router(tasks_router, prefix=API_PREFIX)
 app.include_router(sponsor_router, prefix=API_PREFIX)
+
+# Phase 3: Notifications
+app.include_router(notifications.router, prefix=API_PREFIX)
 
 # Phase 8: Bills & Earn
 app.include_router(bills.router, prefix=API_PREFIX)

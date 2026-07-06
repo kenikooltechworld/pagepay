@@ -127,7 +127,11 @@ async def end_session(
 
     if session.scroll_events > 0:
         session.verified = True
-        pending = max(0, (effective_duration // 600) * 5)
+        # Apply premium multiplier (2x for premium users)
+        from app.services.subscription import get_points_multiplier
+        multiplier = get_points_multiplier(current_user)
+        base_points = max(0, (effective_duration // 600) * 5)
+        pending = int(base_points * multiplier)
         session.pending_points = pending
         await db.commit()
         await db.refresh(session)

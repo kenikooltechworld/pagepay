@@ -328,6 +328,7 @@ class PayoutTransaction(Base):
     balance_after_debit: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paystack_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 # ── Phase 2: Ad infrastructure ──────────────────────────────────────

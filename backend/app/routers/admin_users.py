@@ -7,7 +7,7 @@ Includes permission and role management.
 
 import logging
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -95,6 +95,7 @@ async def list_admins(
 
 @router.post("")
 async def create_admin(
+    request: Request,
     email: str = Query(...),
     password: str = Query(..., min_length=8),
     role: str = Query(...),
@@ -152,12 +153,12 @@ async def create_admin(
             "create_admin",
             "admin_user",
             None,
-            {
-                "email": email,
-                "role": role,
-                "permissions": perms_list,
-            },
-            None,
+                {
+                    "email": email,
+                    "role": role,
+                    "permissions": perms_list,
+                },
+                request.client.host,
         )
     )
 
@@ -210,6 +211,7 @@ async def get_admin_detail(
 @router.patch("/{admin_id}")
 async def update_admin(
     admin_id: int,
+    request: Request,
     role: str = Query(None),
     permissions: str = Query(None),
     is_active: bool = Query(None),
@@ -289,7 +291,7 @@ async def update_admin(
             "admin_user",
             admin_id,
             changes,
-            None,
+            request.client.host,
         )
     )
 
@@ -300,6 +302,7 @@ async def update_admin(
 
 @router.post("/{admin_id}/reset-password")
 async def reset_admin_password(
+    request: Request,
     admin_id: int,
     new_password: str = Query(..., min_length=8),
     current_admin: AdminUser = Depends(require_permission("admins.reset_password")),
@@ -334,7 +337,7 @@ async def reset_admin_password(
             "admin_user",
             admin_id,
             {"email": admin.email},
-            None,
+            request.client.host,
         )
     )
 
@@ -346,6 +349,7 @@ async def reset_admin_password(
 @router.delete("/{admin_id}")
 async def delete_admin(
     admin_id: int,
+    request: Request,
     current_admin: AdminUser = Depends(require_permission("admins.delete")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -381,7 +385,7 @@ async def delete_admin(
             "admin_user",
             admin_id,
             {"email": admin.email, "role": admin.role},
-            None,
+            request.client.host,
         )
     )
 

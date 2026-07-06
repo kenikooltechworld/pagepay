@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -15,6 +15,31 @@ import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { SkeletonPage } from '@/components/skeletons';
+import { Skeleton } from '@/components/Skeleton';
+import { cacheAsset, getCachedAsset } from '@/src/features/study/storage';
+
+// Error categorization helper
+function categorizeError(message: string, operation: string): string {
+  if (message.includes('Network') || message.includes('fetch')) {
+    return `⏱️ Server is starting up (30-60s). Please try again in a moment.`;
+  }
+  if (message.includes('401') || message.includes('Unauthorized')) {
+    return `🔒 Session expired. Please log in again.`;
+  }
+  if (message.includes('413') || message.includes('too large') || message.includes('size')) {
+    return `📦 File is too large. Please use a file under 10MB.`;
+  }
+  if (message.includes('format') || message.includes('type') || message.includes('invalid')) {
+    return `📄 Invalid file format. Please upload PNG, JPG, or PDF only.`;
+  }
+  if (message.includes('quota') || message.includes('limit')) {
+    return `⚠️ Rate limit reached. Please wait a moment and try again.`;
+  }
+  if (message.includes('500') || message.includes('Internal')) {
+    return `🔧 Server error occurred. Our team has been notified. Please try again later.`;
+  }
+  return `❌ ${operation} failed: ${message}`;
+}
 
 type AssetInfo = {
   id: number;
@@ -41,10 +66,90 @@ export default function StudyScreen() {
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(null);
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialDetail | null>(null);
   const [unlockedAssets, setUnlockedAssets] = useState<Record<number, unknown>>({});
-  const [generating, setGenerating] = useState(false);
+  const [generatingType, setGeneratingType] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
   const [bonusNotification, setBonusNotification] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | undefined>(undefined);
+  const [studySessionId, setStudySessionId] = useState<number | null>(null);
+  const [studyDuration, setStudyDuration] = useState<number>(0);
+
+  // Load cached assets on mount
+  useEffect(() => {
+    if (selectedMaterial) {
+      loadCachedAssets(selectedMaterial.id);
+      startStudySession(selectedMaterial.id);
+    }
+    
+    return () => {
+      if (studySessionId) {
+        endStudySession(studySessionId);
+      }
+    };
+  }, [selectedMaterial]);
+
+  const loadCachedAssets = async (materialId: number) => {
+    try {
+      if (!selectedMaterial) return;
+      
+      for (const asset of selectedMaterial.assets) {
+        if (!(asset.id in unlockedAssets)) {
+          const cached = await getCachedAsset(asset.id);
+          if (cached && cached.materialId === materialId) {
+            setUnlockedAssets((prev) => ({ ...prev, [asset.id]: cached.content }));
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load cached assets:', error);
+    }
+  };
+
+  const startStudySession = async (materialId: number) => {
+    try {
+      const res = await apiFetch('/api/v1/study/session/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ material_id: materialId }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setStudySessionId(data.session_id);
+      }
+    } catch (error) {
+      console.error('Failed to start study session:', error);
+      // Don't throw - session tracking is optional
+    }
+  };
+
+  const endStudySession = async (sessionId: number) => {
+    try {
+      const res = await apiFetch('/api/v1/study/session/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setStudyDuration(data.duration_seconds);
+        // Could show a summary message: "Studied for X minutes"
+      }
+    } catch (error) {
+      console.error('Failed to end study session:', error);
+    }
+  };
+
+  const handleBack = () => {
+    // End session when leaving material view
+    if (studySessionId) {
+      endStudySession(studySessionId);
+      setStudySessionId(null);
+    }
+    setSelectedMaterialId(null);
+    setSelectedMaterial(null);
+  };
 
   const meQ = useQuery({
     queryKey: ['me'],
@@ -64,8 +169,17 @@ export default function StudyScreen() {
 
   const handleUploadText = async (text: string) => {
     setError(null);
+    setRetryAction(null);
     setUploadProgress(0);
     try {
+      // Client-side validation
+      if (text.trim().length < 10) {
+        throw new Error('Text is too short. Please provide at least 10 characters.');
+      }
+      if (text.length > 50000) {
+        throw new Error('Text is too long. Please limit to 50,000 characters.');
+      }
+      
       // Simulate initial progress
       setUploadProgress(20);
       const result = await uploadMutation.mutateAsync({ text });
@@ -79,12 +193,16 @@ export default function StudyScreen() {
       setTimeout(() => setUploadProgress(undefined), 2000);
     } catch (err) {
       setUploadProgress(undefined);
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      const specificError = categorizeError(message, 'upload text');
+      setError(specificError);
+      setRetryAction(() => () => handleUploadText(text));
     }
   };
 
   const handleUploadImage = async () => {
     setError(null);
+    setRetryAction(null);
     setUploadProgress(0);
     try {
       const file = await pickImage();
@@ -92,6 +210,21 @@ export default function StudyScreen() {
         setUploadProgress(undefined);
         return;
       }
+      
+      // Client-side file validation
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.uri && file.uri.startsWith('file://')) {
+        // Check file size (only possible for local files)
+        // Note: React Native doesn't provide direct file size access
+        // This is a placeholder - actual implementation would need native module
+      }
+      
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (file.type && !validTypes.includes(file.type.toLowerCase())) {
+        throw new Error('Invalid file type. Please upload PNG, JPG, or WebP only.');
+      }
+      
       setUploadProgress(20);
       const result = await uploadImageMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
       setUploadProgress(80);
@@ -104,12 +237,16 @@ export default function StudyScreen() {
       setTimeout(() => setUploadProgress(undefined), 2000);
     } catch (err) {
       setUploadProgress(undefined);
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      const specificError = categorizeError(message, 'image upload');
+      setError(specificError);
+      setRetryAction(() => handleUploadImage);
     }
   };
 
   const handleTakePhoto = async () => {
     setError(null);
+    setRetryAction(null);
     setUploadProgress(0);
     try {
       const file = await takePhoto();
@@ -129,12 +266,16 @@ export default function StudyScreen() {
       setTimeout(() => setUploadProgress(undefined), 2000);
     } catch (err) {
       setUploadProgress(undefined);
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      const specificError = categorizeError(message, 'photo upload');
+      setError(specificError);
+      setRetryAction(() => handleTakePhoto);
     }
   };
 
   const handleUploadDocument = async () => {
     setError(null);
+    setRetryAction(null);
     setUploadProgress(0);
     try {
       const file = await pickDocument();
@@ -142,6 +283,20 @@ export default function StudyScreen() {
         setUploadProgress(undefined);
         return;
       }
+      
+      // Client-side file validation
+      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
+      if (file.type && !validTypes.includes(file.type.toLowerCase())) {
+        throw new Error('Invalid file type. Please upload PDF or Word documents only.');
+      }
+      
+      // Validate file extension as fallback
+      const validExtensions = ['.pdf', '.docx', '.doc'];
+      const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+      if (!hasValidExtension) {
+        throw new Error('Invalid file extension. Please upload .pdf, .docx, or .doc files only.');
+      }
+      
       setUploadProgress(20);
       const result = await uploadDocumentMutation.mutateAsync({ uri: file.uri, name: file.name, type: file.type });
       setUploadProgress(80);
@@ -154,13 +309,17 @@ export default function StudyScreen() {
       setTimeout(() => setUploadProgress(undefined), 2000);
     } catch (err) {
       setUploadProgress(undefined);
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      const specificError = categorizeError(message, 'document upload');
+      setError(specificError);
+      setRetryAction(() => handleUploadDocument);
     }
   };
 
   const handleGenerateAsset = async (materialId: number, assetType: string, count = 5) => {
-    setGenerating(true);
+    setGeneratingType(assetType);
     setError(null);
+    setRetryAction(null);
     try {
       const res = await apiFetch('/api/v1/study/generate', {
         method: 'POST',
@@ -176,9 +335,12 @@ export default function StudyScreen() {
         setSelectedMaterial(await detailRes.json());
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const message = e instanceof Error ? e.message : 'Generation failed';
+      const specificError = categorizeError(message, `${assetType} generation`);
+      setError(specificError);
+      setRetryAction(() => () => handleGenerateAsset(materialId, assetType, count));
     } finally {
-      setGenerating(false);
+      setGeneratingType(null);
     }
   };
 
@@ -197,6 +359,7 @@ export default function StudyScreen() {
 
   const handleUnlock = async (assetId: number, method: 'points' | 'ad') => {
     setError(null);
+    setRetryAction(null);
     const res = await apiFetch('/api/v1/study/unlock', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -204,11 +367,23 @@ export default function StudyScreen() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || 'Unlock failed');
+      const message = err.detail || 'Unlock failed';
+      const specificError = categorizeError(message, 'unlock');
+      throw new Error(specificError);
     }
     const data = await res.json();
     if (data.unlocked && data.content) {
       setUnlockedAssets((prev) => ({ ...prev, [assetId]: data.content }));
+      
+      // Cache the unlocked asset for offline access
+      if (selectedMaterialId) {
+        try {
+          await cacheAsset(assetId, data.content, selectedMaterialId);
+        } catch (error) {
+          console.error('Failed to cache unlocked asset:', error);
+          // Don't throw - caching is optional
+        }
+      }
     }
     qc.invalidateQueries({ queryKey: ['me'] });
     return data;
@@ -218,13 +393,18 @@ export default function StudyScreen() {
     setSelectedMaterialId(materialId);
     const res = await apiFetch(`/api/v1/study/materials/${materialId}`);
     if (res.ok) {
-      setSelectedMaterial(await res.json());
+      const materialData = await res.json();
+      setSelectedMaterial(materialData);
+      
+      // Load already unlocked assets from backend response
+      const unlockedFromBackend: Record<number, unknown> = {};
+      for (const asset of materialData.assets) {
+        if (asset.unlocked && asset.content) {
+          unlockedFromBackend[asset.id] = asset.content;
+        }
+      }
+      setUnlockedAssets(unlockedFromBackend);
     }
-  };
-
-  const handleBack = () => {
-    setSelectedMaterialId(null);
-    setSelectedMaterial(null);
   };
 
   const handleChatPress = (materialId: number) => {
@@ -255,21 +435,53 @@ export default function StudyScreen() {
         </View>
 
         {error && (
-          <View style={[styles.errorBanner, { backgroundColor: tokens.signalSoft, borderColor: tokens.signal }]}>
-            <Ionicons name="alert-circle-outline" size={18} color={tokens.signal} />
+          <View 
+            style={[styles.errorBanner, { backgroundColor: tokens.signalSoft, borderColor: tokens.signal }]}
+            accessibilityRole="alert"
+            accessibilityLabel={`Error: ${error}`}
+          >
+            <Ionicons name="alert-circle-outline" size={18} color={tokens.signal} accessibilityLabel="" />
             <Text style={[styles.errorText, { color: tokens.signal }]}>{error}</Text>
-            <TouchableOpacity onPress={() => setError(null)} hitSlop={6}>
-              <Ionicons name="close" size={16} color={tokens.signal} />
+            {retryAction && (
+              <TouchableOpacity 
+                onPress={retryAction} 
+                style={[styles.retryBtn, { backgroundColor: tokens.signal }]}
+                accessibilityRole="button"
+                accessibilityLabel="Retry failed operation"
+              >
+                <Ionicons name="reload-outline" size={14} color="#fff" accessibilityLabel="" />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity 
+              onPress={() => {
+                setError(null);
+                setRetryAction(null);
+              }}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss error"
+            >
+              <Ionicons name="close" size={16} color={tokens.signal} accessibilityLabel="" />
             </TouchableOpacity>
           </View>
         )}
 
         {bonusNotification && (
-          <View style={[styles.bonusBanner, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
-            <Ionicons name="trophy-outline" size={18} color={tokens.mint} />
+          <View 
+            style={[styles.bonusBanner, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}
+            accessibilityRole="alert"
+            accessibilityLabel={`Bonus earned: ${bonusNotification}`}
+          >
+            <Ionicons name="trophy-outline" size={18} color={tokens.mint} accessibilityLabel="" />
             <Text style={[styles.bonusText, { color: tokens.mint }]}>{bonusNotification}</Text>
-            <TouchableOpacity onPress={() => setBonusNotification(null)} hitSlop={6}>
-              <Ionicons name="close" size={16} color={tokens.mint} />
+            <TouchableOpacity 
+              onPress={() => setBonusNotification(null)} 
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss bonus notification"
+            >
+              <Ionicons name="close" size={16} color={tokens.mint} accessibilityLabel="" />
             </TouchableOpacity>
           </View>
         )}
@@ -281,8 +493,10 @@ export default function StudyScreen() {
                 onPress={handleBack}
                 style={[styles.backBtn, { borderColor: tokens.border }]}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Back to all materials"
               >
-                <Ionicons name="arrow-back" size={18} color={tokens.mint} />
+                <Ionicons name="arrow-back" size={18} color={tokens.mint} accessibilityLabel="" />
                 <Text style={[styles.backText, { color: tokens.mint }]}>All materials</Text>
               </TouchableOpacity>
               <View style={styles.chatBtn}>
@@ -325,22 +539,25 @@ export default function StudyScreen() {
               <GenerateButton
                 label="MCQs"
                 icon="help-circle-outline"
+                assetType="mcq"
                 onPress={() => handleGenerateAsset(selectedMaterial.id, 'mcq', 5)}
-                loading={generating}
+                loading={generatingType === 'mcq'}
                 tokens={tokens}
               />
               <GenerateButton
                 label="Flashcards"
                 icon="albums-outline"
+                assetType="flashcard"
                 onPress={() => handleGenerateAsset(selectedMaterial.id, 'flashcard', 8)}
-                loading={generating}
+                loading={generatingType === 'flashcard'}
                 tokens={tokens}
               />
               <GenerateButton
                 label="Essays"
                 icon="document-text-outline"
+                assetType="essay"
                 onPress={() => handleGenerateAsset(selectedMaterial.id, 'essay', 3)}
-                loading={generating}
+                loading={generatingType === 'essay'}
                 tokens={tokens}
               />
             </View>
@@ -369,9 +586,12 @@ export default function StudyScreen() {
                     onPress={() => handleMaterialPress(m.id)}
                     activeOpacity={0.7}
                     style={[styles.materialCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${m.title}, ${m.asset_types.join(', ')}, created ${new Date(m.created_at).toLocaleDateString()}`}
+                    accessibilityHint="Open this study material"
                   >
                     <View style={[styles.materialIcon, { backgroundColor: tokens.mintSoft }]}>
-                      <Ionicons name="book-outline" size={20} color={tokens.mint} />
+                      <Ionicons name="book-outline" size={20} color={tokens.mint} accessibilityLabel="" />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.materialTitle, { color: tokens.ink }]} numberOfLines={1}>
@@ -381,7 +601,7 @@ export default function StudyScreen() {
                         {m.asset_types.join(', ')} · {new Date(m.created_at).toLocaleDateString()}
                       </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={18} color={tokens.inkMuted} />
+                    <Ionicons name="chevron-forward" size={18} color={tokens.inkMuted} accessibilityLabel="" />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -403,25 +623,58 @@ export default function StudyScreen() {
 function GenerateButton({
   label,
   icon,
+  assetType,
   onPress,
   loading,
   tokens,
 }: {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+  assetType: string;
   onPress: () => void;
   loading: boolean;
   tokens: (typeof PagePay)['light'];
 }) {
+  if (loading) {
+    return (
+      <View
+        style={[
+          styles.genBtn, 
+          { 
+            borderColor: tokens.border,
+            backgroundColor: tokens.paper,
+          }
+        ]}
+      >
+        <View style={styles.genBtnShimmer}>
+          <Skeleton width={20} height={20} borderRadius={10} />
+          <Skeleton width={50} height={12} borderRadius={4} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={loading}
       activeOpacity={0.7}
-      style={[styles.genBtn, { borderColor: tokens.border, backgroundColor: tokens.paper }]}
+      accessibilityRole="button"
+      accessibilityLabel={loading ? `Generating ${label}` : `Generate ${label}`}
+      accessibilityState={{ disabled: loading, busy: loading }}
+      accessibilityHint={`Generate new ${label} study materials`}
+      style={[
+        styles.genBtn, 
+        { 
+          borderColor: tokens.mint,
+          backgroundColor: tokens.mintSoft,
+        }
+      ]}
     >
-      <Ionicons name={icon} size={18} color={tokens.mint} />
-      <Text style={[styles.genText, { color: tokens.ink }]}>{label}</Text>
+      <Ionicons name={icon} size={16} color={tokens.mint} accessibilityLabel="" />
+      <Text style={[styles.genText, { color: tokens.mint, fontWeight: '600' }]} numberOfLines={1}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -501,21 +754,34 @@ const styles = StyleSheet.create({
   },
   generateRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
   genBtn: {
+    minWidth: 42,
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
+    gap: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 2,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  genBtnShimmer: {
+    alignItems: 'center',
+    gap: 4,
   },
   genText: {
     fontSize: 13,
-    fontWeight: '600',
+    letterSpacing: -0.2,
+    textAlign: 'center',
   },
   materialList: {
     gap: 10,
@@ -571,6 +837,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     lineHeight: 18,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  retryText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   bonusBanner: {
     flexDirection: 'row',

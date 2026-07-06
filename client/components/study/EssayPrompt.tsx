@@ -46,8 +46,9 @@ export function EssayPrompt({ prompt, outline }: EssayPromptProps) {
       <Animated.View 
         entering={FadeInRight.delay(100).duration(400).springify()}
         style={[styles.labelPill, { backgroundColor: tokens.mintSoft }]}
+        accessibilityLabel="Essay Question"
       >
-        <Ionicons name="document-text-outline" size={14} color={tokens.mint} />
+        <Ionicons name="document-text-outline" size={14} color={tokens.mint} accessibilityLabel="" />
         <Text style={[styles.labelText, { color: tokens.mint }]}>Essay Question</Text>
       </Animated.View>
       

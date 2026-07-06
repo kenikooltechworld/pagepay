@@ -139,15 +139,20 @@ export default function BuyTvScreen() {
           <ActivityIndicator color={tokens.mint} />
         ) : (
           <View style={{ gap: 8 }}>
-            {(bouquetsQ.data ?? []).map((b) => (
+            {(bouquetsQ.data ?? []).map((b) => {
+              // Bouquet objects come from the bill-providers API and
+              // their shape isn't fully typed — fall back to '' so the
+              // rest of the closure sees `string`, not `string | undefined`.
+              const id = b.plan_code ?? b.id ?? '';
+              return (
               <TouchableOpacity
-                key={b.plan_code || b.id}
-                onPress={() => setSelectedBouquet(b.plan_code || b.id)}
+                key={id}
+                onPress={() => setSelectedBouquet(id)}
                 style={[
                   styles.bundleCard,
                   {
-                    backgroundColor: selectedBouquet === (b.plan_code || b.id) ? tokens.mintSoft : tokens.card,
-                    borderColor: selectedBouquet === (b.plan_code || b.id) ? tokens.mint : tokens.border,
+                    backgroundColor: selectedBouquet === id ? tokens.mintSoft : tokens.card,
+                    borderColor: selectedBouquet === id ? tokens.mint : tokens.border,
                   },
                 ]}
               >
@@ -161,7 +166,8 @@ export default function BuyTvScreen() {
                   ₦{((b.price_naira || b.amount || 0).toLocaleString())}
                 </Text>
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         )}
 

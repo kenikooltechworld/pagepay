@@ -6,11 +6,11 @@ from httpx import AsyncClient
 async def test_login_wrong_password(client: AsyncClient):
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "wrong@example.com", "password": "secret123"},
+        json={"email": "wrong@example.com", "password": "Secret123!"},
     )
     resp = await client.post(
         "/api/v1/auth/login",
-        data={"username": "wrong@example.com", "password": "badpass99"},
+        data={"username": "wrong@example.com", "password": "BadPass99!"},
     )
     assert resp.status_code == 401
 
@@ -19,7 +19,7 @@ async def test_login_wrong_password(client: AsyncClient):
 async def test_login_unknown_user(client: AsyncClient):
     resp = await client.post(
         "/api/v1/auth/login",
-        data={"username": "ghost@example.com", "password": "secret123"},
+        data={"username": "ghost@example.com", "password": "Secret123!"},
     )
     assert resp.status_code == 401
 
@@ -28,7 +28,7 @@ async def test_login_unknown_user(client: AsyncClient):
 async def test_me_returns_user(client: AsyncClient):
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": "me@example.com", "password": "secret123"},
+        json={"email": "me@example.com", "password": "Secret123!"},
     )
     token = reg.json()["access_token"]
     resp = await client.get(

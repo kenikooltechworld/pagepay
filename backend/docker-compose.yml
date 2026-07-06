@@ -29,9 +29,10 @@ services:
       - .env
     environment:
       DATABASE_URL: mysql+aiomysql://pagepay:pagepass@db:3306/pagepay
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: http://localhost:8081
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      ENVIRONMENT: production
     depends_on:
       db:
         condition: service_healthy
@@ -41,8 +42,9 @@ services:
       dockerfile: Dockerfile.cron
     environment:
       DATABASE_URL: mysql+aiomysql://pagepay:pagepass@db:3306/pagepay
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      SECRET_KEY: ${SECRET_KEY}
       GNEWS_API_KEY: ${GNEWS_API_KEY:-}
+      ENVIRONMENT: production
     depends_on:
       db:
         condition: service_healthy

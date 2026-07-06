@@ -32,3 +32,9 @@ credentials.json
 !.vscode/*.json
 pagepay-submit-*.json
 *-submit-*.json
+
+# Firebase config files (contain API keys)
+google-services.json
+GoogleService-Info.plist
+firebase-service-account.json
+firebase-service-account.json

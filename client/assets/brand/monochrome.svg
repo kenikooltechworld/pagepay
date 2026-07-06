@@ -9,9 +9,10 @@
   (those are decorative; the monochrome version is for a 1-color
   reproduce-anywhere context). Just the P silhouette.
 
-  Uses currentColor so consumers can re-tint with CSS:
-    .icon { color: var(--mint); }
+  Uses currentColor so consumers can re-tint via CSS.
   Defaults to mint #0E7C66 when currentColor is not set.
+  (For the SVG itself, currentColor is set to mint via the
+  color attribute below.)
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 1024 1024"

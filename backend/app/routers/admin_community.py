@@ -8,7 +8,7 @@ Track all moderation decisions in audit logs.
 import logging
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -185,6 +185,7 @@ async def get_note_detail(
 
 @router.post("/notes/{note_id}/approve")
 async def approve_note(
+    request: Request,
     note_id: int,
     current_admin: AdminUser = Depends(require_permission("community.moderate")),
     db: AsyncSession = Depends(get_db),
@@ -216,7 +217,7 @@ async def approve_note(
                 "user_id": note.user_id,
                 "status": {"from": old_status, "to": "approved"},
             },
-            None,
+            request.client.host,
         )
     )
 
@@ -227,6 +228,7 @@ async def approve_note(
 
 @router.post("/notes/{note_id}/reject")
 async def reject_note(
+    request: Request,
     note_id: int,
     reason: str = Query(...),
     current_admin: AdminUser = Depends(require_permission("community.moderate")),
@@ -260,7 +262,7 @@ async def reject_note(
                 "status": {"from": old_status, "to": "rejected"},
                 "reason": reason,
             },
-            None,
+            request.client.host,
         )
     )
 
@@ -271,6 +273,7 @@ async def reject_note(
 
 @router.delete("/notes/{note_id}")
 async def delete_note(
+    request: Request,
     note_id: int,
     reason: str = Query(...),
     current_admin: AdminUser = Depends(require_permission("community.delete")),
@@ -297,7 +300,7 @@ async def delete_note(
                 "content_preview": note.content[:100],
                 "reason": reason,
             },
-            None,
+            request.client.host,
         )
     )
 

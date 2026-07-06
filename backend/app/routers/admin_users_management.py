@@ -7,7 +7,7 @@ reading sessions, and transaction history. Includes user filtering and search.
 import logging
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +33,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -145,6 +145,7 @@ async def get_user_detail(
 
 @router.post("/{user_id}/ban")
 async def ban_user(
+    request: Request,
     user_id: int,
     reason: str = Query(...),
     current_admin: AdminUser = Depends(require_permission("users.ban")),
@@ -172,7 +173,7 @@ async def ban_user(
                 "status": {"from": "active", "to": "banned"},
                 "reason": reason,
             },
-            None,
+            request.client.host,
         )
     )
     
@@ -182,6 +183,7 @@ async def ban_user(
 
 @router.post("/{user_id}/unban")
 async def unban_user(
+    request: Request,
     user_id: int,
     current_admin: AdminUser = Depends(require_permission("users.ban")),
     db: AsyncSession = Depends(get_db),
@@ -205,7 +207,7 @@ async def unban_user(
             "user",
             user_id,
             {"status": {"from": "banned", "to": "active"}},
-            None,
+            request.client.host,
         )
     )
     
@@ -215,6 +217,7 @@ async def unban_user(
 
 @router.post("/{user_id}/adjust-balance")
 async def adjust_balance(
+    request: Request,
     user_id: int,
     amount: int = Query(...),
     reason: str = Query(...),
@@ -241,13 +244,12 @@ async def adjust_balance(
                 "points": {"from": old_balance, "to": user.points_balance},
                 "reason": reason,
             },
-            None,
+            request.client.host,
         )
     )
     
     await db.commit()
     return {"success": True, "new_balance": user.points_balance}
-
 
 # ── User Sessions & Transactions ────────────────────────────────────
 

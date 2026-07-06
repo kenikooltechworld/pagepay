@@ -8,7 +8,7 @@ and manually flag users for manual review.
 import logging
 import json
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -135,6 +135,7 @@ async def list_fraud_referrals(
 
 @router.post("/{flag_id}/resolve")
 async def resolve_fraud_flag(
+    request: Request,
     flag_id: int,
     notes: str = Query(None),
     current_admin: AdminUser = Depends(require_permission("fraud.resolve")),
@@ -174,7 +175,7 @@ async def resolve_fraud_flag(
                 "status": {"from": old_status, "to": "resolved"},
                 "notes": notes,
             },
-            None,
+            request.client.host,
         )
     )
     
@@ -185,6 +186,7 @@ async def resolve_fraud_flag(
 
 @router.post("/{flag_id}/ignore")
 async def ignore_fraud_flag(
+    request: Request,
     flag_id: int,
     reason: str = Query(...),
     current_admin: AdminUser = Depends(require_permission("fraud.resolve")),
@@ -225,7 +227,7 @@ async def ignore_fraud_flag(
                 "status": {"from": old_status, "to": "ignored"},
                 "reason": reason,
             },
-            None,
+            request.client.host,
         )
     )
     
@@ -236,6 +238,7 @@ async def ignore_fraud_flag(
 
 @router.post("/user/{user_id}/flag")
 async def manually_flag_user(
+    request: Request,
     user_id: int,
     flag_type: str = Query(...),
     severity: str = Query(..., regex="^(low|medium|high)$"),
@@ -275,7 +278,7 @@ async def manually_flag_user(
                 "severity": severity,
                 "details": details,
             },
-            None,
+            request.client.host,
         )
     )
     

@@ -6,7 +6,7 @@ from httpx import AsyncClient
 async def test_create_and_end_session(client: AsyncClient):
     register = await client.post(
         "/api/v1/auth/register",
-        json={"email": "dave@example.com", "password": "secret123"},
+        json={"email": "dave@example.com", "password": "Secret123!"},
     )
     token = register.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}

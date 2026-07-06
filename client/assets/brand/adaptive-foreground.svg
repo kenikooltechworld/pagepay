@@ -30,12 +30,12 @@
 
   <!--
     ============= SAFE-ZONE GUIDE (uncomment to view) =============
-    <!-- 1024 x 1024 artboard border -->
-    <!-- <rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FF00FF" stroke-width="2" stroke-dasharray="8 8"/> -->
-    <!-- 432 x 432 safe zone -->
-    <!-- <rect x="296" y="296" width="432" height="432" fill="none" stroke="#00FFFF" stroke-width="2" stroke-dasharray="8 8"/> -->
-    <!-- 512 x 512 inscribed circle (squircle approximation) -->
-    <!-- <circle cx="512" cy="512" r="256" fill="none" stroke="#FFFF00" stroke-width="2" stroke-dasharray="4 4"/> -->
+    [1024 x 1024 artboard border]
+    <rect x="0" y="0" width="1024" height="1024" fill="none" stroke="#FF00FF" stroke-width="2" stroke-dasharray="8 8"/>
+    [432 x 432 safe zone]
+    <rect x="296" y="296" width="432" height="432" fill="none" stroke="#00FFFF" stroke-width="2" stroke-dasharray="8 8"/>
+    [512 x 512 inscribed circle (squircle approximation)]
+    <circle cx="512" cy="512" r="256" fill="none" stroke="#FFFF00" stroke-width="2" stroke-dasharray="4 4"/>
     ================================================================
   -->
 

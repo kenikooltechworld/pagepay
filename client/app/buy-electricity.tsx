@@ -112,27 +112,34 @@ export default function BuyElectricityScreen() {
           <ActivityIndicator color={tokens.mint} />
         ) : (
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-            {(discosQ.data ?? []).map((d) => (
+            {(discosQ.data ?? []).map((d) => {
+              // Disco objects come from the bill-providers API and their
+              // shape isn't fully typed — fall back to '' so the rest of
+              // the closure sees a `string`, not `string | undefined`.
+              const id = d.plan_code ?? d.code ?? '';
+              const name = d.plan_name ?? d.name ?? '';
+              return (
               <TouchableOpacity
-                key={d.plan_code || d.code}
-                onPress={() => setPlanId(d.plan_code || d.code)}
+                key={id}
+                onPress={() => setPlanId(id)}
                 style={[
                   styles.discoChip,
                   {
-                    backgroundColor: planId === (d.plan_code || d.code) ? tokens.mint : tokens.card,
-                    borderColor: planId === (d.plan_code || d.code) ? tokens.mint : tokens.border,
+                    backgroundColor: planId === id ? tokens.mint : tokens.card,
+                    borderColor: planId === id ? tokens.mint : tokens.border,
                   },
                 ]}
               >
                 <Text style={[
                   styles.chipText,
                   {
-                    color: planId === (d.plan_code || d.code) ? tokens.mintText : tokens.ink,
+                    color: planId === id ? tokens.mintText : tokens.ink,
                     fontSize: 11,
                   },
-                ]}>{(d.plan_name || d.name).split('(')[0].trim()}</Text>
+                ]}>{name.split('(')[0].trim()}</Text>
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         )}
 

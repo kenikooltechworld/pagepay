@@ -65,7 +65,7 @@ async def get_community_feed(
     Filters: `?course_code=CSC201`
     Sort: `?sort=popular` (most liked) or `?sort=recent` (newest)
     """
-    query = select(CommunityNote, User.email, User.phone).join(
+    query = select(CommunityNote, User.id).join(
         User, CommunityNote.user_id == User.id
     ).where(CommunityNote.status == "approved")
 
@@ -82,7 +82,7 @@ async def get_community_feed(
     results = rows.all()
 
     out: list[CommunityFeedItem] = []
-    for note, email, phone in results:
+    for note, user_id in results:
         is_liked = False
         if current_user:
             liked_row = await db.execute(
@@ -93,7 +93,7 @@ async def get_community_feed(
             )
             is_liked = liked_row.scalar_one_or_none() is not None
 
-        author_name = email or phone or "Anonymous"
+        author_name = f"Student #{user_id}"
         out.append(CommunityFeedItem(
             id=note.id,
             title=note.title,

@@ -111,7 +111,8 @@ async def upload_sow_image(
     from app.ai.prompts import SOW_PARSER
 
     b64 = base64.b64encode(contents).decode()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    headers = {"x-goog-api-key": api_key}
     body = {
         "contents": [{
             "parts": [
@@ -125,7 +126,7 @@ async def upload_sow_image(
     extracted_text = ""
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(url, json=body)
+            resp = await client.post(url, json=body, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
                 extracted_text = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -316,17 +317,38 @@ async def get_material(
     )
     assets = assets_result.scalars().all()
 
+    # Get unlocked assets for this user
+    unlocked_result = await db.execute(
+        select(StudyTransaction.asset_id, StudyAsset.content_json)
+        .join(StudyAsset, StudyTransaction.asset_id == StudyAsset.id)
+        .where(
+            StudyTransaction.user_id == current_user.id,
+            StudyTransaction.reward_granted == True,
+            StudyAsset.material_id == material_id,
+        )
+    )
+    unlocked_data = {row[0]: row[1] for row in unlocked_result.all()}
+
     import json as _json
     parsed = _json.loads(material.parsed_structure) if material.parsed_structure else None
 
     asset_list = []
     for a in assets:
-        asset_list.append({
+        asset_dict = {
             "id": a.id,
             "type": a.asset_type,
             "points_to_unlock": a.points_to_unlock,
             "created_at": a.created_at.isoformat(),
-        })
+        }
+        
+        # Include content if already unlocked
+        if a.id in unlocked_data:
+            asset_dict["unlocked"] = True
+            asset_dict["content"] = _json.loads(unlocked_data[a.id])
+        else:
+            asset_dict["unlocked"] = False
+            
+        asset_list.append(asset_dict)
 
     return MaterialDetail(
         id=material.id,
@@ -630,4 +652,109 @@ async def complete_quiz(
             if bonus_awarded
             else f"Score: {payload.score}%. Get {BONUS_THRESHOLD}%+ for a +{BONUS_POINTS} pts bonus!"
         ),
+    )
+
+
+# ── POST /study/session/start ───────────────────────────────────────
+
+
+from pydantic import BaseModel
+
+
+class SessionStartRequest(BaseModel):
+    material_id: int
+
+
+class SessionStartResponse(BaseModel):
+    session_id: int
+    started_at: str
+
+
+class SessionEndRequest(BaseModel):
+    session_id: int
+
+
+class SessionEndResponse(BaseModel):
+    session_id: int
+    duration_seconds: int
+    ended_at: str
+
+
+class StudySession:
+    """Simple in-memory session tracking (in production, use Redis or DB)"""
+    _sessions: dict[int, dict] = {}
+
+    @classmethod
+    def start(cls, user_id: int, material_id: int) -> int:
+        session_id = len(cls._sessions) + 1
+        cls._sessions[session_id] = {
+            "user_id": user_id,
+            "material_id": material_id,
+            "started_at": datetime.utcnow(),
+        }
+        return session_id
+
+    @classmethod
+    def end(cls, session_id: int) -> dict | None:
+        session = cls._sessions.get(session_id)
+        if not session:
+            return None
+        
+        ended_at = datetime.utcnow()
+        duration = int((ended_at - session["started_at"]).total_seconds())
+        
+        session["ended_at"] = ended_at
+        session["duration_seconds"] = duration
+        
+        return session
+
+    @classmethod
+    def get(cls, session_id: int) -> dict | None:
+        return cls._sessions.get(session_id)
+
+
+@router.post("/session/start", response_model=SessionStartResponse, status_code=201)
+async def start_study_session(
+    payload: SessionStartRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a study session for time tracking"""
+    # Verify material ownership
+    material_result = await db.execute(
+        select(StudyMaterial).where(
+            StudyMaterial.id == payload.material_id,
+            StudyMaterial.user_id == current_user.id,
+        )
+    )
+    if not material_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Material not found")
+    
+    session_id = StudySession.start(current_user.id, payload.material_id)
+    
+    return SessionStartResponse(
+        session_id=session_id,
+        started_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.post("/session/end", response_model=SessionEndResponse)
+async def end_study_session(
+    payload: SessionEndRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """End a study session and get duration"""
+    session = StudySession.end(payload.session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if session["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your session")
+    
+    return SessionEndResponse(
+        session_id=payload.session_id,
+        duration_seconds=session["duration_seconds"],
+        ended_at=session["ended_at"].isoformat(),
     )

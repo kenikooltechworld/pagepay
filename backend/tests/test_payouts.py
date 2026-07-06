@@ -10,7 +10,7 @@ from httpx import AsyncClient
 
 
 async def _register_and_login(
-    client: AsyncClient, email: str = "pay@example.com", password: str = "secret123"
+    client: AsyncClient, email: str = "pay@example.com", password: str = "Secret123!"
 ) -> str:
     """Register a fresh user and return a bearer token.
 

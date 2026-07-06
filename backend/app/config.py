@@ -1,5 +1,6 @@
 # All fastapi app settings
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
 
 
 class Settings(BaseSettings):
@@ -9,6 +10,7 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 10080
+    environment: str = "development"
     cors_origins: str = "http://localhost:8081,http://localhost:3000,https://pagepay.onrender.com"
 
     gnews_api_key: str | None = None
@@ -134,6 +136,10 @@ class Settings(BaseSettings):
     # In dev it's the default below; production must override via env.
     admin_token: str = "dev-admin-token"
     
+    # ── Phase 3: Firebase Cloud Messaging (Push Notifications) ───────
+    # Path to Firebase service account JSON file downloaded from console
+    firebase_service_account_path: str = "firebase-service-account.json"
+    
     # ── Phase 7: Cloudinary for task proof uploads ───────────────────
     cloudinary_cloud_name: str | None = None
     cloudinary_api_key: str | None = None
@@ -189,6 +195,15 @@ class Settings(BaseSettings):
             parsed.append((max_kobo, fee_kobo))
         # Sanity: must be at least one tier.
         return parsed or default
+
+    @model_validator(mode="after")
+    def _check_default_secrets(self) -> "Settings":
+        if self.environment == "production":
+            if self.secret_key in ("dev-secret-change-me", "change-me-in-production-use-openssl-rand-hex-32", ""):
+                raise ValueError("SECRET_KEY must be set to a strong random value in production")
+            if not self.admin_token or self.admin_token in ("dev-admin-token",):
+                raise ValueError("ADMIN_TOKEN must be set to a strong random value in production")
+        return self
 
 
 settings = Settings()  # type: ignore[call-arg]

@@ -8,10 +8,12 @@ import 'react-native-reanimated';
 
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { useAdsConfig } from '@/src/shared/hooks/use-ads-config';
-import { bootstrapPreferences } from '@/src/shared/lib/preferences';
+import { bootstrapPreferences, usePreferences } from '@/src/shared/lib/preferences';
 import { getToken } from '@/src/shared/lib/storage';
 import { initializeAdMob } from '@/src/shared/lib/ads-native';
 import { setOnUnauthenticated } from '@/src/shared/api/client';
+import { setupNotificationListeners, registerFCMToken } from '@/src/lib/notifications';
+import { SplashOverlay } from '@/components/SplashOverlay';
 
 const queryClient = new QueryClient();
 
@@ -25,22 +27,37 @@ function useAuthGate() {
   const segments = useSegments();
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
+  // Subscribe to onboarding state so we can route a first-launch user
+  // to /onboarding instead of /login.
+  const onboardingCompleted = usePreferences((s) => s.onboardingCompleted);
+  const hydrated = usePreferences((s) => s.hydrated);
 
   useEffect(() => {
+    // Wait for the preferences store to hydrate from secure-store
+    // before deciding where to send the user. Without this gate, a
+    // slow secure-store read on first launch would briefly route a
+    // returning user to /onboarding.
+    if (!hydrated) return;
     (async () => {
-      await bootstrapPreferences();
       const token = await getToken();
       const inAuthGroup = segments[0] === '(auth)';
+      const inOnboardingGroup = segments[0] === '(onboarding)';
 
-      if (!token && !inAuthGroup) {
-        // No token and not on an auth screen → redirect to login.
-        // Use replace so the back button doesn't return here.
-        router.replace('/(auth)/login');
+      if (!token) {
+        if (!onboardingCompleted && !inOnboardingGroup) {
+          // First-launch user → onboarding.
+          router.replace('/(onboarding)');
+        } else if (onboardingCompleted && !inAuthGroup) {
+          // Returning user who finished onboarding → login.
+          router.replace('/(auth)/login');
+        }
+        // else: already on /onboarding or /auth/* — leave alone.
       } else if (token && inAuthGroup) {
         // Have a token and currently on an auth screen → go to tabs.
         router.replace('/(tabs)');
       }
-      // else: have a token and on tabs (valid), OR no token and on auth (valid).
+      // else: have a token and on tabs (valid), OR no token and on
+      // onboarding/auth (valid).
 
       // Small delay to let the scheduled navigation take effect before
       // we allow the layout to render. Prevents a flash of the wrong
@@ -48,16 +65,16 @@ function useAuthGate() {
       await new Promise((r) => setTimeout(r, 50));
       setIsReady(true);
     })();
-  }, [segments, router]);
+  }, [hydrated, segments, router, onboardingCompleted]);
 
   // Register the global 401 → login redirect so apiFetch can
   // redirect the user when the server rejects their token.
-  // Only redirect if we're NOT already on an auth screen, otherwise
-  // login/register error responses cause a blank refresh instead of
-  // showing the error to the user.
+  // Only redirect if we're NOT already on an auth/onboarding screen,
+  // otherwise login/register error responses cause a blank refresh
+  // instead of showing the error to the user.
   useEffect(() => {
     setOnUnauthenticated(() => {
-      if (segments[0] !== '(auth)') {
+      if (segments[0] !== '(auth)' && segments[0] !== '(onboarding)') {
         router.replace('/(auth)/login');
       }
     });
@@ -100,7 +117,50 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
   });
 
+  // Boot preferences once. The auth gate's `hydrated` selector means
+  // it won't run until this resolves; the SplashOverlay fills the
+  // gap so the user sees motion instead of a blank screen.
+  useEffect(() => {
+    void bootstrapPreferences();
+  }, []);
+
+  // Initialize Firebase Cloud Messaging and notification listeners
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+
+    const initNotifications = async () => {
+      // Set up notification listeners
+      cleanup = setupNotificationListeners();
+
+      // Register FCM token with backend (if user is logged in)
+      const token = await getToken();
+      if (token) {
+        await registerFCMToken();
+      }
+    };
+
+    initNotifications();
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, []);
+
+  // Splash overlay state. Mounted on first render, dismissed by the
+  // overlay's own exit callback (which calls `SplashScreen.hideAsync()`
+  // on mount and runs an entry bounce + 250ms fade-out, then calls
+  // back here to flip `splashDismissed`). Once dismissed, the overlay
+  // unmounts and the real route tree paints for the first time.
+  const [splashDismissed, setSplashDismissed] = useState(false);
+
   if (!isReady || !fontsLoaded) {
+    // Pre-splash: render the in-app overlay. The overlay's own mount
+    // effect calls `SplashScreen.hideAsync()` to dismiss the OS-cached
+    // static PNG, then runs the entry animation. When it finishes
+    // its fade-out it calls `onDone` to flip `splashDismissed`.
+    if (!splashDismissed) {
+      return <SplashOverlay onDone={() => setSplashDismissed(true)} />;
+    }
     return null;
   }
 
@@ -110,6 +170,7 @@ export default function RootLayout() {
         <AdsBootstrapComponent />
         <Stack>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="reader/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="book/[id]" options={{ headerShown: false, title: 'Book' }} />

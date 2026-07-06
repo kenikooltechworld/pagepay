@@ -94,6 +94,11 @@ export function SowUploadCard({
   const [text, setText] = useState('');
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  
+  const maxChars = 50000;
+  const minChars = 10;
+  const charCount = text.length;
+  const isValid = charCount >= minChars && charCount <= maxChars;
 
   const handleTextSubmit = async () => {
     if (!text.trim() || uploading) return;
@@ -123,7 +128,7 @@ export function SowUploadCard({
       entering={FadeInDown.duration(500).springify().damping(20).stiffness(200)}
       style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}
     >
-      <View style={styles.headerRow}>
+      <View style={styles.headerRow} accessibilityLabel="Upload Scheme of Work">
         <AnimatedUploadIcon uploading={uploading} progress={uploadProgress} tokens={tokens} />
         <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
           Upload Scheme of Work
@@ -143,7 +148,24 @@ export function SowUploadCard({
         onChangeText={setText}
         editable={!uploading}
         textAlignVertical="top"
+        accessibilityLabel="Scheme of work text input"
+        accessibilityHint="Enter or paste your scheme of work text"
       />
+      
+      {text.length > 0 && (
+        <View style={styles.charCounter}>
+          <Text style={[
+            styles.charCountText, 
+            { 
+              color: !isValid ? tokens.signal : charCount > maxChars * 0.9 ? tokens.inkMuted : tokens.inkMuted
+            }
+          ]}>
+            {charCount.toLocaleString()} / {maxChars.toLocaleString()} characters
+            {charCount < minChars && ` (min ${minChars})`}
+            {charCount > maxChars && ' (exceeds limit)'}
+          </Text>
+        </View>
+      )}
 
       {uploading && uploadProgress !== 100 && (
         <Animated.View entering={FadeInDown.duration(300)} style={styles.progressRow}>
@@ -158,37 +180,46 @@ export function SowUploadCard({
         <Animated.View 
           entering={FadeInDown.duration(400).springify()}
           style={[styles.successRow, { backgroundColor: tokens.mintSoft }]}
+          accessibilityLabel="Upload successful"
+          accessibilityRole="alert"
         >
-          <Ionicons name="checkmark-circle" size={18} color={tokens.mint} />
+          <Ionicons name="checkmark-circle" size={18} color={tokens.mint} accessibilityLabel="" />
           <Text style={[styles.successText, { color: tokens.mint }]}>Upload successful!</Text>
         </Animated.View>
       )}
 
       <View style={styles.buttonRow}>
-        <PrimaryButton
-          title={uploading ? 'Processing...' : 'Upload Text'}
-          onPress={handleTextSubmit}
-          loading={uploading}
-          disabled={!text.trim() || uploading}
-        />
-        <AnimatedIconButton 
-          icon="document"
-          onPress={() => handleIconPress(onUploadDocument)}
-          disabled={uploading}
-          tokens={tokens}
-        />
-        <AnimatedIconButton 
-          icon="images"
-          onPress={() => handleIconPress(onUploadImage)}
-          disabled={uploading}
-          tokens={tokens}
-        />
-        <AnimatedIconButton 
-          icon="camera"
-          onPress={() => handleIconPress(onTakePhoto)}
-          disabled={uploading}
-          tokens={tokens}
-        />
+        <View style={styles.uploadTextBtn}>
+          <PrimaryButton
+            title={uploading ? 'Processing...' : 'Upload Text'}
+            onPress={handleTextSubmit}
+            loading={uploading}
+            disabled={!isValid || uploading}
+          />
+        </View>
+        <View style={styles.iconButtons}>
+          <AnimatedIconButton 
+            icon="document"
+            label="Doc"
+            onPress={() => handleIconPress(onUploadDocument)}
+            disabled={uploading}
+            tokens={tokens}
+          />
+          <AnimatedIconButton 
+            icon="images"
+            label="Image"
+            onPress={() => handleIconPress(onUploadImage)}
+            disabled={uploading}
+            tokens={tokens}
+          />
+          <AnimatedIconButton 
+            icon="camera"
+            label="Photo"
+            onPress={() => handleIconPress(onTakePhoto)}
+            disabled={uploading}
+            tokens={tokens}
+          />
+        </View>
       </View>
     </Animated.View>
   );
@@ -197,11 +228,13 @@ export function SowUploadCard({
 // Animated icon button with spring press effect
 function AnimatedIconButton({ 
   icon, 
+  label,
   onPress, 
   disabled, 
   tokens 
 }: { 
   icon: keyof typeof Ionicons.glyphMap; 
+  label: string;
   onPress: () => void; 
   disabled: boolean; 
   tokens: any;
@@ -220,18 +253,30 @@ function AnimatedIconButton({
     onPress();
   };
 
+  const accessibilityLabels: Record<string, string> = {
+    'document': 'Upload document (PDF or Word)',
+    'images': 'Choose image from library',
+    'camera': 'Take photo with camera',
+  };
+
   return (
     <AnimatedTouchable
       onPress={handlePress}
       disabled={disabled}
       activeOpacity={1}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabels[icon] || 'Upload option'}
+      accessibilityState={{ disabled }}
       style={[
         styles.iconBtn, 
         { borderColor: tokens.border, opacity: disabled ? 0.5 : 1 },
         animatedStyle,
       ]}
     >
-      <Ionicons name={icon} size={20} color={tokens.mint} />
+      <Ionicons name={icon} size={20} color={tokens.mint} accessibilityLabel="" />
+      <Text style={[styles.iconBtnLabel, { color: tokens.mint }]} numberOfLines={1}>
+        {label}
+      </Text>
     </AnimatedTouchable>
   );
 }
@@ -264,6 +309,14 @@ const styles = StyleSheet.create({
     minHeight: 100,
     fontFamily: 'normal',
   },
+  charCounter: {
+    alignItems: 'flex-end',
+    marginTop: -8,
+  },
+  charCountText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -286,16 +339,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   buttonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
   },
+  uploadTextBtn: {
+    marginBottom: 8,
+  },
+  iconButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
   iconBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  iconBtnLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

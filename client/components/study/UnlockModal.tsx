@@ -81,7 +81,7 @@ export function UnlockModal({
   onClose,
 }: UnlockModalProps) {
   const [showAd, setShowAd] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loadingMethod, setLoadingMethod] = useState<'points' | 'ad' | null>(null);
   const [adUnit, setAdUnit] = useState('');
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -117,18 +117,19 @@ export function UnlockModal({
 
   const handlePointsUnlock = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setLoading(true);
+    setLoadingMethod('points');
     try {
       await onUnlockPoints();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
     } finally {
-      setLoading(false);
+      setLoadingMethod(null);
     }
   };
 
   const handleAdStart = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLoadingMethod('ad');
     setShowAd(true);
   };
 
@@ -142,7 +143,6 @@ export function UnlockModal({
     // pending credits still trigger the unlock (the user did
     // watch the ad; the server will catch up on the next
     // /auth/me refresh).
-    setLoading(true);
     try {
       await onUnlockPoints();
       setShowAd(false);
@@ -150,12 +150,13 @@ export function UnlockModal({
     } catch {
       // stay on modal
     } finally {
-      setLoading(false);
+      setLoadingMethod(null);
     }
   };
 
   const handleAdClose = () => {
     setShowAd(false);
+    setLoadingMethod(null);
   };
 
   if (showAd && user) {
@@ -188,7 +189,7 @@ export function UnlockModal({
           entering={SlideInDown.duration(400).springify().damping(20).stiffness(300)}
           style={[styles.sheet, { backgroundColor: tokens.card, borderColor: tokens.border }]}
         >
-          <View style={styles.headerRow}>
+          <View style={styles.headerRow} accessibilityLabel="Unlock answer">
             <AnimatedLockIcon color={tokens.mint} />
             <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
               Unlock answer
@@ -210,17 +211,23 @@ export function UnlockModal({
             <PrimaryButton
               title={canAfford ? `Spend ${pointsCost} pts` : 'Not enough points'}
               onPress={handlePointsUnlock}
-              loading={loading}
-              disabled={!canAfford}
+              loading={loadingMethod === 'points'}
+              disabled={!canAfford || loadingMethod !== null}
             />
             <PrimaryButton
               title="Watch ad instead"
               onPress={handleAdStart}
-              loading={loading}
+              loading={loadingMethod === 'ad'}
+              disabled={loadingMethod !== null}
             />
           </Animated.View>
 
-          <Pressable onPress={onClose} style={({ pressed }) => [styles.close, { opacity: pressed ? 0.5 : 1 }]}>
+          <Pressable 
+            onPress={onClose} 
+            style={({ pressed }) => [styles.close, { opacity: pressed ? 0.5 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel unlock"
+          >
             <Text style={[styles.closeText, { color: tokens.inkMuted }]}>Cancel</Text>
           </Pressable>
         </Animated.View>

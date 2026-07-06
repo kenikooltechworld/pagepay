@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { saveToken } from '@/src/shared/lib/storage';
+import { registerFCMToken } from '@/src/lib/notifications';
 import { PageMark } from '@/components/PageMark';
 import { AnimatedInput } from '@/components/AnimatedInput';
 import { PasswordToggle } from '@/components/Field';
@@ -98,6 +99,10 @@ export default function LoginScreen() {
 
       const data = await res.json();
       await saveToken(data.access_token);
+      
+      // Register FCM token for push notifications
+      await registerFCMToken();
+      
       setSuccess(true);
       setTimeout(() => router.replace('/(tabs)'), 1000);
     } catch {

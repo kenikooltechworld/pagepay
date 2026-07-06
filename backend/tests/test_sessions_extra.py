@@ -60,7 +60,7 @@ async def test_admin_import_requires_token(client: AsyncClient):
 async def test_wallet_transactions_empty_for_new_user(client: AsyncClient):
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": "wallet0@example.com", "password": "secret123"},
+        json={"email": "wallet0@example.com", "password": "Secret123!"},
     )
     token = reg.json()["access_token"]
     resp = await client.get(
@@ -78,7 +78,7 @@ async def test_wallet_transactions_after_session(client: AsyncClient):
 
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": "wallet1@example.com", "password": "secret123"},
+        json={"email": "wallet1@example.com", "password": "Secret123!"},
     )
     token = reg.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -132,7 +132,7 @@ async def test_session_end_unverified_returns_zero_points(client: AsyncClient):
 
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": "unver@example.com", "password": "secret123"},
+        json={"email": "unver@example.com", "password": "Secret123!"},
     )
     token = reg.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -174,7 +174,7 @@ async def test_session_end_unverified_returns_zero_points(client: AsyncClient):
 async def test_session_end_unknown_id_returns_404(client: AsyncClient):
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": "noent@example.com", "password": "secret123"},
+        json={"email": "noent@example.com", "password": "Secret123!"},
     )
     token = reg.json()["access_token"]
     resp = await client.post(
@@ -189,7 +189,7 @@ async def test_session_end_unknown_id_returns_404(client: AsyncClient):
 async def test_session_heartbeat_unknown_id_returns_404(client: AsyncClient):
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": "noent2@example.com", "password": "secret123"},
+        json={"email": "noent2@example.com", "password": "Secret123!"},
     )
     token = reg.json()["access_token"]
     resp = await client.post(
@@ -221,7 +221,7 @@ async def test_session_cannot_be_ended_by_other_user(client: AsyncClient):
     # User A starts a session
     reg_a = await client.post(
         "/api/v1/auth/register",
-        json={"email": "alice2@example.com", "password": "secret123"},
+        json={"email": "alice2@example.com", "password": "Secret123!"},
     )
     headers_a = {"Authorization": f"Bearer {reg_a.json()['access_token']}"}
     create = await client.post(
@@ -234,7 +234,7 @@ async def test_session_cannot_be_ended_by_other_user(client: AsyncClient):
     # User B cannot end User A's session
     reg_b = await client.post(
         "/api/v1/auth/register",
-        json={"email": "bob2@example.com", "password": "secret123"},
+        json={"email": "bob2@example.com", "password": "Secret123!"},
     )
     headers_b = {"Authorization": f"Bearer {reg_b.json()['access_token']}"}
     end = await client.post(
@@ -256,7 +256,7 @@ async def test_session_cannot_be_ended_by_other_user(client: AsyncClient):
 async def _register_async(client: AsyncClient, email: str) -> dict:
     reg = await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "secret123"},
+        json={"email": email, "password": "Secret123!"},
     )
     return {"Authorization": f"Bearer {reg.json()['access_token']}"}
 

@@ -8,7 +8,7 @@ processing and fraud detection for tasks.
 import logging
 import json
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +33,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -99,6 +99,7 @@ async def list_pending_kyc(
 
 @router.post("/kyc/{sponsor_id}/approve")
 async def approve_kyc(
+    request: Request,
     sponsor_id: int,
     admin_notes: str | None = Query(None),
     current_admin: AdminUser = Depends(require_permission("tasks.kyc")),
@@ -144,7 +145,7 @@ async def approve_kyc(
             "sponsor_kyc",
             sponsor_id,
             {"status": "approved", "notes": admin_notes},
-            None,
+            request.client.host,
         )
     )
 
@@ -156,6 +157,7 @@ async def approve_kyc(
 
 @router.post("/kyc/{sponsor_id}/reject")
 async def reject_kyc(
+    request: Request,
     sponsor_id: int,
     reason: str = Query(..., min_length=10, max_length=500),
     admin_notes: str | None = Query(None),
@@ -202,7 +204,7 @@ async def reject_kyc(
             "sponsor_kyc",
             sponsor_id,
             {"status": "rejected", "reason": reason, "notes": admin_notes},
-            None,
+            request.client.host,
         )
     )
 
@@ -266,6 +268,7 @@ async def list_flagged_submissions(
 
 @router.post("/submissions/{submission_id}/approve")
 async def admin_approve_submission(
+    request: Request,
     submission_id: int,
     notes: str | None = Query(None),
     current_admin: AdminUser = Depends(require_permission("tasks.review")),
@@ -353,7 +356,7 @@ async def admin_approve_submission(
                 "reward": submission.reward_paid,
                 "notes": notes,
             },
-            None,
+            request.client.host,
         )
     )
 
@@ -369,6 +372,7 @@ async def admin_approve_submission(
 
 @router.post("/submissions/{submission_id}/reject")
 async def admin_reject_submission(
+    request: Request,
     submission_id: int,
     reason: str = Query(..., min_length=10, max_length=500),
     current_admin: AdminUser = Depends(require_permission("tasks.review")),
@@ -433,7 +437,7 @@ async def admin_reject_submission(
                 "worker_id": submission.worker_id,
                 "reason": reason,
             },
-            None,
+            request.client.host,
         )
     )
 

@@ -8,7 +8,7 @@ and payment processing.
 import logging
 import json
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -91,6 +91,7 @@ async def list_payouts(
 
 @router.post("/{payout_id}/approve")
 async def approve_payout(
+    request: Request,
     payout_id: int,
     current_admin: AdminUser = Depends(require_permission("finance.approve")),
     db: AsyncSession = Depends(get_db),
@@ -136,7 +137,7 @@ async def approve_payout(
                     "reference": receipt.reference,
                     "amount_kobo": payout.amount_kobo,
                 },
-                None,
+                request.client.host,
             )
         )
         await db.commit()
@@ -159,7 +160,7 @@ async def approve_payout(
                 "payout",
                 payout_id,
                 {"error": error_msg},
-                None,
+                request.client.host,
                 result="error",
                 error=error_msg,
             )
@@ -173,6 +174,7 @@ async def approve_payout(
 
 @router.post("/{payout_id}/reject")
 async def reject_payout(
+    request: Request,
     payout_id: int,
     reason: str = Query(...),
     current_admin: AdminUser = Depends(require_permission("finance.approve")),
@@ -222,10 +224,10 @@ async def reject_payout(
                 "refund_amount": refund_amount,
                 "user_balance": {"from": old_balance, "to": user.points_balance},
             },
-            None,
-        )
+                request.client.host,
+            )
     )
-    
+
     await db.commit()
 
     return {

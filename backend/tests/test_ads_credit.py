@@ -63,7 +63,7 @@ async def test_request_token_issues_token_for_rewarded_unit(client):
     a token + custom_data bound to the user."""
     r = await client.post("/api/v1/auth/register", json={
         "email": "rt1@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -89,7 +89,7 @@ async def test_request_token_rejects_non_rewarded_unit(client):
     gets a clear 400 instead of a token that will never be honored."""
     r = await client.post("/api/v1/auth/register", json={
         "email": "rt2@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -205,7 +205,7 @@ async def test_ssv_credits_user_for_valid_request(client, monkeypatch):
     # 1. Register + request a token
     r = await client.post("/api/v1/auth/register", json={
         "email": "ssv1@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     user_id = _user_id_from_jwt(token)
@@ -257,7 +257,7 @@ async def test_ssv_rejects_bad_signature(client):
     The handler returns 401 — no points credited, no AdEvent row."""
     r = await client.post("/api/v1/auth/register", json={
         "email": "ssv2@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -291,7 +291,7 @@ async def test_ssv_unknown_token_is_ignored(client, monkeypatch):
 
     r = await client.post("/api/v1/auth/register", json={
         "email": "ssv3@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -340,7 +340,7 @@ async def test_ssv_user_mismatch_is_ignored(client, monkeypatch):
 
     r = await client.post("/api/v1/auth/register", json={
         "email": "ssv4@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     user_id = _user_id_from_jwt(token)
@@ -405,7 +405,7 @@ async def test_recent_credits_returns_credited_events(client, monkeypatch):
 
     r = await client.post("/api/v1/auth/register", json={
         "email": "rc1@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     user_id = _user_id_from_jwt(token)
@@ -463,7 +463,7 @@ async def test_legacy_credit_endpoint_is_410(client):
     revenue_usd, which is an obvious mint-points attack surface."""
     r = await client.post("/api/v1/auth/register", json={
         "email": "leg1@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -487,7 +487,7 @@ async def test_legacy_reward_claim_endpoint_is_410(client):
     as /ads/credit."""
     r = await client.post("/api/v1/auth/register", json={
         "email": "leg2@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -511,7 +511,7 @@ async def test_legacy_impression_endpoint_is_410(client):
     """The /ads/impression endpoint is gone."""
     r = await client.post("/api/v1/auth/register", json={
         "email": "leg3@example.com",
-        "password": "secure1234",
+        "password": "Secure1234!",
     })
     token = r.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}

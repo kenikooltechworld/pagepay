@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from app.models import ContentCatalog, ReadingProgress
 
 
-AUTH = {"email": "reader@example.com", "password": "secret123"}
+AUTH = {"email": "reader@example.com", "password": "Secret123!"}
 
 
 async def _register(client: AsyncClient) -> str:

@@ -6,7 +6,7 @@ from httpx import AsyncClient
 async def test_register_success(client: AsyncClient):
     resp = await client.post(
         "/api/v1/auth/register",
-        json={"email": "alice@example.com", "password": "secret123"},
+        json={"email": "alice@example.com", "password": "Secret123!"},
     )
     assert resp.status_code == 201
     body = resp.json()
@@ -18,11 +18,11 @@ async def test_register_success(client: AsyncClient):
 async def test_register_duplicate(client: AsyncClient):
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "bob@example.com", "password": "secret123"},
+        json={"email": "bob@example.com", "password": "Secret123!"},
     )
     resp = await client.post(
         "/api/v1/auth/register",
-        json={"email": "bob@example.com", "password": "secret123"},
+        json={"email": "bob@example.com", "password": "Secret123!"},
     )
     assert resp.status_code == 400
 
@@ -31,11 +31,11 @@ async def test_register_duplicate(client: AsyncClient):
 async def test_login_success(client: AsyncClient):
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "carol@example.com", "password": "secret123"},
+        json={"email": "carol@example.com", "password": "Secret123!"},
     )
     resp = await client.post(
         "/api/v1/auth/login",
-        data={"username": "carol@example.com", "password": "secret123"},
+        data={"username": "carol@example.com", "password": "Secret123!"},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -52,18 +52,18 @@ async def test_change_password_succeeds(client: AsyncClient):
     """
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "dave@example.com", "password": "oldsecret1"},
+        json={"email": "dave@example.com", "password": "OldSecret1!"},
     )
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "dave@example.com", "password": "oldsecret1"},
+        data={"username": "dave@example.com", "password": "OldSecret1!"},
     )
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
     change = await client.post(
         "/api/v1/auth/change-password",
-        json={"current_password": "oldsecret1", "new_password": "newsecret1"},
+        json={"current_password": "OldSecret1!", "new_password": "NewSecret1!"},
         headers=headers,
     )
     assert change.status_code == 200
@@ -72,14 +72,14 @@ async def test_change_password_succeeds(client: AsyncClient):
     # Old password must no longer work.
     bad = await client.post(
         "/api/v1/auth/login",
-        data={"username": "dave@example.com", "password": "oldsecret1"},
+        data={"username": "dave@example.com", "password": "OldSecret1!"},
     )
     assert bad.status_code == 401
 
     # New password must work.
     good = await client.post(
         "/api/v1/auth/login",
-        data={"username": "dave@example.com", "password": "newsecret1"},
+        data={"username": "dave@example.com", "password": "NewSecret1!"},
     )
     assert good.status_code == 200
 
@@ -90,11 +90,11 @@ async def test_change_password_wrong_current_rejected(client: AsyncClient):
     leaked JWT could lock the legitimate user out of their account."""
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "eve@example.com", "password": "rightsecret"},
+        json={"email": "eve@example.com", "password": "RightSecret1!"},
     )
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "eve@example.com", "password": "rightsecret"},
+        data={"username": "eve@example.com", "password": "RightSecret1!"},
     )
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -110,7 +110,7 @@ async def test_change_password_wrong_current_rejected(client: AsyncClient):
     # mutated the hash.
     still = await client.post(
         "/api/v1/auth/login",
-        data={"username": "eve@example.com", "password": "rightsecret"},
+        data={"username": "eve@example.com", "password": "RightSecret1!"},
     )
     assert still.status_code == 200
 
@@ -122,11 +122,11 @@ async def test_logout_returns_204(client: AsyncClient):
     the client can call it cleanly."""
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "frank@example.com", "password": "secret123"},
+        json={"email": "frank@example.com", "password": "Secret123!"},
     )
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "frank@example.com", "password": "secret123"},
+        data={"username": "frank@example.com", "password": "Secret123!"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 

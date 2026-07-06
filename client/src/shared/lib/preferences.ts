@@ -22,14 +22,26 @@ export type LanguagePref = 'en' | 'pcm' | 'yo' | 'ha' | 'ig';
 type PreferencesState = {
   theme: ThemePref;
   language: LanguagePref;
+  /**
+   * One-time flag — true after the user finishes the 5-screen onboarding
+   * (taps the final "Get started" CTA). Set locally on the device; never
+   * synced to the server. Persisted under `pagepay_pref_onboarding_completed`
+   * via expo-secure-store. See `client/app/(onboarding)/index.tsx`.
+   */
+  onboardingCompleted: boolean;
   hydrated: boolean;
   setTheme: (t: ThemePref) => void;
   setLanguage: (l: LanguagePref) => void;
+  setOnboardingCompleted: (v: boolean) => void;
 };
 
-const DEFAULTS: Pick<PreferencesState, 'theme' | 'language'> = {
+const DEFAULTS: Pick<
+  PreferencesState,
+  'theme' | 'language' | 'onboardingCompleted'
+> = {
   theme: 'system',
   language: 'en',
+  onboardingCompleted: false,
 };
 
 export const usePreferences = create<PreferencesState>((set) => ({
@@ -37,11 +49,13 @@ export const usePreferences = create<PreferencesState>((set) => ({
   hydrated: false,
   setTheme: (theme) => set({ theme }),
   setLanguage: (language) => set({ language }),
+  setOnboardingCompleted: (onboardingCompleted) =>
+    set({ onboardingCompleted }),
 }));
 
 /**
  * Hydrate the store from expo-secure-store on app start. Safe to call
- * before the token is loaded — preferences live under a separate key.
+ * before the token is loaded — preferences live under separate keys.
  */
 export async function bootstrapPreferences(): Promise<void> {
   const saved = await loadPreferences();
@@ -52,9 +66,13 @@ async function loadPreferences(): Promise<Partial<PreferencesState>> {
   try {
     const raw = await readPref('theme');
     const lang = await readPref('language');
+    const onboarded = await readPref('onboarding_completed');
     return {
       theme: isThemePref(raw) ? raw : DEFAULTS.theme,
       language: isLanguagePref(lang) ? lang : DEFAULTS.language,
+      // Stored as the string "true" / "false" by `persistOnboardingCompleted`.
+      // Anything missing or unparseable → not completed.
+      onboardingCompleted: onboarded === 'true',
     };
   } catch {
     // Secure-store may be unavailable on web or first-run. Fall back
@@ -81,6 +99,18 @@ export async function persistTheme(theme: ThemePref): Promise<void> {
 
 export async function persistLanguage(language: LanguagePref): Promise<void> {
   await writePref('language', language);
+}
+
+/**
+ * Persist the onboarding-completed flag. Called once when the user taps
+ * "Get started" on the final onboarding screen. We keep this as a
+ * separate key (not bundled with the other prefs) so it can be reset
+ * independently for QA without nuking the user's theme or language.
+ */
+export async function persistOnboardingCompleted(
+  value: boolean,
+): Promise<void> {
+  await writePref('onboarding_completed', value ? 'true' : 'false');
 }
 
 // ── Storage helpers ───────────────────────────────────────────────────

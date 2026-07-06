@@ -4,6 +4,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,6 +15,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 
 import { apiFetch } from '@/src/shared/api/client';
 import {
@@ -39,8 +42,10 @@ import {
 } from '@/components/LinkPayoutAccountModal';
 import { HelpModal } from '@/components/HelpModal';
 import { AboutModal } from '@/components/AboutModal';
+import { NotificationSettingsModal } from '@/components/NotificationSettingsModal';
 import { useReferralStats, useGenerateReferral } from '@/src/features/community/hooks/use-community';
 import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 type UserMe = {
   id: number;
@@ -87,6 +92,7 @@ export default function ProfileScreen() {
   const [showPayout, setShowPayout] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Fetch ad config for native unit
   const [nativeAdUnit, setNativeAdUnit] = useState('');
@@ -152,7 +158,7 @@ export default function ProfileScreen() {
   );
 
   const handleNotifications = useCallback(() => {
-    Alert.alert('Coming soon', 'Notification controls ship in Phase 3.');
+    setShowNotifications(true);
   }, []);
 
   const handleSignOut = useCallback(async () => {
@@ -194,9 +200,17 @@ export default function ProfileScreen() {
             <Text style={[styles.identifier, { color: tokens.inkMuted }]}>
               {meQuery.data?.email || meQuery.data?.phone || 'No email or phone on file'}
             </Text>
-            <Text style={[styles.tier, { color: tokens.mint }]}>
-              {tierLabel[meQuery.data?.tier ?? 'free'] ?? meQuery.data?.tier}
-            </Text>
+            <View style={styles.tierRow}>
+              <Text style={[styles.tier, { color: tokens.mint }]}>
+                {tierLabel[meQuery.data?.tier ?? 'free'] ?? meQuery.data?.tier}
+              </Text>
+              {meQuery.data?.tier && meQuery.data.tier !== 'free' && (
+                <View style={[styles.premiumBadge, { backgroundColor: tokens.mint }]}>
+                  <Ionicons name="diamond" size={10} color={tokens.mintText} />
+                  <Text style={[styles.premiumLabel, { color: tokens.mintText }]}>PRO</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
 
@@ -272,86 +286,124 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Payout account ───────────────────────────────────── */}
-        <Text style={[styles.section, { color: tokens.inkMuted }]}>PAYOUT ACCOUNT</Text>
-        <View style={[styles.payoutCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-          {payoutQuery.isLoading ? (
-            <View style={{ gap: 8, padding: 4 }}>
-              <Skeleton height={16} width="70%" borderRadius={6} />
-              <Skeleton height={14} width="50%" borderRadius={6} />
-            </View>
-          ) : payoutQuery.data ? (
-            <View style={styles.payoutInner}>
-              <View style={[styles.payoutIcon, { backgroundColor: tokens.mintSoft }]}>
-                <Ionicons name="business" size={18} color={tokens.mint} />
-              </View>
-              <View style={styles.payoutInfo}>
-                <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                  {payoutQuery.data.bank_name} ···{payoutQuery.data.account_number_last4}
-                </Text>
-                <View style={styles.verifyRow}>
-                  {payoutQuery.data.verified ? (
-                    <>
-                      <Ionicons name="checkmark-circle" size={14} color={tokens.mint} />
-                      <Text style={[styles.verifyText, { color: tokens.mint }]}>Verified</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="hourglass-outline" size={14} color={tokens.signal} />
-                      <Text style={[styles.verifyText, { color: tokens.signal }]}>Pending validation</Text>
-                    </>
-                  )}
+        <ErrorBoundary
+          fallback={
+            <View style={[styles.payoutCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+              <View style={styles.payoutInner}>
+                <View style={[styles.payoutIcon, { backgroundColor: tokens.signalSoft }]}>
+                  <Ionicons name="alert-circle-outline" size={18} color={tokens.signal} />
                 </View>
-                {payoutQuery.data.account_name ? (
-                  <Text style={[styles.accountName, { color: tokens.inkMuted }]}>
-                    {payoutQuery.data.account_name}
+                <View style={styles.payoutInfo}>
+                  <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                    Failed to load payout account
                   </Text>
-                ) : null}
-                <Text style={[styles.accountName, { color: tokens.inkMuted }]}>
-                  Min ₦1,000 per withdrawal
-                </Text>
+                  <Text style={[styles.payoutHint, { color: tokens.inkMuted }]}>
+                    Something went wrong. Try refreshing the app.
+                  </Text>
+                </View>
               </View>
-              <Pressable
-                onPress={() => setShowPayout(true)}
-                hitSlop={8}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.change, { color: tokens.mint }]}>Change</Text>
-              </Pressable>
             </View>
-          ) : (
-            <View style={styles.payoutInner}>
-              <View style={[styles.payoutIcon, { backgroundColor: tokens.signalSoft }]}>
-                <Ionicons name="business-outline" size={18} color={tokens.signal} />
+          }
+        >
+          <Text style={[styles.section, { color: tokens.inkMuted }]}>PAYOUT ACCOUNT</Text>
+          <View style={[styles.payoutCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+            {payoutQuery.isLoading ? (
+              <View style={{ gap: 8, padding: 4 }}>
+                <Skeleton height={16} width="70%" borderRadius={6} />
+                <Skeleton height={14} width="50%" borderRadius={6} />
               </View>
-              <View style={styles.payoutInfo}>
-                <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                  No bank account linked
-                </Text>
-                <Text style={[styles.payoutHint, { color: tokens.inkMuted }]}>
-                  Add your bank account to withdraw earnings. Paystack validation is required before any withdrawal.
-                </Text>
+            ) : payoutQuery.data ? (
+              <View style={styles.payoutInner}>
+                <View style={[styles.payoutIcon, { backgroundColor: tokens.mintSoft }]}>
+                  <Ionicons name="business" size={18} color={tokens.mint} />
+                </View>
+                <View style={styles.payoutInfo}>
+                  <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                    {payoutQuery.data.bank_name} ···{payoutQuery.data.account_number_last4}
+                  </Text>
+                  <View style={styles.verifyRow}>
+                    {payoutQuery.data.verified ? (
+                      <>
+                        <Ionicons name="checkmark-circle" size={14} color={tokens.mint} />
+                        <Text style={[styles.verifyText, { color: tokens.mint }]}>Verified</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="hourglass-outline" size={14} color={tokens.signal} />
+                        <Text style={[styles.verifyText, { color: tokens.signal }]}>Pending validation</Text>
+                      </>
+                    )}
+                  </View>
+                  {payoutQuery.data.account_name ? (
+                    <Text style={[styles.accountName, { color: tokens.inkMuted }]}>
+                      {payoutQuery.data.account_name}
+                    </Text>
+                  ) : null}
+                  <Text style={[styles.accountName, { color: tokens.inkMuted }]}>
+                    Min ₦1,000 per withdrawal
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setShowPayout(true)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.change, { color: tokens.mint }]}>Change</Text>
+                </Pressable>
               </View>
-              <Pressable
-                onPress={() => setShowPayout(true)}
-                hitSlop={8}
-                accessibilityRole="button"
-              >
-                <Text style={[styles.change, { color: tokens.mint }]}>Link</Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
+            ) : (
+              <View style={styles.payoutInner}>
+                <View style={[styles.payoutIcon, { backgroundColor: tokens.signalSoft }]}>
+                  <Ionicons name="business-outline" size={18} color={tokens.signal} />
+                </View>
+                <View style={styles.payoutInfo}>
+                  <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                    No bank account linked
+                  </Text>
+                  <Text style={[styles.payoutHint, { color: tokens.inkMuted }]}>
+                    Add your bank account to withdraw earnings. Paystack validation is required before any withdrawal.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setShowPayout(true)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.change, { color: tokens.mint }]}>Link</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </ErrorBoundary>
 
         {/* ── Referral ──────────────────────────────────────────── */}
-        <ReferralSection tokens={tokens} />
+        <ErrorBoundary
+          fallback={
+            <View style={[styles.referralCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+              <View style={styles.referralHeader}>
+                <Ionicons name="alert-circle-outline" size={20} color={tokens.signal} />
+                <Text style={[styles.referralTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+                  Referral system unavailable
+                </Text>
+              </View>
+              <Text style={[styles.referralSubtitle, { color: tokens.inkMuted }]}>
+                Something went wrong loading your referral stats. Try refreshing.
+              </Text>
+            </View>
+          }
+        >
+          <ReferralSection tokens={tokens} />
+        </ErrorBoundary>
 
         {/* ── Native ad after stats ─────────────────────────────── */}
-        {nativeAdUnit && (
-          <NativeAdBanner
-            adUnit={nativeAdUnit}
-            sessionId={null}
-          />
-        )}
+        <ErrorBoundary fallback={null}>
+          {nativeAdUnit && (
+            <NativeAdBanner
+              adUnit={nativeAdUnit}
+              sessionId={null}
+            />
+          )}
+        </ErrorBoundary>
 
         {/* ── Settings rows ────────────────────────────────────── */}
         <Text style={[styles.section, { color: tokens.inkMuted }]}>ACCOUNT</Text>
@@ -365,9 +417,26 @@ export default function ProfileScreen() {
           <Divider tokens={tokens} />
           <Row
             tokens={tokens}
+            icon="receipt-outline"
+            label="Billing history"
+            onPress={() => router.push('/billing/history')}
+          />
+          {meQuery.data?.tier && meQuery.data.tier !== 'free' && (
+            <>
+              <Divider tokens={tokens} />
+              <Row
+                tokens={tokens}
+                icon="card-outline"
+                label="Manage subscription"
+                onPress={() => router.push('/billing/subscription')}
+              />
+            </>
+          )}
+          <Divider tokens={tokens} />
+          <Row
+            tokens={tokens}
             icon="notifications-outline"
             label="Notifications"
-            trailing={<Text style={[styles.trailingHint, { color: tokens.inkMuted }]}>Coming soon</Text>}
             onPress={handleNotifications}
           />
         </View>
@@ -516,6 +585,7 @@ export default function ProfileScreen() {
       />
       <HelpModal visible={showHelp} onClose={() => setShowHelp(false)} />
       <AboutModal visible={showAbout} onClose={() => setShowAbout(false)} />
+      <NotificationSettingsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
     </SafeAreaView>
   );
 }
@@ -580,13 +650,40 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
 
   const handleShare = async () => {
     if (!link) return;
-    Alert.alert('Referral link', link);
+    
+    try {
+      const message = `🎁 Join me on PagePay and earn points!\n\nSign up with my referral code: ${code}\n\nGet paid to watch ads, study, and complete tasks.\n\n${link}`;
+      
+      const result = await Share.share({
+        message,
+        url: link, // iOS uses this
+        title: 'Join PagePay',
+      });
+
+      if (result.action === Share.sharedAction) {
+        // User shared successfully
+        if (Platform.OS === 'ios') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+    } catch (error) {
+      // Fallback to Alert if share fails
+      Alert.alert('Referral link', link);
+    }
   };
 
   const handleCopy = async () => {
     if (!link) return;
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    
+    try {
+      await Clipboard.setStringAsync(link);
+      setCopied(true);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      // Silent fail - user can still manually copy from display
+      setCopied(false);
+    }
   };
 
   return (
@@ -703,11 +800,29 @@ const styles = StyleSheet.create({
   identifier: {
     fontSize: 13,
   },
+  tierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
   tier: {
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.4,
-    marginTop: 2,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 10,
+  },
+  premiumLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   // Section header
   section: {
@@ -956,3 +1071,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 });
+
+
+export default ProfileScreen;

@@ -24,7 +24,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.database import get_db
@@ -88,8 +88,15 @@ async def buy_airtime(
     reference = _generate_reference()
     amount_kobo = payload.amount_naira * 100
 
-    # 1. Debit wallet
-    if current_user.points_balance < amount_kobo:
+    user_row = (
+        await db.execute(
+            select(User).where(User.id == current_user.id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if user_row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user_row.points_balance < amount_kobo:
         raise HTTPException(status_code=402, detail="Insufficient balance")
 
     await db.execute(
@@ -202,7 +209,15 @@ async def buy_data(
     price_naira = plan.amount
     amount_kobo = price_naira * 100
 
-    if current_user.points_balance < amount_kobo:
+    user_row = (
+        await db.execute(
+            select(User).where(User.id == current_user.id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if user_row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user_row.points_balance < amount_kobo:
         raise HTTPException(status_code=402, detail="Insufficient balance")
 
     await db.execute(
@@ -287,7 +302,15 @@ async def buy_electricity(
     reference = _generate_reference()
     amount_kobo = payload.amount_naira * 100
 
-    if current_user.points_balance < amount_kobo:
+    user_row = (
+        await db.execute(
+            select(User).where(User.id == current_user.id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if user_row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user_row.points_balance < amount_kobo:
         raise HTTPException(status_code=402, detail="Insufficient balance")
 
     await db.execute(
@@ -401,7 +424,15 @@ async def buy_tv(
     price_naira = int(float(plan["amount"]))
     amount_kobo = price_naira * 100
 
-    if current_user.points_balance < amount_kobo:
+    user_row = (
+        await db.execute(
+            select(User).where(User.id == current_user.id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if user_row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user_row.points_balance < amount_kobo:
         raise HTTPException(status_code=402, detail="Insufficient balance")
 
     await db.execute(

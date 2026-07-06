@@ -1,6 +1,8 @@
+import { useCallback } from 'react';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
@@ -19,16 +21,10 @@ type Tier = {
   benefits: string[];
 };
 
-type UserTierInfo = {
-  current_tier: string;
-  subscription_expires_at: string | null;
-  is_premium: boolean;
-  days_remaining: number | null;
-};
-
 export default function PremiumScreen() {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  const qc = useQueryClient();
   const [selectedTier, setSelectedTier] = useState<string>('premium_monthly');
 
   const tiersQ = useQuery({
@@ -41,13 +37,19 @@ export default function PremiumScreen() {
   });
 
   const tierInfoQ = useQuery({
-    queryKey: ['payments', 'tier-info'],
+    queryKey: ['payments', 'subscription'],
     queryFn: async () => {
-      const res = await apiFetch('/api/v1/payments/tier-info');
-      if (!res.ok) throw new Error('Failed to load tier info');
-      return res.json() as Promise<UserTierInfo>;
+      const res = await apiFetch('/api/v1/payments/subscription');
+      if (!res.ok) throw new Error('Failed to load subscription');
+      return res.json() as Promise<any>;
     },
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      qc.invalidateQueries({ queryKey: ['payments', 'subscription'] });
+    }, [qc])
+  );
 
   const handleSelectTier = (tierId: string) => {
     setSelectedTier(tierId);
@@ -65,9 +67,9 @@ export default function PremiumScreen() {
         throw new Error(err.detail || 'Initiation failed');
       }
       const data = await res.json();
-      // Open Paystack checkout in browser
       if (data.payment_url) {
         await Linking.openURL(data.payment_url);
+        qc.invalidateQueries({ queryKey: ['payments', 'subscription'] });
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Something went wrong';
@@ -78,6 +80,39 @@ export default function PremiumScreen() {
   const tiers = tiersQ.data ?? [];
   const userTier = tierInfoQ.data;
   const isPremium = userTier?.is_premium ?? false;
+
+  if (tiersQ.isLoading) {
+    return (
+      <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: tokens.paper }}>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <View style={styles.header}>
+            <Text style={[styles.headline, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
+              Go Premium
+            </Text>
+            <Text style={[styles.subline, { color: tokens.inkMuted }]}>
+              Unlock unlimited study materials and AI tutoring
+            </Text>
+          </View>
+          <SkeletonPage count={3} header={false} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (tiersQ.error) {
+    return (
+      <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: tokens.paper, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <Ionicons name="alert-circle-outline" size={48} color={tokens.error} />
+        <Text style={[styles.errorTitle, { color: tokens.ink }]}>Failed to load plans</Text>
+        <Text style={[styles.errorText, { color: tokens.inkMuted }]}>
+          {tiersQ.error instanceof Error ? tiersQ.error.message : 'Please check your connection and try again.'}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => tiersQ.refetch()}>
+          <Text style={[styles.retryText, { color: tokens.mint }]}>Retry</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: tokens.paper }}>
@@ -97,15 +132,27 @@ export default function PremiumScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.badgeTitle, { color: tokens.mint }]}>Active Subscription</Text>
               <Text style={[styles.badgeSubtitle, { color: tokens.inkMuted }]}>
-                {userTier.current_tier === 'premium_monthly' ? 'Monthly' : 'Yearly'} •{' '}
-                {userTier.days_remaining} days remaining
+                {userTier.tier_name} •{' '}
+                {userTier.days_remaining !== null && userTier.days_remaining > 0
+                  ? `${userTier.days_remaining} days remaining`
+                  : 'Active'}
               </Text>
             </View>
           </View>
         ) : null}
 
-        {tiersQ.isLoading ? (
-          <SkeletonPage count={3} header={false} />
+        {tierInfoQ.isLoading ? (
+          <ActivityIndicator color={tokens.mint} style={{ paddingVertical: 24 }} />
+        ) : tierInfoQ.error ? (
+          <View style={[styles.errorCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+            <Ionicons name="alert-circle-outline" size={20} color={tokens.error} />
+            <Text style={[styles.errorCardText, { color: tokens.ink }]}>
+              {tierInfoQ.error instanceof Error ? tierInfoQ.error.message : 'Could not load subscription status'}
+            </Text>
+            <TouchableOpacity onPress={() => tierInfoQ.refetch()}>
+              <Text style={[styles.retryText, { color: tokens.mint }]}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.tiersContainer}>
             {tiers.map((tier) => (
@@ -144,9 +191,9 @@ export default function PremiumScreen() {
 
                 <View style={styles.button}>
                   <PrimaryButton
-                    title={isPremium && userTier?.current_tier === tier.tier ? 'Current Plan' : 'Choose'}
+                    title={isPremium && userTier?.tier === tier.tier ? 'Current Plan' : 'Choose'}
                     onPress={() => handleUpgrade(tier.tier)}
-                    disabled={isPremium && userTier?.current_tier === tier.tier}
+                    disabled={isPremium && userTier?.tier === tier.tier}
                   />
                 </View>
               </TouchableOpacity>
@@ -204,6 +251,37 @@ const styles = StyleSheet.create({
   loading: {
     paddingVertical: 48,
     alignItems: 'center',
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  errorCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  errorCardText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   tiersContainer: {
     gap: 14,

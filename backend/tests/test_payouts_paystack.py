@@ -81,7 +81,7 @@ async def live_paystack():
 async def _register_and_login(
     client: AsyncClient,
     email: str,
-    password: str = "secret123",
+    password: str = "Secret123!",
 ) -> str:
     await client.post(
         "/api/v1/auth/register",

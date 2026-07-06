@@ -7,7 +7,7 @@ and articles.
 
 import logging
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -98,6 +98,7 @@ async def list_content(
 
 @router.post("/refresh")
 async def admin_refresh_catalog(
+    request: Request,
     current_admin: AdminUser = Depends(require_permission("content.import")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -118,7 +119,7 @@ async def admin_refresh_catalog(
             "content",
             None,
             {"imported": imported, "resliced": str(reslice_summary)},
-            None,
+            request.client.host,
         )
     )
     await db.commit()
@@ -131,6 +132,7 @@ async def admin_refresh_catalog(
 
 @router.delete("/{content_id}")
 async def delete_content(
+    request: Request,
     content_id: int,
     current_admin: AdminUser = Depends(require_permission("content.delete")),
     db: AsyncSession = Depends(get_db),
@@ -151,7 +153,7 @@ async def delete_content(
             "content",
             content_id,
             {"title": content.title},
-            None,
+            request.client.host,
         )
     )
     

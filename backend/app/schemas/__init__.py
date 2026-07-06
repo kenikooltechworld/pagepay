@@ -1,13 +1,30 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Literal
+
+
+def _validate_password_strength(v: str) -> str:
+    if len(v) < 10:
+        raise ValueError("Password must be at least 10 characters")
+    if not any(c.isupper() for c in v):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not any(c.isdigit() for c in v):
+        raise ValueError("Password must contain at least one digit")
+    if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?/~`" for c in v):
+        raise ValueError("Password must contain at least one special character")
+    return v
 
 
 class UserRegister(BaseModel):
     email: EmailStr | None = None
     phone: str | None = None
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=10)
     referral_code: str | None = Field(default=None, max_length=12, description="6-char referral code from inviter")
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, v: str) -> str:
+        return _validate_password_strength(v)
 
 
 class UserLogin(BaseModel):

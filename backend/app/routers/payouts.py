@@ -439,7 +439,7 @@ async def withdraw(
     # current_user passed by the auth dep is from a different session).
     user_row = (
         await db.execute(
-            select(User).where(User.id == current_user.id)
+            select(User).where(User.id == current_user.id).with_for_update()
         )
     ).scalar_one_or_none()
     if user_row is None:
@@ -652,6 +652,19 @@ async def paystack_webhook(
             reference,
         )
         return {"received": True, "handled": False, "reason": "unknown_reference"}
+
+    event_id = str(data.get("id") or "").strip()
+    if event_id and txn.paystack_event_id == event_id:
+        logger.info(
+            "Paystack webhook %s for reference=%s already processed (event_id=%s); ignoring replay",
+            event_name,
+            reference,
+            event_id,
+        )
+        return {"received": True, "handled": True, "event": event_name, "reason": "duplicate_event"}
+
+    if event_id:
+        txn.paystack_event_id = event_id
 
     # Update the row + (for failed) reverse the debit. We commit
     # inside the handler so the next webhook or list call sees the

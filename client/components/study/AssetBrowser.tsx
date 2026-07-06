@@ -58,6 +58,7 @@ export function AssetBrowser({ assets, userBalance, onUnlock, unlockedAssets, on
   const [expanded, setExpanded] = useState<string | null>(null);
   const [mcqState, setMcqState] = useState<Record<number, Record<number, boolean>>>({});
   const [completedQuizzes, setCompletedQuizzes] = useState<Record<number, number>>({});
+  const [submittingQuiz, setSubmittingQuiz] = useState<Record<number, boolean>>({});
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
 
@@ -80,10 +81,18 @@ export function AssetBrowser({ assets, userBalance, onUnlock, unlockedAssets, on
   const handleSubmitQuiz = async (assetId: number, questions: McqContent['questions']) => {
     const score = getMcqScore(assetId, questions);
     if (score === null) return;
-    if (onQuizComplete) {
-      await onQuizComplete(assetId, score);
+    
+    setSubmittingQuiz((prev) => ({ ...prev, [assetId]: true }));
+    try {
+      if (onQuizComplete) {
+        await onQuizComplete(assetId, score);
+      }
+      setCompletedQuizzes((prev) => ({ ...prev, [assetId]: score }));
+    } catch (error) {
+      console.error('Quiz submission failed:', error);
+    } finally {
+      setSubmittingQuiz((prev) => ({ ...prev, [assetId]: false }));
     }
-    setCompletedQuizzes((prev) => ({ ...prev, [assetId]: score }));
   };
 
   const sections: AccordionSection[] = [
@@ -123,6 +132,7 @@ export function AssetBrowser({ assets, userBalance, onUnlock, unlockedAssets, on
       const score = getMcqScore(asset.id, mcq.questions);
       const allAnswered = score !== null;
       const finalScore = completedQuizzes[asset.id] ?? score;
+      const isSubmitting = submittingQuiz[asset.id] ?? false;
 
       return (
         <View style={styles.assetContent}>
@@ -138,8 +148,10 @@ export function AssetBrowser({ assets, userBalance, onUnlock, unlockedAssets, on
           ))}
           {allAnswered && !completedQuizzes[asset.id] && (
             <PrimaryButton
-              title="Submit Quiz"
+              title={isSubmitting ? "Submitting..." : "Submit Quiz"}
               onPress={() => handleSubmitQuiz(asset.id, mcq.questions)}
+              loading={isSubmitting}
+              disabled={isSubmitting}
             />
           )}
           {finalScore !== undefined && (
@@ -167,7 +179,13 @@ export function AssetBrowser({ assets, userBalance, onUnlock, unlockedAssets, on
       return (
         <View style={styles.assetContent}>
           {fc.cards.map((card, idx) => (
-            <Flashcard key={idx} front={card.front} back={card.back} />
+            <Flashcard 
+              key={idx} 
+              front={card.front} 
+              back={card.back}
+              assetId={asset.id}
+              cardIndex={idx}
+            />
           ))}
         </View>
       );

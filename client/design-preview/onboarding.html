@@ -400,6 +400,122 @@
     100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
   }
 
+  /* ============================================================
+     HERO 4 — Reading streak
+     Flame flickers (4 layered paths), embers rise, the today
+     cell pulses, the streak badge pops in.
+     ============================================================ */
+  .h4 .flame { transform-origin: 160px 166px; }
+  .h4 .flame-body {
+    transform-origin: 160px 166px;
+    animation: flame-body 1.1s ease-in-out infinite;
+  }
+  .h4 .flame-mid {
+    transform-origin: 160px 158px;
+    animation: flame-mid 0.9s ease-in-out infinite;
+  }
+  .h4 .flame-inner {
+    transform-origin: 160px 152px;
+    animation: flame-inner 0.7s ease-in-out infinite;
+  }
+  @keyframes flame-body {
+    0%, 100% { transform: scale(1, 1)        translateX(0); }
+    50%      { transform: scale(1.04, 0.96)  translateX(-1px); }
+  }
+  @keyframes flame-mid {
+    0%, 100% { transform: scale(1, 1)        translateY(0); }
+    50%      { transform: scale(0.96, 1.06)  translateY(1px); }
+  }
+  @keyframes flame-inner {
+    0%, 100% { transform: scale(1, 1)        translateX(0); }
+    50%      { transform: scale(1.08, 0.92)  translateX(1px); }
+  }
+  .h4 .ember {
+    opacity: 0;
+    animation: ember-rise 3.2s ease-out infinite;
+  }
+  .h4 .ember.e1 { animation-delay: 0.0s; }
+  .h4 .ember.e2 { animation-delay: 0.6s; }
+  .h4 .ember.e3 { animation-delay: 1.2s; }
+  .h4 .ember.e4 { animation-delay: 1.8s; }
+  .h4 .ember.e5 { animation-delay: 2.4s; }
+  @keyframes ember-rise {
+    0%   { transform: translateY(0)    scale(0.6); opacity: 0; }
+    15%  { opacity: 0.9; }
+    100% { transform: translateY(-90px) scale(1); opacity: 0; }
+  }
+  .h4 .day-cell {
+    transform-origin: center;
+    transition: fill 0.2s ease;
+  }
+  .h4 .day-cell.d6.today {
+    transform-origin: 224px 238px;
+    animation: today-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes today-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.12); }
+  }
+  .h4 .streak-badge {
+    transform-origin: 160px 194px;
+    animation: badge-pop 2.4s ease-in-out infinite;
+  }
+  @keyframes badge-pop {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.04); }
+  }
+
+  /* ============================================================
+     HERO 5 — Go premium
+     Crown bobs over an aura, jewels glint, 4 corner sparks
+     twinkle, the 2× badge pops.
+     ============================================================ */
+  .h5 .crown {
+    transform-origin: 160px 130px;
+    animation: crown-bob 3.2s ease-in-out infinite;
+  }
+  @keyframes crown-bob {
+    0%, 100% { transform: translateY(0)    rotate(0); }
+    50%      { transform: translateY(-6px) rotate(-2deg); }
+  }
+  .h5 .aura {
+    transform-origin: 160px 140px;
+    animation: aura-pulse 2.6s ease-in-out infinite;
+  }
+  @keyframes aura-pulse {
+    0%, 100% { transform: scale(1);    opacity: 0.3; }
+    50%      { transform: scale(1.18); opacity: 0.55; }
+  }
+  .h5 .crown-spark {
+    transform-origin: center;
+    opacity: 0;
+    animation: spark-twinkle 2.4s ease-in-out infinite;
+  }
+  .h5 .crown-spark.s1 { animation-delay: 0.0s; }
+  .h5 .crown-spark.s2 { animation-delay: 0.6s; }
+  .h5 .crown-spark.s3 { animation-delay: 1.2s; }
+  .h5 .crown-spark.s4 { animation-delay: 1.8s; }
+  @keyframes spark-twinkle {
+    0%, 100% { transform: scale(0.4) rotate(0);    opacity: 0; }
+    50%      { transform: scale(1.2) rotate(45deg); opacity: 1; }
+  }
+  .h5 .mult-badge {
+    transform-origin: 160px 244px;
+    animation: mult-pop 1.8s ease-in-out infinite;
+  }
+  @keyframes mult-pop {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+  .h5 .premium-eyebrow {
+    transform-origin: 160px 200px;
+    animation: eyebrow-nod 2s ease-in-out infinite;
+  }
+  @keyframes eyebrow-nod {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.05); }
+  }
+
   /* Demo nav */
   .nav {
     display: flex; align-items: center; justify-content: center;
@@ -427,10 +543,11 @@
 
   <h1>PagePay — Onboarding (motion)</h1>
   <p class="lede">
-    Three screens with continuous character motion: coins drop from a book, a quiz card stack swaps
-    with an orbiting AI spark, a wallet opens and coins stack with a pulsing ₦. The CTA button has
-    a pulse halo, ripple on tap, and a confetti burst on the final screen. Use prev/next to step
-    through, or <strong>tap the CTA</strong> on screen 3 for the confetti.
+    Five screens with continuous character motion: coins drop from a book, a quiz card stack swaps
+    with an orbiting AI spark, a wallet opens and coins stack with a pulsing ₦, a flame burns over a
+    7-day streak grid with rising embers, and a crown bobs over a 2× multiplier with twinkling
+    sparks. The CTA button has a pulse halo, ripple on tap, and a confetti burst on the final screen.
+    Use prev/next to step through, or <strong>tap the CTA</strong> on screen 5 for the confetti.
   </p>
 
   <div class="board" id="board">
@@ -514,6 +631,8 @@
         <div class="footer">
           <div class="dots">
             <div class="dot active"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
             <div class="dot"></div>
             <div class="dot"></div>
           </div>
@@ -615,6 +734,8 @@
             <div class="dot"></div>
             <div class="dot active"></div>
             <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
           </div>
           <div class="cta-wrap">
             <button class="cta" data-screen="2">Next</button>
@@ -711,9 +832,241 @@
             <div class="dot"></div>
             <div class="dot"></div>
             <div class="dot active"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
           </div>
           <div class="cta-wrap">
-            <button class="cta" data-screen="3" id="final-cta">Get started</button>
+            <button class="cta" data-screen="3">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-indicator"></div>
+    </div>
+
+    <!-- ============= SCREEN 4 — Reading streak ============= -->
+    <div class="phone inactive" data-screen="4">
+      <div class="status">
+        <span>9:41</span>
+        <span class="right">
+          <svg width="18" height="11" viewBox="0 0 18 11"><g fill="#0E1116"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="6" rx="1"/><rect x="10" y="3" width="3" height="8" rx="1"/><rect x="15" y="0" width="3" height="11" rx="1"/></g></svg>
+          <svg width="16" height="11" viewBox="0 0 16 11"><path d="M8 11 L8 7 M2 6 a10 10 0 0 1 12 0 M5 9 a6 6 0 0 1 6 0" stroke="#0E1116" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x="0.5" y="0.5" width="22" height="11" rx="3" fill="none" stroke="#0E1116"/><rect x="2" y="2" width="19" height="8" rx="1.5" fill="#0E1116"/><rect x="23.5" y="4" width="2" height="4" rx="1" fill="#0E1116"/></svg>
+        </span>
+      </div>
+
+      <div class="onb">
+        <div class="top"><span class="skip">Skip</span></div>
+
+        <div class="hero h4">
+          <svg viewBox="0 0 320 320" fill="none" aria-label="Flame with a 7-day reading streak grid">
+            <ellipse cx="160" cy="282" rx="120" ry="12" fill="#0E7C66" opacity="0.10"/>
+
+            <!-- 7-day streak row (rounded rects, lit up M T W T F S S) -->
+            <g class="streak-row">
+              <g class="day-cell d1">
+                <rect x="40"  y="220" width="28" height="36" rx="6" fill="#0E7C66"/>
+                <text x="54"  y="244" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700">M</text>
+              </g>
+              <g class="day-cell d2">
+                <rect x="74"  y="220" width="28" height="36" rx="6" fill="#0E7C66"/>
+                <text x="88"  y="244" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700">T</text>
+              </g>
+              <g class="day-cell d3">
+                <rect x="108" y="220" width="28" height="36" rx="6" fill="#0E7C66"/>
+                <text x="122" y="244" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700">W</text>
+              </g>
+              <g class="day-cell d4">
+                <rect x="142" y="220" width="28" height="36" rx="6" fill="#0E7C66"/>
+                <text x="156" y="244" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700">T</text>
+              </g>
+              <g class="day-cell d5">
+                <rect x="176" y="220" width="28" height="36" rx="6" fill="#0E7C66"/>
+                <text x="190" y="244" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700">F</text>
+              </g>
+              <g class="day-cell d6 today">
+                <rect x="210" y="220" width="28" height="36" rx="6" fill="#0E7C66" stroke="#0E7C66" stroke-width="3"/>
+                <rect x="207" y="217" width="34" height="42" rx="8" fill="none" stroke="#0E7C66" stroke-width="2" opacity="0.4"/>
+                <text x="224" y="244" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700">S</text>
+              </g>
+              <g class="day-cell d7">
+                <rect x="244" y="220" width="28" height="36" rx="6" fill="#E6F1ED" stroke="#0E7C66" stroke-width="2" stroke-dasharray="2 3"/>
+                <text x="258" y="244" text-anchor="middle" fill="#0E7C66" font-family="'Space Grotesk', system-ui, sans-serif" font-size="11" font-weight="700" opacity="0.5">S</text>
+              </g>
+            </g>
+
+            <!-- "7 day streak" badge -->
+            <g class="streak-badge">
+              <rect x="100" y="180" width="120" height="28" rx="14" fill="#E6F1ED" stroke="#0E7C66" stroke-width="2"/>
+              <text x="160" y="199" text-anchor="middle" fill="#0E7C66" font-family="'Space Grotesk', system-ui, sans-serif" font-size="13" font-weight="700">7 day streak</text>
+            </g>
+
+            <!-- The flame (animated flicker) -->
+            <g class="flame" transform="translate(160, 130)">
+              <!-- Outer flame body -->
+              <path class="flame-body" d="
+                M 0 -56
+                C 22 -32  28 -16  28  -4
+                C 28  22  14  36   0  36
+                C -14 36  -28 22  -28  -4
+                C -28 -16 -22 -32  0 -56
+                Z" fill="#C2410C"/>
+              <!-- Mid flame (lighter) -->
+              <path class="flame-mid" d="
+                M 0 -38
+                C 14 -22  18  -8  18   2
+                C 18  18  10  28   0  28
+                C -10 28 -18 18  -18  2
+                C -18 -8 -14 -22  0 -38
+                Z" fill="#FB923C"/>
+              <!-- Inner flame (yellow/cream) -->
+              <path class="flame-inner" d="
+                M 0 -22
+                C 8 -12  10  -2  10   6
+                C 10  16  6  22   0  22
+                C -6 22 -10 16 -10  6
+                C -10 -2 -8 -12  0 -22
+                Z" fill="#FBBF24"/>
+              <!-- Hottest core -->
+              <ellipse cx="0" cy="14" rx="4" ry="6" fill="#FBFAF6"/>
+            </g>
+
+            <!-- Floating embers (5) -->
+            <g class="ember e1">
+              <circle cx="120" cy="80" r="3" fill="#C2410C"/>
+            </g>
+            <g class="ember e2">
+              <circle cx="200" cy="60" r="2.5" fill="#FB923C"/>
+            </g>
+            <g class="ember e3">
+              <circle cx="100" cy="100" r="2" fill="#FBBF24"/>
+            </g>
+            <g class="ember e4">
+              <circle cx="220" cy="90" r="2.5" fill="#C2410C"/>
+            </g>
+            <g class="ember e5">
+              <circle cx="180" cy="40" r="2" fill="#FB923C"/>
+            </g>
+
+            <!-- "Today" label -->
+            <text x="160" y="280" text-anchor="middle" fill="#6B7280" font-family="'Space Grotesk', system-ui, sans-serif" font-size="10" font-weight="500" letter-spacing="0.8">KEEP THE STREAK ALIVE</text>
+          </svg>
+        </div>
+
+        <div class="copy">
+          <span class="eyebrow">DAILY STREAK</span>
+          <h2>Read every day, earn more</h2>
+          <p class="body">Build a 7-day streak. Unlock bonus point multipliers the longer you read in a row.</p>
+        </div>
+
+        <div class="footer">
+          <div class="dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot active"></div>
+            <div class="dot"></div>
+          </div>
+          <div class="cta-wrap">
+            <button class="cta" data-screen="4">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-indicator"></div>
+    </div>
+
+    <!-- ============= SCREEN 5 — Go premium ============= -->
+    <div class="phone inactive" data-screen="5">
+      <div class="status">
+        <span>9:41</span>
+        <span class="right">
+          <svg width="18" height="11" viewBox="0 0 18 11"><g fill="#0E1116"><rect x="0" y="7" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="6" rx="1"/><rect x="10" y="3" width="3" height="8" rx="1"/><rect x="15" y="0" width="3" height="11" rx="1"/></g></svg>
+          <svg width="16" height="11" viewBox="0 0 16 11"><path d="M8 11 L8 7 M2 6 a10 10 0 0 1 12 0 M5 9 a6 6 0 0 1 6 0" stroke="#0E1116" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x="0.5" y="0.5" width="22" height="11" rx="3" fill="none" stroke="#0E1116"/><rect x="2" y="2" width="19" height="8" rx="1.5" fill="#0E1116"/><rect x="23.5" y="4" width="2" height="4" rx="1" fill="#0E1116"/></svg>
+        </span>
+      </div>
+
+      <div class="onb">
+        <div class="top"><span class="skip disabled">Skip</span></div>
+
+        <div class="hero h5">
+          <svg viewBox="0 0 320 320" fill="none" aria-label="Crown above a 2x multiplier">
+            <ellipse cx="160" cy="282" rx="120" ry="12" fill="#0E7C66" opacity="0.10"/>
+
+            <!-- AURA behind the crown -->
+            <circle class="aura" cx="160" cy="140" r="100" fill="#E6F1ED" opacity="0.4"/>
+
+            <!-- The crown (animated bob) -->
+            <g class="crown" transform="translate(160, 130)">
+              <!-- Crown body -->
+              <path d="
+                M -50  10
+                L -50 -10
+                L -32 -28
+                L -16  -8
+                L   0 -34
+                L  16  -8
+                L  32 -28
+                L  50 -10
+                L  50  10
+                Z" fill="#0E7C66"/>
+              <!-- Crown band -->
+              <rect x="-50" y="10" width="100" height="14" rx="2" fill="#0B5C4B"/>
+              <!-- Jewels on the band -->
+              <circle cx="-30" cy="17" r="3" fill="#FBBF24"/>
+              <circle cx="0"   cy="17" r="3.5" fill="#C2410C"/>
+              <circle cx="30"  cy="17" r="3" fill="#FBBF24"/>
+              <!-- Tips -->
+              <circle cx="-32" cy="-28" r="4" fill="#FBBF24"/>
+              <circle cx="0"   cy="-34" r="5" fill="#C2410C"/>
+              <circle cx="32"  cy="-28" r="4" fill="#FBBF24"/>
+            </g>
+
+            <!-- Sparkles around the crown -->
+            <g class="crown-spark s1">
+              <path d="M 80 80 L 82 86 L 88 88 L 82 90 L 80 96 L 78 90 L 72 88 L 78 86 Z" fill="#0E7C66"/>
+            </g>
+            <g class="crown-spark s2">
+              <path d="M 240 90 L 242 96 L 248 98 L 242 100 L 240 106 L 238 100 L 232 98 L 238 96 Z" fill="#0E7C66"/>
+            </g>
+            <g class="crown-spark s3">
+              <path d="M 70 180 L 72 184 L 76 186 L 72 188 L 70 192 L 68 188 L 64 186 L 68 184 Z" fill="#0E7C66"/>
+            </g>
+            <g class="crown-spark s4">
+              <path d="M 250 170 L 252 174 L 256 176 L 252 178 L 250 182 L 248 178 L 244 176 L 248 174 Z" fill="#0E7C66"/>
+            </g>
+
+            <!-- 2× MULTIPLIER badge below the crown -->
+            <g class="mult-badge">
+              <rect x="100" y="220" width="120" height="48" rx="24" fill="#FBFAF6" stroke="#0E7C66" stroke-width="3"/>
+              <text x="160" y="252" text-anchor="middle" fill="#0E7C66" font-family="'Space Grotesk', system-ui, sans-serif" font-size="22" font-weight="700">2× POINTS</text>
+            </g>
+
+            <!-- "Premium" eyebrow -->
+            <g class="premium-eyebrow">
+              <rect x="124" y="190" width="72" height="20" rx="10" fill="#0E7C66"/>
+              <text x="160" y="204" text-anchor="middle" fill="#FBFAF6" font-family="'Space Grotesk', system-ui, sans-serif" font-size="10" font-weight="700" letter-spacing="1.2">PREMIUM</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="copy">
+          <span class="eyebrow">GO PREMIUM</span>
+          <h2>2× points, zero ads</h2>
+          <p class="body">Unlock premium for ad-free reading, double your points, and get unlimited AI study material.</p>
+        </div>
+
+        <div class="footer">
+          <div class="dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot active"></div>
+          </div>
+          <div class="cta-wrap">
+            <button class="cta" data-screen="5" id="final-cta">Get started</button>
             <div class="confetti" id="confetti"></div>
           </div>
         </div>
@@ -726,14 +1079,14 @@
 
   <div class="nav">
     <button id="prev">Prev</button>
-    <span class="step" id="step">1 / 3</span>
+    <span class="step" id="step">1 / 5</span>
     <button id="next">Next</button>
   </div>
 
 <script>
   /* =========================================================
      Phone navigation + animation lifecycle.
-     We use one board, three phone elements. On step change,
+     We use one board, five phone elements. On step change,
      we toggle .active / .inactive (slide-in from right) /
      .inactive-left (slide-out to left).
      ========================================================= */
@@ -839,7 +1192,7 @@
     });
   });
 
-  // Confetti on the final CTA (screen 3)
+  // Confetti on the final CTA (screen 5)
   const colors = ['#0E7C66', '#34C39B', '#E6F1ED', '#C2410C', '#FDEFE7', '#0B5C4B'];
   document.getElementById('final-cta').addEventListener('click', (e) => {
     const wrap = document.getElementById('confetti');
@@ -869,8 +1222,8 @@
   // Skip button advances past the onboarding
   document.querySelectorAll('.onb .skip').forEach(el => {
     el.addEventListener('click', () => {
-      // demo: jump to last screen
-      setActive(2);
+      // demo: jump to last screen (index 4 = screen 5)
+      setActive(phones.length - 1);
     });
   });
 

@@ -192,6 +192,10 @@ export function McqQuestion({
               onPress={handleOptionPress}
               disabled={showAnswer}
               activeOpacity={1}
+              accessibilityRole="button"
+              accessibilityLabel={`Option ${String.fromCharCode(65 + idx)}: ${opt}`}
+              accessibilityState={{ disabled: showAnswer, selected: selected === idx }}
+              accessibilityHint={showAnswer ? undefined : "Select this answer"}
               style={[
                 styles.option,
                 { 
@@ -207,10 +211,10 @@ export function McqQuestion({
               </View>
               <Text style={[styles.optionText, { color: tokens.ink }]}>{opt}</Text>
               {showAnswer && idx === correct_index && (
-                <Ionicons name="checkmark-circle" size={20} color={tokens.mint} />
+                <Ionicons name="checkmark-circle" size={20} color={tokens.mint} accessibilityLabel="Correct answer" />
               )}
               {showAnswer && idx === selected && idx !== correct_index && (
-                <Ionicons name="close-circle" size={20} color={tokens.signal} />
+                <Ionicons name="close-circle" size={20} color={tokens.signal} accessibilityLabel="Incorrect answer" />
               )}
             </AnimatedTouchable>
           );

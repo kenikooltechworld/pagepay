@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 async def test_background_pauses_and_resume(client: AsyncClient):
     register = await client.post(
         "/api/v1/auth/register",
-        json={"email": "pause@example.com", "password": "secret123"},
+        json={"email": "pause@example.com", "password": "Secret123!"},
     )
     token = register.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}

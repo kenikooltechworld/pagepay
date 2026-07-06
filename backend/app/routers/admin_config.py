@@ -7,7 +7,7 @@ All changes are logged in audit trail.
 
 import logging
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ def _log_admin_action(
     target_type: str,
     target_id: int | None,
     changes: dict | None,
-    ip: str | None,
+    ip: str | None = None,
     result: str = "success",
     error: str | None = None,
 ):
@@ -75,6 +75,7 @@ async def list_config(
 
 @router.put("/{key}")
 async def update_config(
+    request: Request,
     key: str,
     payload: ConfigUpdateRequest,
     current_admin: AdminUser = Depends(require_permission("config.edit")),
@@ -101,7 +102,7 @@ async def update_config(
             "config",
             None,
             {"key": key, "old": old, "new": payload.value},
-            None,
+            request.client.host,
         )
     )
     

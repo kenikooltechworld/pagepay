@@ -11,3 +11,4 @@ export { ErrorShake } from '../ErrorShake';
 export { SuccessRedirect } from '../SuccessRedirect';
 export { AuthTabSwitch } from '../AuthTabSwitch';
 export { PasswordStrengthBar } from '../PasswordStrengthBar';
+export { SplashOverlay } from '../SplashOverlay';

@@ -9,25 +9,28 @@ DATABASE_URL = settings.database_url
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# For Render PostgreSQL internal connections:
-# The internal URL uses self-signed certificates, so we skip verification
-# This is safe because it's within Render's private network
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE
+connect_args: dict[str, object] = {
+    "server_settings": {
+        "application_name": "pagepay_backend",
+    },
+}
+
+if DATABASE_URL.startswith("postgresql+asyncpg://"):
+    ssl_context = ssl.create_default_context()
+    if settings.environment == "production":
+        ssl_context.check_hostname = True
+        ssl_context.verify_mode = ssl.CERT_REQUIRED
+    else:
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+    connect_args["ssl"] = ssl_context
 
 engine = create_async_engine(
     DATABASE_URL,
     pool_size=20,
     max_overflow=10,
     pool_recycle=1800,
-    # Render internal PostgreSQL: skip SSL cert verification (self-signed)
-    connect_args={
-        "ssl": ssl_context,
-        "server_settings": {
-            "application_name": "pagepay_backend",
-        },
-    },
+    connect_args=connect_args,
     pool_pre_ping=False,
     echo=False,
 )

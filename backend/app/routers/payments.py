@@ -1,130 +1,82 @@
-"""Payments router — Phase 4.
+"""Premium Subscription Payments
 
-Premium subscription purchases via Paystack. Endpoints:
-
-  POST /payments/initiate     — begin checkout (returns payment URL)
-  POST /payments/webhook      — Paystack webhook (confirms payment, upgrades tier)
-  GET  /payments/tiers        — list available tiers + prices (OTA-configurable)
-  GET  /payments/tier-info    — user's current tier + expiry
+Paystack-powered subscription payments for premium tiers.
+Users upgrade from FREE → PREMIUM_MONTHLY or PREMIUM_YEARLY.
 """
 
-import hashlib
-import hmac
-import json
 import logging
-import uuid
-from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
-from app.models import User, Payment, UserTier
+from app.models import User, UserTier, Payment
 from app.routers.auth import get_current_user
 from app.schemas import (
     PaymentInitiateRequest,
     PaymentInitiateResponse,
     PaymentWebhookResponse,
-    TierInfo,
     UserTierInfo,
+    TierInfo,
 )
+from app.services.paystack import get_client
+from app.services.subscription import (
+    get_tier_price_kobo,
+    calculate_subscription_end_date,
+    format_tier_name,
+    get_subscription_status,
+)
+from app.config import settings
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/payments", tags=["payments"])
 
-# ── Pricing tiers (OTA-tuned via app_config, but with sensible defaults) ──
 
-TIER_PRICING = {
-    "premium_monthly": {
-        "display_name": "Premium Monthly",
-        "price_kobo": 50_000,  # ₦500
-        "duration_days": 30,
-        "benefits": [
-            "Unlimited study materials",
-            "AI tutor available 24/7",
-            "Ad-free reading",
-            "Export study notes",
-        ],
-    },
-    "premium_yearly": {
-        "display_name": "Premium Yearly",
-        "price_kobo": 500_000,  # ₦5,000 (2 months free)
-        "duration_days": 365,
-        "benefits": [
-            "All monthly features",
-            "Early access to new AI features",
-            "Priority support",
-            "2x study points multiplier",
-        ],
-    },
+# Tier pricing configuration
+TIER_BENEFITS = {
+    UserTier.PREMIUM_MONTHLY: [
+        "Ad-free study materials",
+        "2x reading points (10 pts per 10 min)",
+        "Priority AI generation",
+        "Gold Premium badge",
+        "Monthly billing",
+    ],
+    UserTier.PREMIUM_YEARLY: [
+        "Ad-free study materials",
+        "2x reading points (10 pts per 10 min)",
+        "Priority AI generation",
+        "Gold Premium badge",
+        "Save ₦1,000 per year",
+    ],
 }
 
 
-# ── Helpers ────────────────────────────────────────────────────────────
-
-
-async def _get_tier_pricing(db: AsyncSession, tier: str) -> dict:
-    """Fetch tier pricing from app_config or fall back to default."""
-    # In production, we'd query app_config[f"tier.{tier}.price_kobo"]
-    # For now, use hardcoded TIER_PRICING
-    return TIER_PRICING.get(tier, TIER_PRICING["premium_monthly"])
-
-
-def _compute_subscription_expiry(tier: str) -> datetime:
-    """Calculate subscription expiry date."""
-    duration = TIER_PRICING[tier].get("duration_days", 30)
-    return datetime.utcnow() + timedelta(days=duration)
-
-
-# ── GET /payments/tiers ────────────────────────────────────────────────
-
-
 @router.get("/tiers", response_model=list[TierInfo])
-async def list_tiers():
-    """List available premium tiers (public endpoint, no auth required)."""
-    return [
-        TierInfo(
-            tier=tier_key,
-            display_name=tier_info["display_name"],
-            price_kobo=tier_info["price_kobo"],
-            duration_days=tier_info["duration_days"],
-            benefits=tier_info["benefits"],
-        )
-        for tier_key, tier_info in TIER_PRICING.items()
-    ]
+async def get_tier_pricing():
+    """Get available subscription tiers and pricing."""
+    tiers = []
+    
+    for tier in [UserTier.PREMIUM_MONTHLY, UserTier.PREMIUM_YEARLY]:
+        duration_days = 30 if tier == UserTier.PREMIUM_MONTHLY else 365
+        tiers.append(TierInfo(
+            tier=tier.value,
+            display_name=format_tier_name(tier),
+            price_kobo=get_tier_price_kobo(tier),
+            duration_days=duration_days,
+            benefits=TIER_BENEFITS[tier],
+        ))
+    
+    return tiers
 
 
-# ── GET /payments/tier-info ────────────────────────────────────────────
-
-
-@router.get("/tier-info", response_model=UserTierInfo)
-async def get_tier_info(
+@router.get("/subscription", response_model=dict)
+async def get_subscription_status_endpoint(
     current_user: User = Depends(get_current_user),
 ):
-    """Get user's current tier + expiry."""
-    is_premium = current_user.tier != UserTier.FREE
-    days_remaining = None
-    
-    if is_premium and current_user.subscription_expires_at:
-        now = datetime.utcnow()
-        delta = current_user.subscription_expires_at - now
-        days_remaining = max(0, delta.days)
-        if days_remaining == 0:
-            # Expired
-            is_premium = False
-    
-    return UserTierInfo(
-        current_tier=current_user.tier.value,
-        subscription_expires_at=current_user.subscription_expires_at,
-        is_premium=is_premium,
-        days_remaining=days_remaining,
-    )
-
-
-# ── POST /payments/initiate ────────────────────────────────────────────
+    """Get user's current subscription status."""
+    return get_subscription_status(current_user)
 
 
 @router.post("/initiate", response_model=PaymentInitiateResponse)
@@ -133,211 +85,227 @@ async def initiate_payment(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Initiate a premium subscription purchase.
+    """Initiate a premium subscription payment via Paystack.
     
-    Creates a Payment record in pending state, calls Paystack's
-    checkout endpoint, returns the payment URL.
+    Returns a checkout URL for the user to complete payment.
     """
     if not settings.paystack_secret_key:
         raise HTTPException(status_code=503, detail="Payments not configured")
     
-    tier_pricing = await _get_tier_pricing(db, payload.tier)
-    amount_kobo = tier_pricing["price_kobo"]
+    # Parse tier enum
+    try:
+        tier = UserTier(payload.tier)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid tier: {payload.tier}")
     
-    # Generate unique reference for this payment
-    provider_tx_ref = f"pp_{current_user.id}_{uuid.uuid4().hex[:8]}"
+    # Get tier price
+    amount_kobo = get_tier_price_kobo(tier)
     
-    # Create Payment record (pending)
+    # Generate unique reference
+    import uuid
+    tx_ref = f"PP-{current_user.id}-{uuid.uuid4().hex[:12]}"
+    
+    # Create pending payment record
     payment = Payment(
         user_id=current_user.id,
-        tier=payload.tier,
+        tier=tier.value,
         amount_kobo=amount_kobo,
         provider=payload.provider,
-        provider_tx_ref=provider_tx_ref,
+        provider_tx_ref=tx_ref,
         status="pending",
     )
     db.add(payment)
     await db.commit()
-    await db.refresh(payment)
     
-    try:
-        # Build Paystack inline checkout URL
-        # Documentation: https://paystack.com/docs/payments/accept-payments/#inline
-        paystack_base = "https://checkout.paystack.com"
+    # Initialize Paystack checkout
+    if payload.provider == "paystack":
+        import httpx
         
-        metadata = json.dumps({"user_id": current_user.id, "tier": payload.tier})
-        params = {
-            "key": settings.paystack_public_key,
-            "email": current_user.email or current_user.phone or "",
-            "amount": amount_kobo,
-            "reference": provider_tx_ref,
-            "metadata": metadata,
+        url = "https://api.paystack.co/transaction/initialize"
+        headers = {
+            "Authorization": f"Bearer {settings.paystack_secret_key}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "email": current_user.email,
+            "amount": amount_kobo,  # Paystack expects kobo
+            "reference": tx_ref,
+            "currency": "NGN",
+            "callback_url": f"{settings.frontend_url}/subscription/success",
+            "metadata": {
+                "user_id": current_user.id,
+                "tier": tier.value,
+                "custom_fields": [
+                    {
+                        "display_name": "Tier",
+                        "variable_name": "tier",
+                        "value": format_tier_name(tier),
+                    }
+                ]
+            }
         }
         
-        payment_url = f"{paystack_base}?{urlencode(params)}"
-        
-        return PaymentInitiateResponse(
-            payment_url=payment_url,
-            provider_tx_ref=provider_tx_ref,
-            provider=payload.provider,
-            amount_kobo=amount_kobo,
-            tier=payload.tier,
-        )
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(url, json=body, headers=headers)
+                
+                if response.status_code != 200:
+                    logger.error(f"Paystack init failed: {response.text}")
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Payment provider unavailable"
+                    )
+                
+                data = response.json()
+                
+                if not data.get("status"):
+                    raise HTTPException(
+                        status_code=502,
+                        detail=data.get("message", "Payment initialization failed")
+                    )
+                
+                authorization_url = data["data"]["authorization_url"]
+                
+                return PaymentInitiateResponse(
+                    payment_url=authorization_url,
+                    provider_tx_ref=tx_ref,
+                    provider=payload.provider,
+                    amount_kobo=amount_kobo,
+                    tier=tier.value,
+                )
+                
+        except httpx.RequestError as e:
+            logger.error(f"Paystack request error: {e}")
+            raise HTTPException(
+                status_code=502,
+                detail="Could not reach payment provider"
+            )
     
-    except Exception as exc:
-        logger.error("Payment initiate failed: %s", exc)
-        raise HTTPException(status_code=502, detail="Payment initiation failed") from exc
+    else:
+        raise HTTPException(status_code=400, detail=f"Provider {payload.provider} not supported")
 
 
-# ── POST /payments/webhook ────────────────────────────────────────────
-
-
-@router.post("/webhook", response_model=PaymentWebhookResponse)
-async def handle_payment_webhook(
+@router.post("/paystack/webhook", response_model=PaymentWebhookResponse)
+async def paystack_webhook(
     request: Request,
+    x_paystack_signature: str = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Receive Paystack webhook for payment confirmations.
+    """Handle Paystack webhook events.
     
-    Validates signature, finds Payment record, and on success:
-    - Sets status='success'
-    - Updates user.tier + subscription_expires_at
-    - Marks webhook_confirmed=True
+    Verifies webhook signature using Paystack secret key (HMAC-SHA512).
+    Processes successful payments and upgrades user tier.
     """
-    # Get raw body for signature verification
-    raw_body = await request.body()
-    
-    # Verify signature (Paystack signs with your secret key, not a separate webhook secret)
     if not settings.paystack_secret_key:
-        logger.warning("Paystack secret key not configured")
-        return PaymentWebhookResponse(status="skipped", message="Paystack not configured")
+        logger.error("Paystack secret key not configured")
+        return PaymentWebhookResponse(status="error", message="Webhook not configured")
     
-    signature = request.headers.get("X-Paystack-Signature", "")
-    expected_sig = hmac.new(
-        settings.paystack_secret_key.encode(),
-        raw_body,
-        hashlib.sha512,
-    ).hexdigest()
+    # Get raw body for signature verification
+    body = await request.body()
     
-    if not hmac.compare_digest(signature, expected_sig):
-        logger.warning("Webhook signature mismatch")
-        raise HTTPException(status_code=403, detail="Invalid signature")
+    # Verify signature - Paystack uses the SECRET KEY for HMAC-SHA512
+    if not get_client().verify_webhook_signature(
+        raw_body=body,
+        signature_header=x_paystack_signature,
+        secret=settings.paystack_secret_key,
+    ):
+        logger.warning("Invalid Paystack webhook signature")
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
     
+    # Parse webhook data
     try:
-        body = json.loads(raw_body)
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON in webhook body")
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        data = await request.json()
+    except Exception:
+        logger.error("Could not parse webhook JSON")
+        return PaymentWebhookResponse(status="error", message="Invalid JSON")
     
-    event = body.get("event", "")
-    data = body.get("data", {})
+    event = data.get("event")
+    event_data = data.get("data", {})
     
-    # Only handle charge.success
+    # Only process successful charges
     if event != "charge.success":
-        logger.info("Ignoring webhook event: %s", event)
         return PaymentWebhookResponse(status="ignored", message=f"Event {event} not handled")
     
-    provider_tx_ref = data.get("reference")
-    if not provider_tx_ref:
-        logger.error("No reference in webhook data")
-        raise HTTPException(status_code=400, detail="Missing reference")
+    tx_ref = event_data.get("reference")
+    if not tx_ref:
+        logger.error("Webhook missing reference")
+        return PaymentWebhookResponse(status="error", message="Missing reference")
     
-    # Find Payment record
+    # Find payment record
     result = await db.execute(
-        select(Payment).where(Payment.provider_tx_ref == provider_tx_ref)
+        select(Payment).where(Payment.provider_tx_ref == tx_ref)
     )
     payment = result.scalar_one_or_none()
     
     if not payment:
-        logger.warning("Payment not found for reference: %s", provider_tx_ref)
-        return PaymentWebhookResponse(status="ignored", message="Payment not found")
+        logger.warning(f"Payment not found for reference: {tx_ref}")
+        return PaymentWebhookResponse(status="error", message="Payment not found")
     
-    if payment.status == "success":
-        logger.info("Payment already confirmed: %s", provider_tx_ref)
-        return PaymentWebhookResponse(status="already_confirmed", message="Payment already processed")
+    # Idempotency: already processed
+    if payment.webhook_confirmed:
+        return PaymentWebhookResponse(status="success", message="Already processed")
     
-    # Verify payment status from Paystack
-    paystack_status = data.get("status", "").lower()
-    if paystack_status != "success":
-        # Payment failed or pending on Paystack side
-        await db.execute(
-            update(Payment)
-            .where(Payment.id == payment.id)
-            .values(status="failed", confirmed_at=datetime.utcnow())
-        )
-        await db.commit()
-        logger.warning("Payment failed in Paystack: %s", provider_tx_ref)
-        return PaymentWebhookResponse(status="failed", message="Payment failed in Paystack")
+    # Update payment status
+    payment.status = "success"
+    payment.webhook_confirmed = True
+    payment.confirmed_at = datetime.utcnow()
     
-    # ✅ Payment successful — check payment type
-    
-    # Check if this is a wallet deposit (tier == "wallet_deposit")
-    if payment.tier == "wallet_deposit":
-        # Calculate actual deposit amount (user paid total, but we credit only deposit amount)
-        # User pays: deposit + fee (1.5%)
-        # We credit: deposit amount only
-        # Example: User pays ₦10,150 (₦10,000 + ₦150 fee), we credit 1,000,000 points
+    # Upgrade user tier
+    try:
+        tier = UserTier(payment.tier)
+        expires_at = calculate_subscription_end_date(tier)
         
-        total_paid_kobo = payment.amount_kobo
-        # Reverse calculate: total = deposit + (deposit * 0.015)
-        # total = deposit * 1.015
-        # deposit = total / 1.015
-        deposit_amount_kobo = int(total_paid_kobo / 1.015)
-        
-        # Credit user's wallet with deposit amount (not total paid)
         await db.execute(
             update(User)
             .where(User.id == payment.user_id)
-            .values(points_balance=User.points_balance + deposit_amount_kobo)
-        )
-        
-        await db.execute(
-            update(Payment)
-            .where(Payment.id == payment.id)
             .values(
-                status="success",
-                webhook_confirmed=True,
-                confirmed_at=datetime.utcnow(),
+                tier=tier,
+                subscription_expires_at=expires_at,
             )
         )
         
         await db.commit()
         
         logger.info(
-            "Wallet deposit confirmed: user_id=%s paid=%d kobo, credited=%d kobo (fee deducted)",
-            payment.user_id, total_paid_kobo, deposit_amount_kobo
+            f"User {payment.user_id} upgraded to {tier.value} "
+            f"(expires {expires_at.isoformat()})"
         )
         
         return PaymentWebhookResponse(
-            status="confirmed",
-            message=f"Wallet credited with {deposit_amount_kobo} points"
-        )
-    
-    # Premium subscription — upgrade user's tier
-    expiry = _compute_subscription_expiry(payment.tier)
-    tier_enum = UserTier[payment.tier.upper()]  # Convert string to enum
-    
-    await db.execute(
-        update(User)
-        .where(User.id == payment.user_id)
-        .values(
-            tier=tier_enum,
-            subscription_expires_at=expiry,
-        )
-    )
-    
-    await db.execute(
-        update(Payment)
-        .where(Payment.id == payment.id)
-        .values(
             status="success",
-            webhook_confirmed=True,
-            confirmed_at=datetime.utcnow(),
+            message=f"User upgraded to {tier.value}"
         )
+        
+    except Exception as e:
+        logger.error(f"Failed to upgrade user {payment.user_id}: {e}")
+        await db.rollback()
+        return PaymentWebhookResponse(status="error", message=str(e))
+
+
+@router.get("/history", response_model=list[dict])
+async def get_payment_history(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get user's payment history."""
+    result = await db.execute(
+        select(Payment)
+        .where(Payment.user_id == current_user.id)
+        .order_by(Payment.created_at.desc())
     )
+    payments = result.scalars().all()
     
-    await db.commit()
-    
-    logger.info("Payment confirmed and tier upgraded: user_id=%s tier=%s", payment.user_id, payment.tier)
-    
-    return PaymentWebhookResponse(status="confirmed", message="Payment confirmed and tier upgraded")
+    return [
+        {
+            "id": p.id,
+            "tier": p.tier,
+            "tier_name": format_tier_name(UserTier(p.tier)),
+            "amount_kobo": p.amount_kobo,
+            "amount_naira": p.amount_kobo / 100,
+            "provider": p.provider,
+            "status": p.status,
+            "created_at": p.created_at.isoformat(),
+            "confirmed_at": p.confirmed_at.isoformat() if p.confirmed_at else None,
+        }
+        for p in payments
+    ]

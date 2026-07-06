@@ -1,7 +1,7 @@
 import logging
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -188,7 +188,7 @@ async def forgot_password(
 
     raw_token = secrets.token_urlsafe(32)
     token_hash = _hash_token(raw_token)
-    expires_at = datetime.utcnow().replace(hour=23, minute=59, second=59)
+    expires_at = datetime.utcnow() + timedelta(minutes=15)
 
     reset_token = PasswordResetToken(
         user_id=user.id,
@@ -200,11 +200,9 @@ async def forgot_password(
 
     logger.info("Password reset requested for user_id=%s", user.id)
 
-    # In production: send email/SMS with the token. For dev, return it.
     return {
         "ok": True,
         "message": "If that account exists, a reset link has been sent.",
-        "dev_token": raw_token,
     }
 
 

@@ -61,9 +61,9 @@ async def admin_login(
         key="admin_session",
         value=token,
         httponly=True,
-        secure=True,  # Production: must be True for HTTPS
-        samesite="none",  # Allow cross-origin requests
-        max_age=settings.access_token_expire_minutes * 60,  # Convert to seconds
+        secure=True,
+        samesite="lax",
+        max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
 

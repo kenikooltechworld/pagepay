@@ -433,10 +433,7 @@ async def admob_ssv_callback(
     query_params = {k: v for k, v in request.query_params.items()}
 
     if not query_params:
-        # Empty GET = AdMob's connectivity test. Return 200 so the
-        # dashboard shows the endpoint as reachable, but don't
-        # require a signature (there's nothing to sign).
-        return {"status": "verification_success", "message": "SSV endpoint reachable"}
+        raise HTTPException(status_code=401, detail="Missing SSV parameters")
 
     # ── 1. Signature verification ─────────────────────────────────
     # CRITICAL: bad signature → 401, do NOT continue. The previous
