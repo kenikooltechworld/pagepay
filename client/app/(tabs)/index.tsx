@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useCatalogFilter } from '@/src/shared/lib/catalog-filter';
@@ -41,6 +42,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  const { t } = useTranslation();
 
   const setCatalogCategory = useCatalogFilter((s) => s.setCategory);
 
@@ -163,12 +165,12 @@ export default function HomeScreen() {
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 5) return 'Still up?';
-    if (h < 12) return 'Good morning';
-    if (h < 17) return 'Good afternoon';
-    if (h < 21) return 'Good evening';
-    return 'Burning the midnight oil?';
-  }, []);
+    if (h < 5) return t('home.greeting_still_up');
+    if (h < 12) return t('home.greeting_morning');
+    if (h < 17) return t('home.greeting_afternoon');
+    if (h < 21) return t('home.greeting_evening');
+    return t('home.greeting_night');
+  }, [t]);
 
   const points = meQuery.data?.points_balance ?? 0;
   const name = displayName(meQuery.data);
@@ -215,7 +217,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push('/(tabs)/wallet')}
             accessibilityRole="button"
-            accessibilityLabel={`View wallet, current balance ${points} points`}
+            accessibilityLabel={t('home.wallet_access', { points })}
             style={[styles.balanceChip, { backgroundColor: tokens.card, borderColor: tokens.border }]}
             activeOpacity={0.7}
           >
@@ -228,7 +230,7 @@ export default function HomeScreen() {
             >
               {meQuery.isLoading ? '—' : points.toLocaleString()}
             </Text>
-            <Text style={[styles.balanceLabel, { color: tokens.inkMuted }]}>pts</Text>
+            <Text style={[styles.balanceLabel, { color: tokens.inkMuted }]}>{t('home.points_label')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -243,7 +245,7 @@ export default function HomeScreen() {
             <Text
               style={[styles.sectionTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
             >
-              Keep reading
+              {t('home.keep_reading')}
             </Text>
             {/* Horizontal carousel — swipe through in-progress books. The
                 first card is anchored to the screen edge so it's clear
@@ -280,11 +282,15 @@ export default function HomeScreen() {
           <Text
             style={[styles.sectionTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
           >
-            Browse
+            {t('home.browse')}
           </Text>
           <View style={styles.chipsRow}>
             {CATEGORIES.map((c) => (
-              <CategoryChip key={c} label={c} onPress={() => onCategoryPress(c)} />
+              <CategoryChip 
+                key={c} 
+                label={t(`home.categories.${c.toLowerCase()}`)} 
+                onPress={() => onCategoryPress(c)} 
+              />
             ))}
           </View>
         </View>
@@ -295,7 +301,7 @@ export default function HomeScreen() {
             <Text
               style={[styles.sectionTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
             >
-              Trending today
+              {t('home.trending')}
             </Text>
             <TouchableOpacity
               onPress={() => {
@@ -306,7 +312,7 @@ export default function HomeScreen() {
               accessibilityRole="link"
               accessibilityLabel="See all content in catalog"
             >
-              <Text style={[styles.seeAll, { color: tokens.mint }]}>See all</Text>
+              <Text style={[styles.seeAll, { color: tokens.mint }]}>{t('home.see_all')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -316,20 +322,20 @@ export default function HomeScreen() {
             <View style={[styles.stateBlock, { borderColor: tokens.signal }]}>
               <Ionicons name="cloud-offline-outline" size={20} color={tokens.signal} />
               <Text style={[styles.stateText, { color: tokens.signal }]}>
-                Couldn&apos;t load your feed.
+                {t('home.feed_error')}
               </Text>
               <TouchableOpacity
                 onPress={() => feedQuery.refetch()}
                 style={[styles.retry, { borderColor: tokens.signal }]}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.retryText, { color: tokens.signal }]}>Try again</Text>
+                <Text style={[styles.retryText, { color: tokens.signal }]}>{t('home.try_again')}</Text>
               </TouchableOpacity>
             </View>
           ) : items.length === 0 ? (
             <View style={[styles.stateBlock, { borderColor: tokens.border }]}>
               <Text style={[styles.stateText, { color: tokens.inkMuted }]}>
-                Nothing here yet. New reads drop daily.
+                {t('home.empty_feed')}
               </Text>
             </View>
           ) : (

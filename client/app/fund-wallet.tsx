@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -21,6 +22,7 @@ type DepositResponse = {
 const AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 
 export default function FundWalletScreen() {
+  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const insets = useSafeAreaInsets();
@@ -32,7 +34,7 @@ export default function FundWalletScreen() {
   const depositMutation = useMutation({
     mutationFn: async () => {
       const finalAmount = amount ?? (parseInt(customAmount) || 0);
-      if (finalAmount < 500) throw new Error('Minimum deposit is ₦500');
+      if (finalAmount < 500) throw new Error(t('fund_wallet.errors.amount_min'));
 
       // Calculate processing fee (1.5% of deposit amount, capped at ₦2,000)
       const processingFee = Math.min(Math.ceil(finalAmount * 0.015), 2000);
@@ -47,7 +49,7 @@ export default function FundWalletScreen() {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || 'Deposit failed');
+        throw new Error(err.detail || t('fund_wallet.errors.deposit_failed'));
       }
 
       return (await res.json()) as DepositResponse;
@@ -82,7 +84,7 @@ export default function FundWalletScreen() {
       }
     },
     onError: (error: Error) => {
-      Alert.alert('Deposit Failed', error.message);
+      Alert.alert(t('fund_wallet.errors.deposit_failed'), error.message);
     },
   });
 
@@ -100,7 +102,7 @@ export default function FundWalletScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={tokens.ink} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tokens.ink }]}>Fund Wallet</Text>
+          <Text style={[styles.title, { color: tokens.ink }]}>{t('fund_wallet.title')}</Text>
         </View>
 
         {/* Info */}
@@ -108,13 +110,13 @@ export default function FundWalletScreen() {
           <Ionicons name="information-circle-outline" size={20} color={tokens.mint} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.infoText, { color: tokens.ink }]}>
-              Add money to your wallet to pay bills. 100 points = ₦1
+              {t('fund_wallet.payment_note')}
             </Text>
           </View>
         </View>
 
         {/* Quick amounts */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Amount</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('fund_wallet.amount_label')}</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           {AMOUNTS.map((a) => (
             <TouchableOpacity
@@ -141,10 +143,10 @@ export default function FundWalletScreen() {
         </View>
 
         {/* Custom amount */}
-        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 8 }]}>Or Enter Custom Amount</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 8 }]}>{t('fund_wallet.custom_amount')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="Enter amount (min ₦500)"
+          placeholder={t('fund_wallet.minimum')}
           placeholderTextColor={tokens.inkMuted}
           value={customAmount}
           onChangeText={(text) => {
@@ -159,16 +161,16 @@ export default function FundWalletScreen() {
         {canSubmit && (
           <View style={[styles.summaryCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Deposit amount</Text>
+              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>{t('fund_wallet.amount_label')}</Text>
               <Text style={[styles.summaryValue, { color: tokens.ink }]}>₦{finalAmount.toLocaleString()}</Text>
             </View>
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>Processing fee (1.5%)</Text>
+              <Text style={[styles.summaryLabel, { color: tokens.inkMuted }]}>{t('fund_wallet.processing_fee', { fee: processingFee })}</Text>
               <Text style={[styles.summaryValue, { color: tokens.inkMuted }]}>₦{processingFee.toLocaleString()}</Text>
             </View>
             <View style={[styles.divider, { backgroundColor: tokens.border }]} />
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: tokens.ink, fontWeight: '600' }]}>Total payment</Text>
+              <Text style={[styles.summaryLabel, { color: tokens.ink, fontWeight: '600' }]}>{t('fund_wallet.total_payment', { total: totalPayment })}</Text>
               <Text style={[styles.summaryValue, { color: tokens.ink, fontWeight: '700', fontSize: 18 }]}>
                 ₦{totalPayment.toLocaleString()}
               </Text>
@@ -204,7 +206,7 @@ export default function FundWalletScreen() {
             <>
               <Ionicons name="card-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {canSubmit ? `Pay ₦${totalPayment.toLocaleString()}` : 'Enter amount (min ₦500)'}
+                {canSubmit ? t('fund_wallet.fund_button') : t('fund_wallet.minimum')}
               </Text>
             </>
           )}

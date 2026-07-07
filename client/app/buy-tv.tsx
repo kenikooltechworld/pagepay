@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -40,6 +41,7 @@ const PROVIDERS = [
 ];
 
 export default function BuyTvScreen() {
+  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const insets = useSafeAreaInsets();
@@ -54,7 +56,7 @@ export default function BuyTvScreen() {
     queryKey: ['tv-plans', provider],
     queryFn: async () => {
       const res = await apiFetch(`/api/v1/bills/tv/plans?provider=${provider}`);
-      if (!res.ok) throw new Error('Failed to load plans');
+      if (!res.ok) throw new Error(t('bills.tv.load_error'));
       return (await res.json()) as Bouquet[];
     },
   });
@@ -63,8 +65,8 @@ export default function BuyTvScreen() {
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedPkg) throw new Error('Select a bouquet');
-      if (!phone) throw new Error('Phone number required');
+      if (!selectedPkg) throw new Error(t('bills.tv.select_bouquet'));
+      if (!phone) throw new Error(t('bills.tv.phone_required'));
       const res = await apiFetch('/api/v1/bills/tv', {
         method: 'POST',
         body: JSON.stringify({
@@ -76,20 +78,20 @@ export default function BuyTvScreen() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || 'Purchase failed');
+        throw new Error(err.detail || t('bills.tv.purchase_failed'));
       }
       return (await res.json()) as PurchaseResult;
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['me'] });
       Alert.alert(
-        'Subscription Activated!',
-        `${selectedPkg?.name} activated on ${smartcard}. You earned +${data.points_earned} points!`,
-        [{ text: 'Done', onPress: () => router.back() }],
+        t('bills.tv.success_title'),
+        t('bills.tv.success_message', { name: selectedPkg?.name, smartcard, points: data.points_earned }),
+        [{ text: t('bills.tv.done'), onPress: () => router.back() }],
       );
     },
     onError: (error: Error) => {
-      Alert.alert('Purchase Failed', error.message);
+      Alert.alert(t('bills.tv.error_title'), error.message);
     },
   });
 
@@ -106,11 +108,11 @@ export default function BuyTvScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={tokens.ink} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tokens.ink }]}>Buy TV Subscription</Text>
+          <Text style={[styles.title, { color: tokens.ink }]}>{t('bills.tv.title')}</Text>
         </View>
 
         {/* Provider */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Provider</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.tv.provider')}</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {PROVIDERS.map((p) => (
             <TouchableOpacity
@@ -134,7 +136,7 @@ export default function BuyTvScreen() {
         </View>
 
         {/* Bouquets */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Bouquet</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.tv.select_bouquet')}</Text>
         {bouquetsQ.isLoading ? (
           <ActivityIndicator color={tokens.mint} />
         ) : (
@@ -172,10 +174,10 @@ export default function BuyTvScreen() {
         )}
 
         {/* Smartcard */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Smartcard / IUC Number</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.tv.smartcard')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="1234567890"
+          placeholder={t('bills.tv.smartcard_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={smartcard}
           onChangeText={(text) => {
@@ -188,15 +190,15 @@ export default function BuyTvScreen() {
         />
         {smartcard.length > 0 && smartcard.length < 10 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
-            Smartcard number must be at least 10 digits
+            {t('bills.tv.smartcard_error')}
           </Text>
         )}
 
         {/* Phone Number */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.tv.phone')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="08012345678"
+          placeholder={t('bills.tv.phone_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={phone}
           onChangeText={(text) => {
@@ -209,7 +211,7 @@ export default function BuyTvScreen() {
         />
         {phone.length > 0 && phone.length < 11 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
-            Phone number must be 11 digits
+            {t('bills.tv.phone_error')}
           </Text>
         )}
 
@@ -218,9 +220,9 @@ export default function BuyTvScreen() {
           <View style={[styles.earnCard, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
             <Ionicons name="gift-outline" size={20} color={tokens.mint} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.earnLabel, { color: tokens.mint }]}>You'll earn +{estPoints} points</Text>
+              <Text style={[styles.earnLabel, { color: tokens.mint }]}>{t('bills.tv.earn_points', { points: estPoints })}</Text>
               <Text style={[styles.earnSub, { color: tokens.ink }]}>
-                Commission from the TV subscription is split — you get points, we keep the platform running.
+                {t('bills.tv.earn_description')}
               </Text>
             </View>
           </View>
@@ -244,7 +246,7 @@ export default function BuyTvScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {selectedPkg ? `Pay ₦${((selectedPkg.price_naira || selectedPkg.amount || 0).toLocaleString())}` : 'Select a bouquet'}
+                {selectedPkg ? t('bills.tv.pay_button', { amount: (selectedPkg.price_naira || selectedPkg.amount || 0) }) : t('bills.tv.select_bouquet_prompt')}
               </Text>
             </>
           )}

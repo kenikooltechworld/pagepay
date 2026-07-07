@@ -17,6 +17,7 @@ export const adminApi: AxiosInstance = axios.create({
   withCredentials: true, // Required for httpOnly cookies
   headers: {
     'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   },
 });
 

@@ -35,6 +35,7 @@ class UserLogin(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -47,6 +48,7 @@ class UserMe(BaseModel):
     created_at: datetime
     is_worker: bool = True
     is_sponsor: bool = False
+    email_verified: bool = False
     
     model_config = {"from_attributes": True}
 
@@ -1203,6 +1205,12 @@ class ResetPasswordRequest(BaseModel):
     """Reset password with a token."""
     token: str
     new_password: str = Field(min_length=8)
+
+
+class EmailVerificationRequest(BaseModel):
+    """Verify email address with a token."""
+    email: str
+    token: str
 
 
 class LegalPageResponse(BaseModel):

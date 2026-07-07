@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import Animated, {
@@ -69,6 +69,10 @@ export default function AuthScreen() {
     }, 150);
   };
 
+  const handleGoogleSignIn = async () => {
+    Alert.alert('Coming soon', 'Google Sign-In will be available once OAuth2 credentials are configured.');
+  };
+
   const contentStyle = useAnimatedStyle(() => ({
     opacity: contentOpacity.value,
     transform: [{ scale: contentScale.value }],
@@ -85,8 +89,58 @@ export default function AuthScreen() {
           <Animated.View style={[{ flex: 1 }, contentStyle]}>
             {activeTab === 'login' ? <LoginScreen /> : <RegisterScreen />}
           </Animated.View>
+
+          <View style={styles.socialWrap}>
+            <View style={styles.divider}>
+              <View style={[styles.dividerLine, { backgroundColor: tokens.border }]} />
+              <Text style={[styles.dividerText, { color: tokens.inkMuted }]}>or</Text>
+              <View style={[styles.dividerLine, { backgroundColor: tokens.border }]} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.googleButton, { backgroundColor: tokens.card, borderColor: tokens.border }]}
+              onPress={handleGoogleSignIn}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.googleButtonText, { color: tokens.ink }]}>Continue with Google</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  socialWrap: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 14,
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+});

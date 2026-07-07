@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -72,6 +73,7 @@ type PurchaseResult = {
 };
 
 export default function BuyDataScreen() {
+  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const insets = useSafeAreaInsets();
@@ -114,7 +116,7 @@ export default function BuyDataScreen() {
 
   const purchaseMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedPlan || !selectedPkg) throw new Error('Select a plan');
+      if (!selectedPlan || !selectedPkg) throw new Error(t('bills.data.errors.plan_required'));
       const res = await apiFetch('/api/v1/bills/data', {
         method: 'POST',
         body: JSON.stringify({
@@ -125,20 +127,20 @@ export default function BuyDataScreen() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || 'Purchase failed');
+        throw new Error(err.detail || t('bills.data.errors.purchase_failed'));
       }
       return (await res.json()) as PurchaseResult;
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['me'] });
       Alert.alert(
-        'Data Sent!',
-        `${selectedPkg?.label} sent to ${phone}. You earned +${data.points_earned} points!`,
-        [{ text: 'Done', onPress: () => router.back() }],
+        t('bills.data.success_title'),
+        t('bills.data.success_message', { plan: selectedPkg?.label, phone, points: data.points_earned }),
+        [{ text: t('bills.data.ok'), onPress: () => router.back() }],
       );
     },
     onError: (error: Error) => {
-      Alert.alert('Purchase Failed', error.message);
+      Alert.alert(t('bills.data.errors.purchase_failed'), error.message);
     },
   });
 
@@ -155,14 +157,14 @@ export default function BuyDataScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={tokens.ink} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tokens.ink }]}>Buy Data</Text>
+          <Text style={[styles.title, { color: tokens.ink }]}>{t('bills.data.title')}</Text>
         </View>
 
         {/* Phone */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.data.phone_label')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="08012345678"
+          placeholder={t('bills.data.phone_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={phone}
           onChangeText={(text) => {
@@ -175,12 +177,12 @@ export default function BuyDataScreen() {
         />
         {phone.length > 0 && phone.length < 11 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
-            Phone number must be 11 digits
+            {t('bills.data.errors.phone_invalid')}
           </Text>
         )}
 
         {/* Network with better organization */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Data Network</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.data.network_label')}</Text>
         <TouchableOpacity
           onPress={() => setShowNetworkDropdown(!showNetworkDropdown)}
           style={[
@@ -192,7 +194,7 @@ export default function BuyDataScreen() {
           ]}
         >
           <Text style={[styles.dropdownText, { color: tokens.ink }]}>
-            {networksQ.data?.find(n => n.identifier === network)?.name || 'Select Network'}
+            {networksQ.data?.find(n => n.identifier === network)?.name || t('bills.data.select_plan')}
           </Text>
           <Ionicons name={showNetworkDropdown ? "chevron-up" : "chevron-down"} size={20} color={tokens.inkMuted} />
         </TouchableOpacity>
@@ -231,7 +233,7 @@ export default function BuyDataScreen() {
         )}
 
         {/* Plans with tabs */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Bundle</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.data.plan_label')}</Text>
         
         {/* Validity Tabs */}
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
@@ -326,7 +328,7 @@ export default function BuyDataScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {selectedPkg ? `Pay ₦${selectedPkg.amount.toLocaleString()}` : 'Select a bundle'}
+                {selectedPkg ? t('bills.data.buy_button') : t('bills.data.select_plan')}
               </Text>
             </>
           )}

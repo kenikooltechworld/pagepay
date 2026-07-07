@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '@/src/shared/api/client';
 import { PageMark } from '@/components/PageMark';
 import { PagePay } from '@/constants/theme';
@@ -11,12 +12,13 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 type LegalParams = { slug?: string };
 
 export default function LegalScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<LegalParams>();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const slug = params.slug || 'terms';
 
-  const [title, setTitle] = useState('Loading...');
+  const [title, setTitle] = useState(t('legal.loading'));
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -32,13 +34,13 @@ export default function LegalScreen() {
           setContent(data.content || '');
         }
       } catch (e) {
-        if (!cancelled) setError('Could not load this page.');
+        if (!cancelled) setError(t('legal.load_error'));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, t]);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.paper }]}>

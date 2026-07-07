@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useMaterials, useUploadSow, useUploadSowImage, useUploadSowDocument, useClaimQuizBonus } from '@/src/features/study/hooks/use-study';
@@ -19,26 +20,26 @@ import { Skeleton } from '@/components/Skeleton';
 import { cacheAsset, getCachedAsset } from '@/src/features/study/storage';
 
 // Error categorization helper
-function categorizeError(message: string, operation: string): string {
+function categorizeError(message: string, operation: string, t: (key: string, params?: Record<string, unknown>) => string): string {
   if (message.includes('Network') || message.includes('fetch')) {
-    return `⏱️ Server is starting up (30-60s). Please try again in a moment.`;
+    return t('study.errors.server_starting');
   }
   if (message.includes('401') || message.includes('Unauthorized')) {
-    return `🔒 Session expired. Please log in again.`;
+    return t('study.errors.session_expired');
   }
   if (message.includes('413') || message.includes('too large') || message.includes('size')) {
-    return `📦 File is too large. Please use a file under 10MB.`;
+    return t('study.errors.file_too_large');
   }
   if (message.includes('format') || message.includes('type') || message.includes('invalid')) {
-    return `📄 Invalid file format. Please upload PNG, JPG, or PDF only.`;
+    return t('study.errors.invalid_format');
   }
   if (message.includes('quota') || message.includes('limit')) {
-    return `⚠️ Rate limit reached. Please wait a moment and try again.`;
+    return t('study.errors.rate_limit');
   }
   if (message.includes('500') || message.includes('Internal')) {
-    return `🔧 Server error occurred. Our team has been notified. Please try again later.`;
+    return t('study.errors.server_error');
   }
-  return `❌ ${operation} failed: ${message}`;
+  return t('study.errors.generic', { operation, message });
 }
 
 type AssetInfo = {
@@ -57,6 +58,7 @@ type MaterialDetail = {
 };
 
 export default function StudyScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -174,10 +176,10 @@ export default function StudyScreen() {
     try {
       // Client-side validation
       if (text.trim().length < 10) {
-        throw new Error('Text is too short. Please provide at least 10 characters.');
+        throw new Error(t('study.errors.text_too_short'));
       }
       if (text.length > 50000) {
-        throw new Error('Text is too long. Please limit to 50,000 characters.');
+        throw new Error(t('study.errors.text_too_long'));
       }
       
       // Simulate initial progress
@@ -194,7 +196,7 @@ export default function StudyScreen() {
     } catch (err) {
       setUploadProgress(undefined);
       const message = err instanceof Error ? err.message : 'Upload failed';
-      const specificError = categorizeError(message, 'upload text');
+      const specificError = categorizeError(message, 'upload text', t);
       setError(specificError);
       setRetryAction(() => () => handleUploadText(text));
     }
@@ -222,7 +224,7 @@ export default function StudyScreen() {
       // Validate file type
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
       if (file.type && !validTypes.includes(file.type.toLowerCase())) {
-        throw new Error('Invalid file type. Please upload PNG, JPG, or WebP only.');
+        throw new Error(t('study.errors.invalid_file_type'));
       }
       
       setUploadProgress(20);
@@ -238,7 +240,7 @@ export default function StudyScreen() {
     } catch (err) {
       setUploadProgress(undefined);
       const message = err instanceof Error ? err.message : 'Upload failed';
-      const specificError = categorizeError(message, 'image upload');
+      const specificError = categorizeError(message, 'image upload', t);
       setError(specificError);
       setRetryAction(() => handleUploadImage);
     }
@@ -267,7 +269,7 @@ export default function StudyScreen() {
     } catch (err) {
       setUploadProgress(undefined);
       const message = err instanceof Error ? err.message : 'Upload failed';
-      const specificError = categorizeError(message, 'photo upload');
+      const specificError = categorizeError(message, 'photo upload', t);
       setError(specificError);
       setRetryAction(() => handleTakePhoto);
     }
@@ -287,14 +289,14 @@ export default function StudyScreen() {
       // Client-side file validation
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'];
       if (file.type && !validTypes.includes(file.type.toLowerCase())) {
-        throw new Error('Invalid file type. Please upload PDF or Word documents only.');
+        throw new Error(t('study.errors.invalid_format'));
       }
       
       // Validate file extension as fallback
       const validExtensions = ['.pdf', '.docx', '.doc'];
       const hasValidExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
       if (!hasValidExtension) {
-        throw new Error('Invalid file extension. Please upload .pdf, .docx, or .doc files only.');
+        throw new Error(t('study.errors.invalid_format'));
       }
       
       setUploadProgress(20);
@@ -310,7 +312,7 @@ export default function StudyScreen() {
     } catch (err) {
       setUploadProgress(undefined);
       const message = err instanceof Error ? err.message : 'Upload failed';
-      const specificError = categorizeError(message, 'document upload');
+      const specificError = categorizeError(message, 'document upload', t);
       setError(specificError);
       setRetryAction(() => handleUploadDocument);
     }
@@ -336,7 +338,7 @@ export default function StudyScreen() {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Generation failed';
-      const specificError = categorizeError(message, `${assetType} generation`);
+      const specificError = categorizeError(message, `${assetType} generation`, t);
       setError(specificError);
       setRetryAction(() => () => handleGenerateAsset(materialId, assetType, count));
     } finally {
@@ -368,7 +370,7 @@ export default function StudyScreen() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       const message = err.detail || 'Unlock failed';
-      const specificError = categorizeError(message, 'unlock');
+      const specificError = categorizeError(message, 'unlock', t);
       throw new Error(specificError);
     }
     const data = await res.json();
@@ -425,11 +427,11 @@ export default function StudyScreen() {
       >
         <View style={styles.header}>
           <Text style={[styles.headline, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-            {selectedMaterial ? selectedMaterial.title : 'Study'}
+            {selectedMaterial ? selectedMaterial.title : t('study.title')}
           </Text>
           {selectedMaterial && (
             <Text style={[styles.subline, { color: tokens.inkMuted }]}>
-              {selectedMaterial.assets.length} assets generated
+              {t('study.assets_generated', { count: selectedMaterial.assets.length })}
             </Text>
           )}
         </View>
@@ -447,10 +449,10 @@ export default function StudyScreen() {
                 onPress={retryAction} 
                 style={[styles.retryBtn, { backgroundColor: tokens.signal }]}
                 accessibilityRole="button"
-                accessibilityLabel="Retry failed operation"
+                accessibilityLabel={t('study.retry')}
               >
                 <Ionicons name="reload-outline" size={14} color="#fff" accessibilityLabel="" />
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={styles.retryText}>{t('study.retry')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity 
@@ -460,7 +462,7 @@ export default function StudyScreen() {
               }}
               hitSlop={6}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss error"
+              accessibilityLabel={t('study.dismiss')}
             >
               <Ionicons name="close" size={16} color={tokens.signal} accessibilityLabel="" />
             </TouchableOpacity>
@@ -494,14 +496,14 @@ export default function StudyScreen() {
                 style={[styles.backBtn, { borderColor: tokens.border }]}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Back to all materials"
+                accessibilityLabel={t('study.all_materials')}
               >
                 <Ionicons name="arrow-back" size={18} color={tokens.mint} accessibilityLabel="" />
-                <Text style={[styles.backText, { color: tokens.mint }]}>All materials</Text>
+                <Text style={[styles.backText, { color: tokens.mint }]}>{t('study.all_materials')}</Text>
               </TouchableOpacity>
               <View style={styles.chatBtn}>
                 <PrimaryButton
-                  title="Chat with AI"
+                  title={t('study.chat_ai')}
                   onPress={() => handleChatPress(selectedMaterial.id)}
                 />
               </View>
@@ -509,7 +511,7 @@ export default function StudyScreen() {
 
             {selectedMaterial.parsed_structure && (
               <View style={[styles.outlineCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-                <Text style={[styles.outlineTitle, { color: tokens.ink }]}>Topics covered</Text>
+                <Text style={[styles.outlineTitle, { color: tokens.ink }]}>{t('study.topics_covered')}</Text>
                 {Object.entries(selectedMaterial.parsed_structure as Record<string, unknown>).length > 0 && (
                   <View style={styles.outlineList}>
                     {((selectedMaterial.parsed_structure as Record<string, unknown>).topics as Array<Record<string, unknown>> | undefined) &&
@@ -537,7 +539,7 @@ export default function StudyScreen() {
 
             <View style={styles.generateRow}>
               <GenerateButton
-                label="MCQs"
+                label={t('study.generate.mcqs')}
                 icon="help-circle-outline"
                 assetType="mcq"
                 onPress={() => handleGenerateAsset(selectedMaterial.id, 'mcq', 5)}
@@ -545,7 +547,7 @@ export default function StudyScreen() {
                 tokens={tokens}
               />
               <GenerateButton
-                label="Flashcards"
+                label={t('study.generate.flashcards')}
                 icon="albums-outline"
                 assetType="flashcard"
                 onPress={() => handleGenerateAsset(selectedMaterial.id, 'flashcard', 8)}
@@ -553,7 +555,7 @@ export default function StudyScreen() {
                 tokens={tokens}
               />
               <GenerateButton
-                label="Essays"
+                label={t('study.generate.essays')}
                 icon="document-text-outline"
                 assetType="essay"
                 onPress={() => handleGenerateAsset(selectedMaterial.id, 'essay', 3)}
@@ -579,7 +581,7 @@ export default function StudyScreen() {
               </View>
             ) : materials.length > 0 ? (
               <View style={styles.materialList}>
-                <Text style={[styles.listTitle, { color: tokens.ink }]}>Your materials</Text>
+                <Text style={[styles.listTitle, { color: tokens.ink }]}>{t('study.your_materials')}</Text>
                 {materials.map((m) => (
                   <TouchableOpacity
                     key={m.id}
@@ -609,7 +611,7 @@ export default function StudyScreen() {
               <View style={[styles.stateBlock, { borderColor: tokens.border }]}>
                 <Ionicons name="school-outline" size={32} color={tokens.mint} />
                 <Text style={[styles.stateText, { color: tokens.inkMuted }]}>
-                  Upload your first scheme of work to get started.
+                  {t('study.upload_first')}
                 </Text>
               </View>
             )}

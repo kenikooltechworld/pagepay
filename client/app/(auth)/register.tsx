@@ -12,9 +12,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
-import { saveToken } from '@/src/shared/lib/storage';
+import { saveToken, saveRefreshToken } from '@/src/shared/lib/storage';
+import { getDeviceFingerprint } from '@/src/shared/lib/device-fingerprint';
 import { PageMark } from '@/components/PageMark';
 import { AnimatedInput } from '@/components/AnimatedInput';
 import { Field, PasswordToggle } from '@/components/Field';
@@ -46,6 +48,7 @@ function passwordStrength(p: string): number {
 }
 
 export default function RegisterScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -63,7 +66,7 @@ export default function RegisterScreen() {
   const [errorTrigger, setErrorTrigger] = useState(false);
 
   const strength = useMemo(() => passwordStrength(password), [password]);
-  const strengthLabel = ['', 'Too weak', 'Weak', 'Good', 'Strong'][strength];
+  const strengthLabel = ['', t('auth.register.password_strength.too_weak'), t('auth.register.password_strength.weak'), t('auth.register.password_strength.good'), t('auth.register.password_strength.strong')][strength];
   const strengthColor =
     strength <= 1
       ? tokens.signal
@@ -94,16 +97,16 @@ export default function RegisterScreen() {
 
   const validate = useCallback((): FieldErrors => {
     const e: FieldErrors = {};
-    if (!email.trim()) e.email = 'Enter your email or phone.';
-    if (!password) e.password = 'Enter a password.';
-    else if (password.length < 8) e.password = 'Use at least 8 characters.';
-    if (!confirm) e.confirm = 'Re-enter your password.';
-    else if (confirm !== password) e.confirm = "Passwords don't match.";
+    if (!email.trim()) e.email = t('auth.register.errors.enter_email');
+    if (!password) e.password = t('auth.register.errors.enter_password');
+    else if (password.length < 8) e.password = t('auth.register.errors.password_too_short');
+    if (!confirm) e.confirm = t('auth.register.errors.enter_confirm');
+    else if (confirm !== password) e.confirm = t('auth.register.errors.passwords_mismatch');
     if (referralCode && referralCode.length !== 6) {
-      e.referralCode = 'Referral code must be 6 characters.';
+      e.referralCode = t('auth.register.errors.referral_length');
     }
     return e;
-  }, [email, password, confirm, referralCode]);
+  }, [email, password, confirm, referralCode, t]);
 
   const isEmail = useCallback((v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), []);
 
@@ -117,7 +120,7 @@ export default function RegisterScreen() {
       return;
     }
     if (!agreed) {
-      setFormError('Please agree to the Terms and Privacy Policy to continue.');
+      setFormError(t('auth.register.errors.agree_to_terms'));
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);
       return;
@@ -125,6 +128,7 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
+      const fingerprint = await getDeviceFingerprint();
       const payload: Record<string, string | undefined> = {
         password,
         referral_code: referralCode || undefined,
@@ -134,7 +138,7 @@ export default function RegisterScreen() {
       } else if (email.trim().length >= 10) {
         payload.phone = email.trim();
       } else {
-        setFormError('Enter a valid email address or phone number.');
+        setFormError(t('auth.register.errors.invalid_email_phone'));
         setErrorTrigger(true);
         setTimeout(() => setErrorTrigger(false), 600);
         setLoading(false);
@@ -143,7 +147,10 @@ export default function RegisterScreen() {
 
       const res = await apiFetch('/api/v1/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-Fingerprint': fingerprint,
+        },
         body: JSON.stringify(payload),
       });
 
@@ -157,11 +164,11 @@ export default function RegisterScreen() {
           /* non-JSON response */
         }
         if (status === 409) {
-          setFormError('An account with that email already exists. Sign in instead.');
+          setFormError(t('auth.register.errors.account_exists'));
         } else if (status === 400 && detail.includes('referral')) {
-          setErrors({ referralCode: 'Invalid or expired referral code. Check the code and try again.' });
+          setErrors({ referralCode: t('auth.register.errors.invalid_referral') });
         } else {
-          setFormError(detail || "Couldn't create your account. Try again.");
+          setFormError(detail || t('auth.register.errors.create_failed'));
         }
         setErrorTrigger(true);
         setTimeout(() => setErrorTrigger(false), 600);
@@ -170,16 +177,19 @@ export default function RegisterScreen() {
 
       const data = await res.json();
       await saveToken(data.access_token);
+      if (data.refresh_token) {
+        await saveRefreshToken(data.refresh_token);
+      }
       setSuccess(true);
-      setTimeout(() => router.replace('/(tabs)'), 1000);
+      setTimeout(() => router.replace({ pathname: '/(auth)/verify-email', params: { email: email.trim() } }), 1000);
     } catch {
-      setFormError("Can't reach the server. Check your connection and try again.");
+      setFormError(t('auth.register.errors.connection_error'));
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);
     } finally {
       setLoading(false);
     }
-  }, [agreed, email, password, router, validate]);
+  }, [agreed, email, password, router, validate, t]);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.paper }]}>
@@ -202,8 +212,8 @@ export default function RegisterScreen() {
               <View style={styles.cardWrap}>
               <View style={[styles.card, { backgroundColor: tokens.card }]}>
                 <AuthScreenEntrance 
-                  title="Create your PagePay account."
-                  subtitle="Earn for reading. Prep for exams. Free to start."
+                  title={t('auth.register.title')}
+                  subtitle={t('auth.register.subtitle')}
                 />
 
                 {formError ? (
@@ -214,10 +224,10 @@ export default function RegisterScreen() {
 
                 <View style={{ gap: 14 }}>
                   <Field
-                    label="Email or phone"
+                    label={t('auth.register.email_label')}
                     value={email}
                     onChangeText={onChangeEmail}
-                    placeholder="you@example.com"
+                    placeholder={t('auth.register.email_placeholder')}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="email-address"
@@ -228,10 +238,10 @@ export default function RegisterScreen() {
 
                   <View style={{ gap: 8 }}>
                     <Field
-                      label="Password"
+                      label={t('auth.register.password_label')}
                       value={password}
                       onChangeText={onChangePassword}
-                      placeholder="At least 8 characters"
+                      placeholder={t('auth.register.password_placeholder')}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -255,16 +265,16 @@ export default function RegisterScreen() {
                       />
                     ) : (
                       <Text style={[styles.helper, { color: tokens.inkMuted }]}>
-                        At least 8 characters. Mix letters, numbers, and symbols.
+                        {t('auth.register.password_helper')}
                       </Text>
                     )}
                   </View>
 
                   <Field
-                    label="Confirm password"
+                    label={t('auth.register.confirm_label')}
                     value={confirm}
                     onChangeText={onChangeConfirm}
-                    placeholder="Re-enter your password"
+                    placeholder={t('auth.register.confirm_placeholder')}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -274,10 +284,10 @@ export default function RegisterScreen() {
                   />
 
                   <Field
-                    label="Referral code (optional)"
+                    label={t('auth.register.referral_label')}
                     value={referralCode}
                     onChangeText={onChangeReferralCode}
-                    placeholder="ABC123"
+                    placeholder={t('auth.register.referral_placeholder')}
                     autoCapitalize="characters"
                     autoCorrect={false}
                     maxLength={6}
@@ -286,7 +296,7 @@ export default function RegisterScreen() {
                     error={errors.referralCode}
                   />
                   <Text style={[styles.helper, { color: tokens.inkMuted, marginTop: -8 }]}>
-                    Have an invitation code? Enter it here to connect with your referrer.
+                    {t('auth.register.referral_helper')}
                   </Text>
                 </View>
 
@@ -311,20 +321,20 @@ export default function RegisterScreen() {
                       ) : null}
                     </View>
                     <Text style={[styles.termsText, { color: tokens.inkMuted }]}>
-                      I agree to the{' '}
+                      {t('auth.register.terms_agree')}{' '}
                       <Pressable onPress={() => router.push({ pathname: '/legal', params: { slug: 'terms' } })}>
-                        <Text style={{ color: tokens.mint, fontWeight: '600' }}>Terms</Text>
+                        <Text style={{ color: tokens.mint, fontWeight: '600' }}>{t('auth.register.terms')}</Text>
                       </Pressable>
-                      {' '}and{' '}
+                      {' '}{t('auth.register.and')}{' '}
                       <Pressable onPress={() => router.push({ pathname: '/legal', params: { slug: 'privacy' } })}>
-                        <Text style={{ color: tokens.mint, fontWeight: '600' }}>Privacy Policy</Text>
+                        <Text style={{ color: tokens.mint, fontWeight: '600' }}>{t('auth.register.privacy')}</Text>
                       </Pressable>
                       .
                     </Text>
                   </Pressable>
 
                 <AnimatedSubmitButton
-                  title="Create account"
+                  title={t('auth.register.create_account')}
                   isLoading={loading}
                   isSuccess={success}
                   disabled={!agreed}
@@ -333,11 +343,11 @@ export default function RegisterScreen() {
 
                 <View style={styles.tertiaryRow}>
                   <Text style={[styles.tertiaryMuted, { color: tokens.inkMuted }]}>
-                    Already have an account?
+                    {t('auth.register.already_have_account')}
                   </Text>
                   <Pressable onPress={() => router.back()} hitSlop={6}>
                     <Text style={[styles.tertiaryLink, { color: tokens.mint }]}>
-                      Sign in  →
+                      {t('auth.register.sign_in_link')}
                     </Text>
                   </Pressable>
                 </View>

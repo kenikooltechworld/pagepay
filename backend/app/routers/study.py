@@ -21,7 +21,7 @@ from app.ai.prompts import (
 )
 from app.ai.router import route_ai
 from app.database import get_db
-from app.models import StudyAsset, StudyMaterial, StudyTransaction, User
+from app.models import StudyAsset, StudyMaterial, StudyTransaction, User, ReadingSession
 from app.routers.auth import get_current_user
 from app.schemas import (
     ChatRequest,
@@ -681,36 +681,73 @@ class SessionEndResponse(BaseModel):
 
 
 class StudySession:
-    """Simple in-memory session tracking (in production, use Redis or DB)"""
-    _sessions: dict[int, dict] = {}
+    """DB-backed session tracking using ReadingSession."""
 
     @classmethod
-    def start(cls, user_id: int, material_id: int) -> int:
-        session_id = len(cls._sessions) + 1
-        cls._sessions[session_id] = {
-            "user_id": user_id,
-            "material_id": material_id,
-            "started_at": datetime.utcnow(),
-        }
-        return session_id
+    async def start(cls, db: AsyncSession, user_id: int, material_id: int) -> int:
+        session = ReadingSession(
+            user_id=user_id,
+            content_id=material_id,
+            start_time=datetime.utcnow(),
+            duration_seconds=0,
+            points_earned=0,
+            verified=False,
+            scroll_events=0,
+            total_paused_seconds=0,
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        return session.id
 
     @classmethod
-    def end(cls, session_id: int) -> dict | None:
-        session = cls._sessions.get(session_id)
+    async def end(cls, db: AsyncSession, session_id: int, user_id: int) -> dict | None:
+        result = await db.execute(
+            select(ReadingSession).where(
+                ReadingSession.id == session_id,
+                ReadingSession.user_id == user_id,
+                ReadingSession.end_time.is_(None),
+            )
+        )
+        session = result.scalar_one_or_none()
         if not session:
             return None
-        
+
         ended_at = datetime.utcnow()
-        duration = int((ended_at - session["started_at"]).total_seconds())
-        
-        session["ended_at"] = ended_at
-        session["duration_seconds"] = duration
-        
-        return session
+        duration = int((ended_at - session.start_time).total_seconds())
+        session.end_time = ended_at
+        session.duration_seconds = duration
+        await db.commit()
+        await db.refresh(session)
+
+        return {
+            "session_id": session.id,
+            "user_id": session.user_id,
+            "material_id": session.content_id,
+            "started_at": session.start_time,
+            "ended_at": session.end_time,
+            "duration_seconds": session.duration_seconds,
+        }
 
     @classmethod
-    def get(cls, session_id: int) -> dict | None:
-        return cls._sessions.get(session_id)
+    async def get(cls, db: AsyncSession, session_id: int, user_id: int) -> dict | None:
+        result = await db.execute(
+            select(ReadingSession).where(
+                ReadingSession.id == session_id,
+                ReadingSession.user_id == user_id,
+            )
+        )
+        session = result.scalar_one_or_none()
+        if not session:
+            return None
+        return {
+            "session_id": session.id,
+            "user_id": session.user_id,
+            "material_id": session.content_id,
+            "started_at": session.start_time,
+            "ended_at": session.end_time,
+            "duration_seconds": session.duration_seconds,
+        }
 
 
 @router.post("/session/start", response_model=SessionStartResponse, status_code=201)
@@ -730,7 +767,7 @@ async def start_study_session(
     if not material_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Material not found")
     
-    session_id = StudySession.start(current_user.id, payload.material_id)
+    session_id = await StudySession.start(db, current_user.id, payload.material_id)
     
     return SessionStartResponse(
         session_id=session_id,
@@ -745,7 +782,7 @@ async def end_study_session(
     db: AsyncSession = Depends(get_db),
 ):
     """End a study session and get duration"""
-    session = StudySession.end(payload.session_id)
+    session = await StudySession.end(db, payload.session_id, current_user.id)
     
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")

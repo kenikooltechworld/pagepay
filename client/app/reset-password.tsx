@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '@/src/shared/api/client';
 import { AnimatedInput } from '@/components/AnimatedInput';
 import { Field, PasswordToggle } from '@/components/Field';
@@ -21,6 +22,7 @@ import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
 export default function ResetPasswordScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -37,12 +39,12 @@ export default function ResetPasswordScreen() {
 
   const validate = useCallback(() => {
     const e: typeof errors = {};
-    if (!password) e.password = 'Enter a password.';
-    else if (password.length < 8) e.password = 'Use at least 8 characters.';
-    if (!confirm) e.confirm = 'Re-enter your password.';
-    else if (confirm !== password) e.confirm = "Passwords don't match.";
+    if (!password) e.password = t('reset_password.errors.password_required');
+    else if (password.length < 8) e.password = t('reset_password.errors.password_too_short');
+    if (!confirm) e.confirm = t('reset_password.errors.confirm_required');
+    else if (confirm !== password) e.confirm = t('reset_password.errors.passwords_mismatch');
     return e;
-  }, [password, confirm]);
+  }, [password, confirm, t]);
 
   const handleReset = useCallback(async () => {
     setFormError(null);
@@ -56,7 +58,7 @@ export default function ResetPasswordScreen() {
 
     const token = params.token;
     if (!token) {
-      setFormError('Missing reset token. Use the link from your email or SMS.');
+      setFormError(t('reset_password.errors.missing_token'));
       return;
     }
 
@@ -70,7 +72,7 @@ export default function ResetPasswordScreen() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setFormError(typeof data?.detail === 'string' ? data.detail : 'Could not reset password. Try again.');
+        setFormError(typeof data?.detail === 'string' ? data.detail : t('reset_password.errors.reset_failed'));
         setErrorTrigger(true);
         setTimeout(() => setErrorTrigger(false), 600);
         return;
@@ -79,13 +81,13 @@ export default function ResetPasswordScreen() {
       setSuccess(true);
       setTimeout(() => router.replace('/(auth)/login'), 1500);
     } catch {
-      setFormError("Can't reach the server. Check your connection.");
+      setFormError(t('reset_password.errors.connection_error'));
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);
     } finally {
       setLoading(false);
     }
-  }, [password, confirm, router, params.token, validate]);
+  }, [password, confirm, router, params.token, validate, t]);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.paper }]}>
@@ -105,8 +107,8 @@ export default function ResetPasswordScreen() {
               <View style={styles.cardWrap}>
                 <View style={[styles.card, { backgroundColor: tokens.card }]}>
                   <AuthScreenEntrance
-                    title="Choose a new password."
-                    subtitle="Make it strong and unique."
+                    title={t('reset_password.title')}
+                    subtitle={t('reset_password.subtitle')}
                   />
 
                   {formError ? (
@@ -125,10 +127,10 @@ export default function ResetPasswordScreen() {
                   <View style={{ gap: 14 }}>
                     <View style={{ gap: 8 }}>
                       <Field
-                        label="New password"
+                        label={t('reset_password.password_label')}
                         value={password}
                         onChangeText={setPassword}
-                        placeholder="At least 8 characters"
+                        placeholder={t('reset_password.password_placeholder')}
                         secureTextEntry={!showPassword}
                         autoCapitalize="none"
                         autoCorrect={false}
@@ -144,10 +146,10 @@ export default function ResetPasswordScreen() {
                     </View>
 
                     <Field
-                      label="Confirm password"
+                      label={t('reset_password.confirm_label')}
                       value={confirm}
                       onChangeText={setConfirm}
-                      placeholder="Re-enter new password"
+                      placeholder={t('reset_password.confirm_placeholder')}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -158,7 +160,7 @@ export default function ResetPasswordScreen() {
                   </View>
 
                   <AnimatedSubmitButton
-                    title={loading ? 'Resetting...' : 'Reset password'}
+                    title={loading ? t('reset_password.resetting') : t('reset_password.reset_button')}
                     onPress={handleReset}
                     isLoading={loading}
                   />
@@ -166,7 +168,7 @@ export default function ResetPasswordScreen() {
                   <View style={styles.tertiaryRow}>
                     <Pressable onPress={() => router.back()} hitSlop={6}>
                       <Text style={[styles.tertiaryLink, { color: tokens.mint }]}>
-                        ← Back to sign in
+                        {t('reset_password.back_to_signin')}
                       </Text>
                     </Pressable>
                   </View>

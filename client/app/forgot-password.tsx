@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '@/src/shared/api/client';
 import { PageMark } from '@/components/PageMark';
 import { AnimatedInput } from '@/components/AnimatedInput';
@@ -21,6 +22,7 @@ import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
 export default function ForgotPasswordScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -32,9 +34,9 @@ export default function ForgotPasswordScreen() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const validate = useCallback(() => {
-    if (!identifier.trim()) return 'Enter your email or phone number.';
+    if (!identifier.trim()) return t('forgot_password.errors.identifier_required');
     return null;
-  }, [identifier]);
+  }, [identifier, t]);
 
   const handleSubmit = useCallback(async () => {
     setFormError(null);
@@ -61,7 +63,7 @@ export default function ForgotPasswordScreen() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setFormError(typeof data?.detail === 'string' ? data.detail : 'Something went wrong. Try again.');
+        setFormError(typeof data?.detail === 'string' ? data.detail : t('forgot_password.errors.send_failed'));
         setErrorTrigger(true);
         setTimeout(() => setErrorTrigger(false), 600);
         return;
@@ -76,13 +78,13 @@ export default function ForgotPasswordScreen() {
         setTimeout(() => router.replace('/(auth)/login'), 2000);
       }
     } catch {
-      setFormError("Can't reach the server. Check your connection.");
+      setFormError(t('forgot_password.errors.connection_error'));
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);
     } finally {
       setLoading(false);
     }
-  }, [identifier, router, validate]);
+  }, [identifier, router, validate, t]);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.paper }]}>
@@ -102,8 +104,8 @@ export default function ForgotPasswordScreen() {
               <View style={styles.cardWrap}>
                 <View style={[styles.card, { backgroundColor: tokens.card }]}>
                   <AuthScreenEntrance
-                    title="Reset your password."
-                    subtitle="We'll send you a reset link."
+                    title={t('forgot_password.title')}
+                    subtitle={t('forgot_password.subtitle')}
                   />
 
                   {formError ? (
@@ -121,10 +123,10 @@ export default function ForgotPasswordScreen() {
 
                   <View style={{ gap: 14 }}>
                     <AnimatedInput
-                      label="Email or phone"
+                      label={t('forgot_password.identifier_label')}
                       value={identifier}
                       onChangeText={setIdentifier}
-                      placeholder="you@example.com"
+                      placeholder={t('forgot_password.identifier_placeholder')}
                       autoCapitalize="none"
                       autoCorrect={false}
                       keyboardType="email-address"
@@ -135,18 +137,18 @@ export default function ForgotPasswordScreen() {
                   </View>
 
                   <PrimaryButton
-                    title={loading ? 'Sending...' : 'Send reset link'}
+                    title={loading ? t('forgot_password.sending') : t('forgot_password.send_button')}
                     onPress={handleSubmit}
                     disabled={loading}
                   />
 
                   <View style={styles.tertiaryRow}>
                     <Text style={[styles.tertiaryMuted, { color: tokens.inkMuted }]}>
-                      Remember your password?
+                      {t('forgot_password.remember')}
                     </Text>
                     <Pressable onPress={() => router.back()} hitSlop={6}>
                       <Text style={[styles.tertiaryLink, { color: tokens.mint }]}>
-                        Back to sign in →
+                        {t('forgot_password.back_to_signin')}
                       </Text>
                     </Pressable>
                   </View>

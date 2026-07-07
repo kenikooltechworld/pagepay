@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { OnboardingScreen } from '@/components/onboarding/OnboardingScreen';
 import { ConfettiBurst } from '@/components/onboarding/Confetti';
@@ -43,42 +44,26 @@ import {
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-const SCREENS = [
-  {
-    eyebrow: 'WELCOME TO PAGEPAY',
-    headline: 'Earn while you read',
-    body: 'Read books and articles. Earn points for every minute of verified reading time.',
-    Hero: EarnHero,
-  },
-  {
-    eyebrow: 'STUDY SMARTER',
-    headline: 'Turn your syllabus into quizzes',
-    body: 'Upload your course material. Our AI generates quizzes, flashcards, and practice questions in seconds.',
-    Hero: StudyHero,
-  },
-  {
-    eyebrow: 'REAL REWARDS',
-    headline: 'Cash out or go premium',
-    body: 'Convert your points to Naira via Flutterwave, or unlock premium for ad-free reading and 2× points.',
-    Hero: WalletHero,
-  },
-  {
-    eyebrow: 'DAILY STREAK',
-    headline: 'Read every day, earn more',
-    body: 'Build a 7-day streak. Unlock bonus point multipliers the longer you read in a row.',
-    Hero: StreakHero,
-  },
-  {
-    eyebrow: 'GO PREMIUM',
-    headline: '2× points, zero ads',
-    body: 'Unlock premium for ad-free reading, double your points, and get unlimited AI study material.',
-    Hero: PremiumHero,
-  },
+const SCREEN_KEYS = [
+  'earn',
+  'study',
+  'wallet',
+  'streak',
+  'premium',
+] as const;
+
+const SCREEN_HEROES = [
+  EarnHero,
+  StudyHero,
+  WalletHero,
+  StreakHero,
+  PremiumHero,
 ] as const;
 
 type ConfettiOrigin = { x: number; y: number } | null;
 
 export default function Onboarding() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -90,7 +75,7 @@ export default function Onboarding() {
 
   const goTo = useCallback(
     (index: number) => {
-      const clamped = Math.max(0, Math.min(SCREENS.length - 1, index));
+      const clamped = Math.max(0, Math.min(SCREEN_KEYS.length - 1, index));
       scrollRef.current?.scrollTo({ x: clamped * SCREEN_W, animated: true });
       setActive(clamped);
     },
@@ -107,7 +92,7 @@ export default function Onboarding() {
 
   const handlePrimary = useCallback(
     (origin: { x: number; y: number }) => {
-      if (active < SCREENS.length - 1) {
+      if (active < SCREEN_KEYS.length - 1) {
         goTo(active + 1);
         return;
       }
@@ -140,18 +125,18 @@ export default function Onboarding() {
           onMomentumScrollEnd={handleScrollEnd}
           style={styles.scroll}
         >
-          {SCREENS.map((s, i) => {
-            const Hero = s.Hero;
+          {SCREEN_KEYS.map((key, i) => {
+            const Hero = SCREEN_HEROES[i];
             return (
               <View key={i} style={[styles.page, { width: SCREEN_W }]}>
                 <OnboardingScreen
-                  eyebrow={s.eyebrow}
-                  headline={s.headline}
-                  body={s.body}
+                  eyebrow={t(`onboarding.screens.${key}.eyebrow`)}
+                  headline={t(`onboarding.screens.${key}.headline`)}
+                  body={t(`onboarding.screens.${key}.body`)}
                   index={i}
-                  total={SCREENS.length}
-                  isLast={i === SCREENS.length - 1}
-                  onSkip={() => goTo(SCREENS.length - 1)}
+                  total={SCREEN_KEYS.length}
+                  isLast={i === SCREEN_KEYS.length - 1}
+                  onSkip={() => goTo(SCREEN_KEYS.length - 1)}
                   onPrimary={handlePrimary}
                 >
                   <Hero />

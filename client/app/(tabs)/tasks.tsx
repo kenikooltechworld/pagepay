@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { fetchTasks, type Task } from '@/src/features/tasks/api';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -14,6 +15,7 @@ export default function TasksScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  const { t } = useTranslation();
 
   const { data: tasksData, isLoading, refetch } = useQuery({
     queryKey: ['tasks'],
@@ -54,6 +56,7 @@ export default function TasksScreen() {
   const renderTask = ({ item }: { item: Task }) => {
     const netReward = Math.floor(item.reward_amount * 0.85);
     const remaining = item.max_completions - item.completed_count;
+    const taskTypeKey = item.task_type as keyof typeof t extends `tasks.task_types.${infer K}` ? K : string;
 
     return (
       <TouchableOpacity
@@ -63,7 +66,7 @@ export default function TasksScreen() {
         <View style={styles.taskHeader}>
           <View style={[styles.taskTypeBadge, { backgroundColor: tokens.mint }]}>
             <Text style={[styles.taskTypeBadgeText, { color: tokens.mintText }]}>
-              {item.task_type.replace('_', ' ')}
+              {t(`tasks.task_types.${item.task_type}`, { defaultValue: item.task_type.replace('_', ' ') })}
             </Text>
           </View>
           <View style={[styles.rewardBadge, { backgroundColor: tokens.mintSoft }]}>
@@ -84,12 +87,16 @@ export default function TasksScreen() {
         <View style={styles.taskFooter}>
           <View style={styles.taskMeta}>
             <Ionicons name={getPlatformIcon(item.platform)} size={14} color={tokens.inkMuted} />
-            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>{item.platform}</Text>
+            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>
+              {t(`tasks.platforms.${item.platform.toLowerCase()}`, { defaultValue: item.platform })}
+            </Text>
           </View>
 
           <View style={styles.taskMeta}>
             <Ionicons name="people-outline" size={14} color={tokens.inkMuted} />
-            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>{remaining} left</Text>
+            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>
+              {t('tasks.remaining', { count: remaining })}
+            </Text>
           </View>
 
           <View style={styles.taskMeta}>
@@ -114,7 +121,7 @@ export default function TasksScreen() {
   return (
     <SafeAreaView edges={['top']} style={[styles.container, { backgroundColor: tokens.paper }]}>
       <View style={[styles.header, { backgroundColor: tokens.card, borderBottomColor: tokens.border }]}>
-        <Text style={[styles.headerTitle, { color: tokens.ink }]}>Available Tasks</Text>
+        <Text style={[styles.headerTitle, { color: tokens.ink }]}>{t('tasks.title')}</Text>
         <TouchableOpacity onPress={() => router.push('/tasks/profile')}>
           <Ionicons name="stats-chart" size={24} color={tokens.mint} />
         </TouchableOpacity>
@@ -135,9 +142,9 @@ export default function TasksScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="briefcase-outline" size={64} color={tokens.border} />
-            <Text style={[styles.emptyText, { color: tokens.ink }]}>No tasks available</Text>
+            <Text style={[styles.emptyText, { color: tokens.ink }]}>{t('tasks.empty_title')}</Text>
             <Text style={[styles.emptySubtext, { color: tokens.inkMuted }]}>
-              Check back later for new opportunities
+              {t('tasks.empty_subtitle')}
             </Text>
           </View>
         }

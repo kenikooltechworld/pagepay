@@ -37,6 +37,37 @@ class User(Base):
     subscription_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # ── Auth security ─────────────────────────────────────────────────
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verification_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    last_login_user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    device_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
+    # ── Phase 7: Social Tasks (moved from BillTransaction) ────────────
+    is_worker: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_sponsor: Mapped[bool] = mapped_column(Boolean, default=False)
+    sponsor_wallet_balance: Mapped[int] = mapped_column(BigInteger, default=0)
+    sponsor_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    sponsor_kyc_status: Mapped[str] = mapped_column(String(20), default="none")
+    sponsor_kyc_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sponsor_kyc_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sponsor_kyc_reviewer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    business_registration_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sponsor_auto_approve_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ── User profile (moved from BillTransaction) ─────────────────────
+    gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date_of_birth: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str] = mapped_column(String(50), default="Nigeria")
+    languages: Mapped[str | None] = mapped_column(Text, nullable=True)
+
 
 class BillTransaction(Base):
     """Record of a VTU bill-payment transaction (airtime, data, elec, TV).
@@ -64,24 +95,10 @@ class BillTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     
-    # ── Phase 7: Social Tasks ─────────────────────────────────────────
-    is_worker: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_sponsor: Mapped[bool] = mapped_column(Boolean, default=False)
-    sponsor_wallet_balance: Mapped[int] = mapped_column(BigInteger, default=0)
-    sponsor_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    sponsor_kyc_status: Mapped[str] = mapped_column(String(20), default="none")
-    sponsor_kyc_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    sponsor_kyc_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    sponsor_kyc_reviewer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    business_registration_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    sponsor_auto_approve_ai: Mapped[bool] = mapped_column(Boolean, default=False)
-    
-    gender: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    date_of_birth: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    country: Mapped[str] = mapped_column(String(50), default="Nigeria")
-    languages: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── User profile (kept for historical transaction records) ────────
+    # Note: is_worker, is_sponsor, sponsor_*, business_*, and profile fields
+    # are now stored on the User table. These columns remain for historical
+    # transaction records only and are not updated after migration.
 
 
 class ReadingSession(Base):
@@ -251,10 +268,9 @@ class PayoutAccount(Base):
     to populate `recipient_code` and flip `verified` to True once the
     account number resolves against the resolved name.
 
-    `account_number` is the full 10-digit NUBAN. We never expose it
+    `account_number` stores the encrypted 10-digit NUBAN. We never expose it
     back over the wire after the user has saved it — see
     `account_number_last4` on the PayoutAccount Pydantic response.
-    Phase 4 should encrypt this column at rest.
 
     `user_id` is UNIQUE so we get idempotent inserts (the payouts
     router does an upsert-by-user pattern, not append). Indexed on
@@ -267,7 +283,7 @@ class PayoutAccount(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     bank_code: Mapped[str] = mapped_column(String(10))
     bank_name: Mapped[str] = mapped_column(String(120))
-    account_number: Mapped[str] = mapped_column(String(10))
+    account_number: Mapped[str] = mapped_column(Text)
     # Phase 4 will populate this from Paystack's `/transferrecipient/create`
     # response. The id we pass to /transfer when withdrawing.
     recipient_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -1086,3 +1102,41 @@ class AdRequest(Base):
     # Set when status=rejected. Surfaces why a legitimate-looking SSV
     # callback didn't result in a credit.
     rejection_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class RevokedJWT(Base):
+    __tablename__ = "revoked_jwts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    jti: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(100), nullable=True)  # logout | password_change | admin_ban
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    device_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserAuditLog(Base):
+    __tablename__ = "user_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    action: Mapped[str] = mapped_column(String(50), index=True, nullable=False)  # login | logout | password_change | password_reset | email_verify | account_banned
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    device_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    extra_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string for extra data
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

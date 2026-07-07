@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { View, Text, FlatList, RefreshControl, ActivityIndicator, StyleSheet, Platform, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { formatKobo, formatPoints } from '@/src/shared/lib/money';
@@ -55,12 +56,6 @@ type WithdrawalResponse = {
   amount_kobo: number;
 };
 
-const tierLabel: Record<string, string> = {
-  free: 'Free',
-  premium_monthly: 'Premium · Monthly',
-  premium_yearly: 'Premium · Yearly',
-};
-
 const MIN_WITHDRAWAL_KOBO = 100_000; // ₦1,000 — matches the server's Pydantic floor.
 
 const formatDate = (iso: string | null) => {
@@ -80,6 +75,7 @@ export default function WalletScreen() {
   const c = PagePay[scheme];
   const router = useRouter();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   // Fetch ad config for native unit
   const [nativeAdUnit, setNativeAdUnit] = useState('');
@@ -158,6 +154,10 @@ export default function WalletScreen() {
 
   const balance = meQ.data?.points_balance ?? 0;
   const tier = meQ.data?.tier ?? 'free';
+  const getTierLabel = (tier: string) => {
+    const key = tier as 'free' | 'premium_monthly' | 'premium_yearly';
+    return t(`wallet.tier.${key}`, { defaultValue: tier });
+  };
   const transactions = txQ.data ?? [];
   const withdrawals = withdrawalsQ.data ?? [];
   const payoutAccount = payoutQ.data ?? null;
@@ -249,7 +249,7 @@ export default function WalletScreen() {
                   letterSpacing: -0.5,
                 }}
               >
-                PagePay
+                {t('wallet.title')}
               </Text>
             </View>
 
@@ -273,7 +273,7 @@ export default function WalletScreen() {
                   marginBottom: 8,
                 }}
               >
-                Your balance
+                {t('wallet.balance_label')}
               </Text>
               {meQ.isLoading ? (
                 <SkeletonBalanceCard />
@@ -290,17 +290,17 @@ export default function WalletScreen() {
                   >
                     {formatPoints(balance)}
                     <Text style={{ fontSize: 18, color: c.inkMuted, fontFamily: undefined }}>
-                      {' '}pts
+                      {' '}{t('wallet.points_suffix')}
                     </Text>
                   </Text>
                   <Text style={{ fontSize: 13, color: c.inkMuted, marginTop: 4 }}>
-                    ≈ {formatKobo(balance)}
+                    {t('wallet.approx')} {formatKobo(balance)}
                   </Text>
                 </>
               )}
               <View style={{ height: 1, backgroundColor: c.border, marginVertical: 16 }} />
               <Text style={{ fontSize: 13, color: c.inkMuted, marginBottom: 14 }}>
-                {tierLabel[tier] ?? tier}
+                {getTierLabel(tier)}
               </Text>
 
               {meQ.isLoading || payoutQ.isLoading ? (
@@ -322,7 +322,7 @@ export default function WalletScreen() {
                   >
                     <Ionicons name="add-circle-outline" size={20} color={c.mintText} />
                     <Text style={{ fontSize: 16, fontWeight: '700', color: c.mintText, fontFamily: Fonts.display }}>
-                      Fund Wallet
+                      {t('wallet.fund_wallet')}
                     </Text>
                   </TouchableOpacity>
 
@@ -330,7 +330,7 @@ export default function WalletScreen() {
                   {belowMin ? (
                     <>
                       <PrimaryButton
-                        title="Withdraw"
+                        title={t('wallet.withdraw')}
                         onPress={handleWithdrawPress}
                         disabled
                       />
@@ -342,11 +342,11 @@ export default function WalletScreen() {
                           textAlign: 'center',
                         }}
                       >
-                        Min ₦1,000 to withdraw
+                        {t('wallet.min_withdraw')}
                       </Text>
                     </>
                   ) : (
-                    <PrimaryButton title="Withdraw" onPress={handleWithdrawPress} />
+                    <PrimaryButton title={t('wallet.withdraw')} onPress={handleWithdrawPress} />
                   )}
                 </View>
               )}
@@ -362,36 +362,36 @@ export default function WalletScreen() {
                   letterSpacing: -0.3,
                 }}
               >
-                Pay Bills & Earn
+                {t('wallet.pay_bills')}
               </Text>
               <Text style={{ fontSize: 12, color: c.inkMuted, marginTop: 2, marginBottom: 12 }}>
-                Buy what you need, earn points from every transaction
+                {t('wallet.pay_bills_subtitle')}
               </Text>
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <BillsService
                   icon="phone-portrait-outline"
-                   label="Airtime"
+                   label={t('wallet.services.airtime')}
                    earn="3%"
                    color={c}
                    onPress={() => router.push('/buy-airtime')}
                  />
                  <BillsService
                    icon="wifi-outline"
-                   label="Data"
+                   label={t('wallet.services.data')}
                    earn="4%"
                    color={c}
                    onPress={() => router.push('/buy-data')}
                  />
                  <BillsService
                    icon="flash-outline"
-                   label="Electricity"
+                   label={t('wallet.services.electricity')}
                    earn="1%"
                    color={c}
                    onPress={() => router.push('/buy-electricity')}
                  />
                  <BillsService
                    icon="tv-outline"
-                   label="TV"
+                   label={t('wallet.services.tv')}
                    earn="1.5%"
                    color={c}
                    onPress={() => router.push('/buy-tv')}
@@ -410,7 +410,7 @@ export default function WalletScreen() {
                 letterSpacing: -0.3,
               }}
             >
-              Transaction history
+              {t('wallet.history_title')}
             </Text>
           </View>
         }
@@ -460,10 +460,10 @@ export default function WalletScreen() {
                   marginBottom: 4,
                 }}
               >
-                No transactions yet
+                {t('wallet.no_transactions')}
               </Text>
               <Text style={{ fontSize: 13, color: c.inkMuted, textAlign: 'center' }}>
-                Open an article to start earning.
+                {t('wallet.no_transactions_hint')}
               </Text>
             </View>
           )
@@ -508,6 +508,8 @@ function SessionRow({
   item: Transaction;
   tokens: (typeof PagePay)['light'];
 }) {
+  const { t } = useTranslation();
+  
   // Only show the "Pending" badge when there's actually something to
   // claim. Zero-point "pending" rows mean the session was verified but
   // earned nothing (anti-cheat filtered it) — surfacing those as
@@ -546,7 +548,7 @@ function SessionRow({
           }}
         >
           {item.points > 0 ? '+' : ''}
-          {item.points} pts
+          {item.points} {t('wallet.points_suffix')}
         </Text>
         {showPending ? (
           <Text
@@ -558,7 +560,7 @@ function SessionRow({
               marginTop: 2,
             }}
           >
-            Pending
+            {t('wallet.session_pending')}
           </Text>
         ) : null}
       </View>
@@ -573,6 +575,8 @@ function WithdrawalRow({
   row: WithdrawalRecord;
   tokens: (typeof PagePay)['light'];
 }) {
+  const { t } = useTranslation();
+  
   const isPending = row.status === 'pending';
   const isSuccess = row.status === 'success';
   const isFailed = row.status === 'failed';
@@ -610,10 +614,10 @@ function WithdrawalRow({
           numberOfLines={1}
         >
           {isFailed
-            ? 'Withdrawal failed'
+            ? t('wallet.withdrawal_failed')
             : isPending
-              ? 'Withdrawal pending'
-              : 'Withdrew to bank'}
+              ? t('wallet.withdrawal_pending')
+              : t('wallet.withdrawal_success')}
         </Text>
         <Text style={{ fontSize: 12, color: tokens.inkMuted }}>
           {formatDate(row.settled_at ?? row.created_at)}
@@ -627,7 +631,7 @@ function WithdrawalRow({
             color: isFailed ? tokens.signal : tokens.mint,
           }}
         >
-          −{formatPoints(row.amount_kobo)} pts
+          −{formatPoints(row.amount_kobo)} {t('wallet.points_suffix')}
         </Text>
         {row.fee_kobo > 0 ? (
           <Text
@@ -638,7 +642,7 @@ function WithdrawalRow({
               marginTop: 2,
             }}
           >
-            incl. {formatKobo(row.fee_kobo)} fee
+            {t('wallet.fee_label', { amount: formatKobo(row.fee_kobo) })}
           </Text>
         ) : null}
         {isPending ? (
@@ -651,7 +655,7 @@ function WithdrawalRow({
               marginTop: 2,
             }}
           >
-            Pending
+            {t('wallet.session_pending')}
           </Text>
         ) : null}
       </View>

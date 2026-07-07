@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -33,6 +34,7 @@ const NETWORKS = [
 const AMOUNTS = [100, 200, 500, 1000, 2000, 5000];
 
 export default function BuyAirtimeScreen() {
+  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const insets = useSafeAreaInsets();
@@ -85,13 +87,13 @@ export default function BuyAirtimeScreen() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['me'] });
       Alert.alert(
-        'Airtime Sent!',
-        `₦${data.amount_naira} ${network.toUpperCase()} airtime sent to ${phone}. You earned +${data.points_earned} points!`,
-        [{ text: 'Done', onPress: () => router.back() }],
+        t('bills.airtime.success_title'),
+        t('bills.airtime.success_message', { amount: data.amount_naira, phone, points: data.points_earned }),
+        [{ text: t('bills.airtime.ok'), onPress: () => router.back() }],
       );
     },
     onError: (error: Error) => {
-      Alert.alert('Purchase Failed', error.message);
+      Alert.alert(t('bills.airtime.errors.purchase_failed'), error.message);
     },
   });
 
@@ -105,14 +107,14 @@ export default function BuyAirtimeScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={tokens.ink} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tokens.ink }]}>Buy Airtime</Text>
+          <Text style={[styles.title, { color: tokens.ink }]}>{t('bills.airtime.title')}</Text>
         </View>
 
         {/* Phone */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.airtime.phone_label')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="08012345678"
+          placeholder={t('bills.airtime.phone_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={phone}
           onChangeText={(text) => {
@@ -126,17 +128,17 @@ export default function BuyAirtimeScreen() {
         />
         {phone.length > 0 && phone.length < 11 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
-            Phone number must be 11 digits
+            {t('bills.airtime.errors.phone_invalid')}
           </Text>
         )}
         {detectedNetwork && (
           <Text style={{ color: tokens.mint, fontSize: 12, marginTop: -10 }}>
-            ✓ Detected: {detectedNetwork}
+            ✓ {t('bills.airtime.detected', { network: detectedNetwork })}
           </Text>
         )}
 
         {/* Network */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Network</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.airtime.network_label')}</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           {NETWORKS.map((n) => (
             <TouchableOpacity
@@ -159,7 +161,7 @@ export default function BuyAirtimeScreen() {
         </View>
 
         {/* Amount */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Select Amount</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.airtime.amount_label')}</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           {AMOUNTS.map((a) => {
             const rate = 0.03;
@@ -190,10 +192,10 @@ export default function BuyAirtimeScreen() {
         </View>
 
         {/* Custom Amount */}
-        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 4 }]}>Or Enter Custom Amount</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 4 }]}>{t('bills.airtime.custom_amount')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="Enter amount (min ₦50)"
+          placeholder={t('bills.airtime.custom_amount')}
           placeholderTextColor={tokens.inkMuted}
           value={customAmount}
           onChangeText={(text) => {
@@ -235,7 +237,7 @@ export default function BuyAirtimeScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {amount ? `Pay ₦${amount.toLocaleString()}` : 'Select an amount'}
+                {amount ? t('bills.airtime.buy_button') : t('bills.airtime.amount_required')}
               </Text>
             </>
           )}

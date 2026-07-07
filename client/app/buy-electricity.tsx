@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -35,6 +36,7 @@ type PurchaseResult = {
 const AMOUNTS = [1000, 2000, 5000, 10000, 20000];
 
 export default function BuyElectricityScreen() {
+  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const insets = useSafeAreaInsets();
@@ -51,7 +53,7 @@ export default function BuyElectricityScreen() {
     queryKey: ['electricity-plans'],
     queryFn: async () => {
       const res = await apiFetch('/api/v1/bills/electricity/plans');
-      if (!res.ok) throw new Error('Failed to load electricity plans');
+      if (!res.ok) throw new Error(t('bills.electricity.load_error'));
       return (await res.json()) as Disco[];
     },
   });
@@ -59,8 +61,8 @@ export default function BuyElectricityScreen() {
   const purchaseMutation = useMutation({
     mutationFn: async () => {
       const finalAmount = amount ?? (parseInt(customAmount) || 0);
-      if (finalAmount < 1000) throw new Error('Minimum amount is ₦1,000');
-      if (!phone) throw new Error('Phone number required');
+      if (finalAmount < 1000) throw new Error(t('bills.electricity.min_amount'));
+      if (!phone) throw new Error(t('bills.electricity.phone_required'));
       const res = await apiFetch('/api/v1/bills/electricity', {
         method: 'POST',
         body: JSON.stringify({
@@ -73,7 +75,7 @@ export default function BuyElectricityScreen() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || 'Purchase failed');
+        throw new Error(err.detail || t('bills.electricity.purchase_failed'));
       }
       return (await res.json()) as PurchaseResult;
     },
@@ -81,13 +83,13 @@ export default function BuyElectricityScreen() {
       qc.invalidateQueries({ queryKey: ['me'] });
       const finalAmount = amount ?? parseInt(customAmount);
       Alert.alert(
-        'Tokens Purchased!',
-        `₦${finalAmount} electricity tokens sent to meter ${meterNumber}. You earned +${data.points_earned} points!`,
-        [{ text: 'Done', onPress: () => router.back() }],
+        t('bills.electricity.success_title'),
+        t('bills.electricity.success_message', { amount: finalAmount, meter: meterNumber, points: data.points_earned }),
+        [{ text: t('bills.electricity.done'), onPress: () => router.back() }],
       );
     },
     onError: (error: Error) => {
-      Alert.alert('Purchase Failed', error.message);
+      Alert.alert(t('bills.electricity.error_title'), error.message);
     },
   });
 
@@ -103,11 +105,11 @@ export default function BuyElectricityScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={tokens.ink} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: tokens.ink }]}>Buy Electricity</Text>
+          <Text style={[styles.title, { color: tokens.ink }]}>{t('bills.electricity.title')}</Text>
         </View>
 
         {/* DISCO */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Distribution Company (DISCO)</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.electricity.disco')}</Text>
         {discosQ.isLoading ? (
           <ActivityIndicator color={tokens.mint} />
         ) : (
@@ -144,7 +146,7 @@ export default function BuyElectricityScreen() {
         )}
 
         {/* Meter Type */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Meter Type</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.electricity.meter_type')}</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {(['prepaid', 'postpaid'] as const).map((type) => (
             <TouchableOpacity
@@ -164,17 +166,17 @@ export default function BuyElectricityScreen() {
                 color={tokens.mint}
               />
               <Text style={[styles.chipText, { color: meterType === type ? tokens.mint : tokens.ink }]}>
-                {type.charAt(0).toUpperCase() + type.slice(1)}
+                {t(`bills.electricity.${type}`)}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* Meter Number */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Meter Number</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.electricity.meter_number')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="12345678901234"
+          placeholder={t('bills.electricity.meter_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={meterNumber}
           onChangeText={(text) => {
@@ -187,15 +189,15 @@ export default function BuyElectricityScreen() {
         />
         {meterNumber.length > 0 && meterNumber.length < 10 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
-            Meter number must be at least 10 digits
+            {t('bills.electricity.meter_error')}
           </Text>
         )}
 
         {/* Phone Number */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Phone Number</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.electricity.phone')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="08012345678"
+          placeholder={t('bills.electricity.phone_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={phone}
           onChangeText={(text) => {
@@ -208,12 +210,12 @@ export default function BuyElectricityScreen() {
         />
         {phone.length > 0 && phone.length < 11 && (
           <Text style={{ color: tokens.error, fontSize: 12, marginTop: -10 }}>
-            Phone number must be 11 digits
+            {t('bills.electricity.phone_error')}
           </Text>
         )}
 
         {/* Amount */}
-        <Text style={[styles.label, { color: tokens.inkMuted }]}>Amount</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted }]}>{t('bills.electricity.amount')}</Text>
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           {AMOUNTS.map((a) => (
             <TouchableOpacity
@@ -240,10 +242,10 @@ export default function BuyElectricityScreen() {
         </View>
 
         {/* Custom Amount */}
-        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 4 }]}>Or Enter Custom Amount</Text>
+        <Text style={[styles.label, { color: tokens.inkMuted, marginTop: 4 }]}>{t('bills.electricity.custom_amount')}</Text>
         <TextInput
           style={[styles.input, { backgroundColor: tokens.card, color: tokens.ink, borderColor: tokens.border }]}
-          placeholder="Enter amount (min ₦1,000)"
+          placeholder={t('bills.electricity.custom_placeholder')}
           placeholderTextColor={tokens.inkMuted}
           value={customAmount}
           onChangeText={(text) => {
@@ -261,9 +263,9 @@ export default function BuyElectricityScreen() {
           <View style={[styles.earnCard, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
             <Ionicons name="gift-outline" size={20} color={tokens.mint} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.earnLabel, { color: tokens.mint }]}>You'll earn +{estPoints} points</Text>
+              <Text style={[styles.earnLabel, { color: tokens.mint }]}>{t('bills.electricity.earn_points', { points: estPoints })}</Text>
               <Text style={[styles.earnSub, { color: tokens.ink }]}>
-                Commission from the electricity purchase is split — you get points, we keep the platform running.
+                {t('bills.electricity.earn_description')}
               </Text>
             </View>
           </View>
@@ -287,7 +289,7 @@ export default function BuyElectricityScreen() {
             <>
               <Ionicons name="cart-outline" size={20} color={tokens.mintText} />
               <Text style={[styles.payText, { color: tokens.mintText }]}>
-                {finalAmount >= 1000 ? `Pay ₦${finalAmount.toLocaleString()}` : 'Enter amount (min ₦1,000)'}
+                {finalAmount >= 1000 ? t('bills.electricity.pay_button', { amount: finalAmount }) : t('bills.electricity.min_amount_prompt')}
               </Text>
             </>
           )}

@@ -75,7 +75,7 @@ async def get_referral_stats(
 
     return ReferralStats(
         code=code,
-        clicks=signups,
+        clicks=0,
         signups=signups,
         pending_rewards=pending_rewards,
         claimed_rewards=claimed_rewards,

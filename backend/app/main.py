@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
+import socketio
 from app.config import settings
 from app.database import AsyncSessionLocal, engine
 from app.limiter import limiter
@@ -28,6 +29,7 @@ from app.routers.sponsor import router as sponsor_router
 from app.seed import run_all_seeds
 from app.services.task_processor import task_processor
 from app.services.ai_verification import verification_service
+from app.websocket import sio
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -100,6 +102,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PagePay API", lifespan=lifespan)
 app.state.limiter = limiter
 
+# Mount Socket.IO
+socket_app = socketio.ASGIApp(sio, app)
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -151,9 +156,31 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class CSRFMiddleware(BaseHTTPMiddleware):
+    """Require X-Requested-With header on admin mutation endpoints.
+
+    Browsers automatically send cookies on same-site requests. Without
+    CSRF protection, a malicious site can forge state-changing requests
+    on behalf of an authenticated admin. Requiring a custom header
+    blocks this because browsers cannot set custom headers in
+    cross-origin requests without CORS preflight.
+    """
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        method = request.method
+        if path.startswith("/api/v1/admin") and method in ("POST", "PUT", "DELETE", "PATCH"):
+            if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Missing X-Requested-With header"},
+                )
+        return await call_next(request)
+
+
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 app.add_middleware(RequestSizeLimitMiddleware)
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

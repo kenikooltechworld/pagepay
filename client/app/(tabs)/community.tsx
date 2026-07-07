@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useCommunityFeed, useToggleLike, useUploadCommunityNote } from '@/src/features/community/hooks/use-community';
@@ -23,14 +24,8 @@ import { SkeletonPage } from '@/components/skeletons';
 
 type Filters = 'all' | 'my_courses' | 'popular' | 'recent';
 
-const FILTERS: { key: Filters; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'my_courses', label: 'My Courses' },
-  { key: 'popular', label: 'Popular' },
-  { key: 'recent', label: 'Recent' },
-];
-
 export default function CommunityScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -42,6 +37,13 @@ export default function CommunityScreen() {
   const [uploadContent, setUploadContent] = useState('');
   const [uploadCourse, setUploadCourse] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+
+  const FILTERS: { key: Filters; label: string }[] = [
+    { key: 'all', label: t('community.filter_all') },
+    { key: 'my_courses', label: t('community.filter_my_courses') },
+    { key: 'popular', label: t('community.filter_popular') },
+    { key: 'recent', label: t('community.filter_recent') },
+  ];
 
   const sort = filter === 'popular' ? 'popular' : 'recent';
   const courseCode = filter === 'my_courses' ? undefined : undefined;
@@ -96,7 +98,7 @@ export default function CommunityScreen() {
       >
         <View style={[styles.header, { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }]}>
           <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-            Community Notes
+            {t('community.title')}
           </Text>
           <TouchableOpacity
             onPress={() => setShowUpload(!showUpload)}
@@ -132,17 +134,17 @@ export default function CommunityScreen() {
 
         {showUpload && (
           <View style={[styles.uploadCard, { backgroundColor: tokens.card, borderColor: tokens.border, marginHorizontal: 16, marginBottom: 12 }]}>
-            <Text style={[styles.uploadTitle, { color: tokens.ink }]}>Share a note</Text>
+            <Text style={[styles.uploadTitle, { color: tokens.ink }]}>{t('community.share_note')}</Text>
             <TextInput
               style={[styles.input, { backgroundColor: tokens.paper, borderColor: tokens.border, color: tokens.ink }]}
-              placeholder="Title"
+              placeholder={t('community.title_placeholder')}
               placeholderTextColor={tokens.inkMuted}
               value={uploadTitle}
               onChangeText={setUploadTitle}
             />
             <TextInput
               style={[styles.input, { backgroundColor: tokens.paper, borderColor: tokens.border, color: tokens.ink, minHeight: 80 }]}
-              placeholder="Your note content..."
+              placeholder={t('community.content_placeholder')}
               placeholderTextColor={tokens.inkMuted}
               value={uploadContent}
               onChangeText={setUploadContent}
@@ -151,7 +153,7 @@ export default function CommunityScreen() {
             />
             <TextInput
               style={[styles.input, { backgroundColor: tokens.paper, borderColor: tokens.border, color: tokens.ink }]}
-              placeholder="Course code (optional)"
+              placeholder={t('community.course_placeholder')}
               placeholderTextColor={tokens.inkMuted}
               value={uploadCourse}
               onChangeText={setUploadCourse}
@@ -163,7 +165,7 @@ export default function CommunityScreen() {
               activeOpacity={0.7}
             >
               <Text style={[styles.submitText, { color: tokens.mintText }]}>
-                {uploadMutation.isPending ? 'Posting...' : 'Post Note'}
+                {uploadMutation.isPending ? t('community.posting') : t('community.post_button')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -175,7 +177,7 @@ export default function CommunityScreen() {
           <View style={{ paddingVertical: 48, alignItems: 'center', paddingHorizontal: 32 }}>
             <Ionicons name="people-outline" size={40} color={tokens.mint} />
             <Text style={[styles.emptyText, { color: tokens.inkMuted, marginTop: 8 }]}>
-              No notes yet. Be the first to share!
+              {t('community.empty_title')}
             </Text>
           </View>
         ) : (
@@ -191,7 +193,7 @@ export default function CommunityScreen() {
                       {note.title}
                     </Text>
                     <Text style={[styles.noteMeta, { color: tokens.inkMuted }]}>
-                      {note.author_name ?? 'Anonymous'}
+                      {note.author_name ?? t('community.anonymous')}
                       {note.course_code ? ` · ${note.course_code}` : ''}
                       {note.university ? ` · ${note.university}` : ''}
                     </Text>

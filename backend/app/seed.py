@@ -19,28 +19,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdPlacement, AppConfig, AiProviderHealth, AdminUser
+from app.config import settings
 
 
 logger = logging.getLogger("uvicorn.error")
 
 
 # ── AdMob unit IDs ──────────────────────────────────────────────────
-# Mirrors `admob.md` at the repo root. App IDs (`~...`) go into
-# `app_config` keyed by platform; unit IDs (`/...`) go into
-# `ad_placements` keyed by (location, platform). The mapping:
-#
-#   location='in_feed'      → Native Advanced unit
-#   location='interstitial' → Interstitial unit
-#   location='rewarded'     → Rewarded unit
-#   location='banner'       → Banner unit
-#
-# When AppLovin data lands, set `fallback_provider='applovin_max'` on
-# the rows and add parallel placements for that provider. We do NOT
-# set a fallback today — the spec's "dual network" story is gated on
-# AppLovin integration shipping.
+# Mirrors `admob.md` at the repo root. App IDs (`~...`) come from
+# `settings.admob_app_id_android` / `settings.admob_app_id_ios`
+# (env vars). Unit IDs (`/...`) are public ad unit identifiers and
+# are listed here for seeding. When AppLovin lands, add new rows
+# here — the existing app_config schema already has a column for it.
 
-_ADMOB_APP_ID_ANDROID = "ca-app-pub-3898064484524772~6521009021"
-_ADMOB_APP_ID_IOS = "ca-app-pub-3898064484524772~4871553842"
+_ADMOB_APP_ID_ANDROID = settings.admob_app_id_android or "ca-app-pub-3898064484524772~6521009021"
+_ADMOB_APP_ID_IOS = settings.admob_app_id_ios or "ca-app-pub-3898064484524772~4871553842"
 
 # Per-platform unit IDs. Keys are (location, platform).
 _UNIT_IDS: dict[tuple[str, str], str] = {

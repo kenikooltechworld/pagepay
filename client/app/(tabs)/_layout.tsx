@@ -11,9 +11,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
+import { apiFetch } from '@/src/shared/api/client';
+import { EmailVerificationGate } from '@/src/components/EmailVerificationGate';
 
 type Tokens = (typeof PagePay)['light'];
 
@@ -29,8 +32,24 @@ const DRAWER_ITEMS = [
 
 export default function TabLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showEmailGate, setShowEmailGate] = useState(false);
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+
+  const { data: me } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/v1/auth/me');
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (me && !me.email_verified && me.email) {
+      setShowEmailGate(true);
+    }
+  }, [me]);
 
   return (
     <>
@@ -48,6 +67,7 @@ export default function TabLayout() {
             shadowRadius: 12,
             shadowOffset: { width: 0, height: -2 },
             elevation: 6,
+            display: showEmailGate ? 'none' : 'flex',
           },
           tabBarLabelStyle: {
             fontSize: 11,
@@ -115,6 +135,9 @@ export default function TabLayout() {
         onClose={() => setDrawerOpen(false)}
         tokens={tokens}
       />
+
+      {/* Email verification gate - shown when email is not verified */}
+      {showEmailGate && <EmailVerificationGate />}
     </>
   );
 }

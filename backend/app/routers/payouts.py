@@ -53,6 +53,7 @@ from app.schemas import (
     WithdrawalRequest,
     WithdrawalResponse,
 )
+from app.services.encryption import decrypt, encrypt
 from app.services.paystack import (
     PaystackError,
     get_client as get_paystack_client,
@@ -73,11 +74,12 @@ def _to_response(row: PayoutAccountRow) -> PayoutAccount:
     account number back over the wire. The response exposes only
     `account_number_last4`, never the 10-digit NUBAN.
     """
+    decrypted = decrypt(row.account_number) or "0000000000"
     return PayoutAccount(
         bank_code=row.bank_code,
         bank_name=row.bank_name,
         # Last four of the saved number. Safe to log / display.
-        account_number_last4=row.account_number[-4:],
+        account_number_last4=decrypted[-4:],
         account_name=row.account_name,
         verified=row.verified,
         linked_at=row.linked_at,
@@ -299,8 +301,7 @@ async def link_payout_account(
             db.add(row)
         row.bank_code = payload.bank_code
         row.bank_name = payload.bank_name
-        # Phase 4 must encrypt this column at rest. v1 stores plain.
-        row.account_number = payload.account_number
+        row.account_number = encrypt(payload.account_number)
         row.account_name = payload.account_name or "Pending validation"
         row.recipient_code = None
         row.verified = False
@@ -312,7 +313,7 @@ async def link_payout_account(
             "User %s linked payout account (stub) bank=%s ···%s verified=%s",
             current_user.id,
             row.bank_name,
-            row.account_number[-4:],
+            decrypt(row.account_number or "")[-4:],
             row.verified,
         )
         return _to_response(row)
@@ -368,7 +369,7 @@ async def link_payout_account(
 
     row.bank_code = payload.bank_code
     row.bank_name = payload.bank_name
-    row.account_number = payload.account_number
+    row.account_number = encrypt(payload.account_number)
     row.account_name = account_name
     row.recipient_code = recipient_code
     row.verified = True
@@ -380,7 +381,7 @@ async def link_payout_account(
         "User %s linked payout account via Paystack bank=%s ···%s recipient=%s",
         current_user.id,
         row.bank_name,
-        row.account_number[-4:],
+        decrypt(row.account_number or "")[-4:],
         recipient_code,
     )
     return _to_response(row)

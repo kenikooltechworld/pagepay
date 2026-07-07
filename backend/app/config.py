@@ -135,6 +135,21 @@ class Settings(BaseSettings):
     # cron container and any operator script must send the same value.
     # In dev it's the default below; production must override via env.
     admin_token: str = "dev-admin-token"
+
+    # AES-256-GCM encryption key for sensitive data at rest (e.g. NUBAN).
+    # Must be a 32-byte (256-bit) base64-encoded key. Generate with:
+    #   openssl rand -base64 32
+    encryption_key: str | None = None
+
+    # ── Email (Resend) ───────────────────────────────────────────────
+    resend_api_key: str | None = None
+    email_from: str = "PagePay <noreply@earn9ja.site>"
+    # Public base URL for email links (verification, password reset).
+    # Must be set in production to the real public domain.
+    public_base_url: str = "http://localhost:8000"
+
+    # ── OAuth2 (Google) ──────────────────────────────────────────────
+    google_client_id: str | None = None
     
     # ── Phase 3: Firebase Cloud Messaging (Push Notifications) ───────
     # Path to Firebase service account JSON file downloaded from console
@@ -203,6 +218,8 @@ class Settings(BaseSettings):
                 raise ValueError("SECRET_KEY must be set to a strong random value in production")
             if not self.admin_token or self.admin_token in ("dev-admin-token",):
                 raise ValueError("ADMIN_TOKEN must be set to a strong random value in production")
+            if not self.encryption_key:
+                raise ValueError("ENCRYPTION_KEY must be set in production for data-at-rest encryption")
         return self
 
 

@@ -14,6 +14,7 @@ import { initializeAdMob } from '@/src/shared/lib/ads-native';
 import { setOnUnauthenticated } from '@/src/shared/api/client';
 import { setupNotificationListeners, registerFCMToken } from '@/src/lib/notifications';
 import { SplashOverlay } from '@/components/SplashOverlay';
+import '@/src/lib/i18n';
 
 const queryClient = new QueryClient();
 
@@ -121,7 +122,17 @@ export default function RootLayout() {
   // it won't run until this resolves; the SplashOverlay fills the
   // gap so the user sees motion instead of a blank screen.
   useEffect(() => {
-    void bootstrapPreferences();
+    const initApp = async () => {
+      await bootstrapPreferences();
+      
+      // Initialize i18n with user's saved language preference
+      const i18n = await import('@/src/lib/i18n');
+      const prefs = usePreferences.getState();
+      if (prefs.language && prefs.language !== 'en') {
+        await i18n.default.changeLanguage(prefs.language);
+      }
+    };
+    void initApp();
   }, []);
 
   // Initialize Firebase Cloud Messaging and notification listeners

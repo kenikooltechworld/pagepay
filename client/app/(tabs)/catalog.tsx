@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { useCatalogFilter } from '@/src/shared/lib/catalog-filter';
@@ -30,6 +31,7 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 const ANONYMOUS_USER_ID = 0;
 
 export default function CatalogScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
@@ -95,7 +97,7 @@ export default function CatalogScreen() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const filters = useMemo(() => ['All', ...categories] as const, [categories]);
+  const filters = useMemo(() => [t('catalog.filter_all'), ...categories] as const, [categories, t]);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['feed', userId, storeCategory],
@@ -149,10 +151,10 @@ export default function CatalogScreen() {
             { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' },
           ]}
         >
-          Catalog
+          {t('catalog.title')}
         </Text>
         <Text style={[styles.subline, { color: tokens.inkMuted }]}>
-          {storeCategory ? `Filtered: ${storeCategory}` : 'Every read pays. Pick one.'}
+          {storeCategory ? t('catalog.subtitle_filtered', { category: storeCategory }) : t('catalog.subtitle_default')}
         </Text>
       </View>
 
@@ -163,7 +165,7 @@ export default function CatalogScreen() {
           contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
         >
           {filters.map((f) => {
-            const value = f === 'All' ? null : f;
+            const value = f === t('catalog.filter_all') ? null : f;
             return (
               <CategoryChip
                 key={f}
@@ -180,13 +182,13 @@ export default function CatalogScreen() {
         <TouchableOpacity
           onPress={onClearFilter}
           accessibilityRole="button"
-          accessibilityLabel="Clear category filter"
+          accessibilityLabel={t('catalog.clear_filter')}
           style={styles.clearRow}
           hitSlop={6}
         >
           <Ionicons name="close-circle" size={14} color={tokens.inkMuted} />
           <Text style={[styles.clearText, { color: tokens.inkMuted }]}>
-            Clear filter
+            {t('catalog.clear_filter')}
           </Text>
         </TouchableOpacity>
       ) : null}
@@ -212,14 +214,14 @@ export default function CatalogScreen() {
           <View style={[styles.stateBlock, { borderColor: tokens.signal }]}>
             <Ionicons name="cloud-offline-outline" size={20} color={tokens.signal} />
             <Text style={[styles.stateText, { color: tokens.signal }]}>
-              Couldn&apos;t load the catalog.
+              {t('catalog.error_load')}
             </Text>
             <TouchableOpacity
               onPress={() => refetch()}
               style={[styles.retry, { borderColor: tokens.signal }]}
               activeOpacity={0.7}
             >
-              <Text style={[styles.retryText, { color: tokens.signal }]}>Try again</Text>
+              <Text style={[styles.retryText, { color: tokens.signal }]}>{t('catalog.try_again')}</Text>
             </TouchableOpacity>
           </View>
         ) : items.length === 0 ? (
@@ -227,14 +229,14 @@ export default function CatalogScreen() {
             <Ionicons name="library-outline" size={28} color={tokens.mint} />
             <Text style={[styles.stateText, { color: tokens.inkMuted }]}>
               {storeCategory
-                ? `No reads in "${storeCategory}" yet.`
-                : "You've finished everything we have. Pull more?"}
+                ? t('catalog.empty_filtered', { category: storeCategory })
+                : t('catalog.empty_finished')}
             </Text>
             <TouchableOpacity
               onPress={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending}
               accessibilityRole="button"
-              accessibilityLabel="Pull fresh books from the catalog"
+              accessibilityLabel={t('catalog.refresh_catalog')}
               activeOpacity={0.9}
               style={[
                 styles.refreshBtn,
@@ -247,13 +249,13 @@ export default function CatalogScreen() {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.refreshBtnText}>
-                  {storeCategory ? 'Pull more books' : 'Refresh catalog'}
+                  {storeCategory ? t('catalog.pull_more') : t('catalog.refresh_catalog')}
                 </Text>
               )}
             </TouchableOpacity>
             {refreshMutation.isError ? (
               <Text style={[styles.stateText, { color: tokens.signal, fontSize: 12 }]}>
-                Couldn&apos;t reach the catalog. Tap again.
+                {t('catalog.refresh_error')}
               </Text>
             ) : null}
           </View>

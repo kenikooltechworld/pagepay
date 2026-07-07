@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -12,9 +12,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
-import { saveToken } from '@/src/shared/lib/storage';
+import { saveToken, saveRefreshToken, getRefreshToken } from '@/src/shared/lib/storage';
+import { getDeviceFingerprint } from '@/src/shared/lib/device-fingerprint';
+import { useBiometricAuth } from '@/src/shared/hooks/use-biometric-auth';
 import { registerFCMToken } from '@/src/lib/notifications';
 import { PageMark } from '@/components/PageMark';
 import { AnimatedInput } from '@/components/AnimatedInput';
@@ -27,9 +31,11 @@ import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 type FieldErrors = Partial<Record<'email' | 'password', string>>;
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  const { isSupported, isEnrolled, authenticate } = useBiometricAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,6 +45,59 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorTrigger, setErrorTrigger] = useState(false);
+
+  const handleBiometricLogin = useCallback(async () => {
+    setLoading(true);
+    setFormError(null);
+    try {
+      const result = await authenticate();
+      if (!result.success) {
+        setFormError(result.error || t('auth.login.errors.biometric_failed'));
+        setErrorTrigger(true);
+        setTimeout(() => setErrorTrigger(false), 600);
+        return;
+      }
+
+      const refreshToken = await getRefreshToken();
+      if (!refreshToken) {
+        setFormError(t('auth.login.errors.no_credentials'));
+        setErrorTrigger(true);
+        setTimeout(() => setErrorTrigger(false), 600);
+        return;
+      }
+
+      const res = await apiFetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!res.ok) {
+        await saveToken('');
+        setFormError(t('auth.login.errors.session_expired'));
+        setErrorTrigger(true);
+        setTimeout(() => setErrorTrigger(false), 600);
+        return;
+      }
+
+      const data = await res.json();
+      await saveToken(data.access_token);
+      if (data.refresh_token) {
+        await saveRefreshToken(data.refresh_token);
+      }
+      
+      await registerFCMToken();
+      
+      setSuccess(true);
+      setTimeout(() => router.replace('/(tabs)'), 1000);
+    } catch {
+      setFormError(t('auth.login.errors.connection_error'));
+      setErrorTrigger(true);
+      setTimeout(() => setErrorTrigger(false), 600);
+    } finally {
+      setLoading(false);
+    }
+  }, [authenticate, router, t]);
 
   // Stable change handlers. Each one only clears its own field error after
   // the first keystroke — never `formError` and never in `onFocus`. Clearing
@@ -55,10 +114,10 @@ export default function LoginScreen() {
 
   const validate = useCallback((): FieldErrors => {
     const e: FieldErrors = {};
-    if (!email.trim()) e.email = 'Enter your email or phone.';
-    if (!password) e.password = 'Enter your password.';
+    if (!email.trim()) e.email = t('auth.login.errors.enter_email');
+    if (!password) e.password = t('auth.login.errors.enter_password');
     return e;
-  }, [email, password]);
+  }, [email, password, t]);
 
   const handleLogin = useCallback(async () => {
     setFormError(null);
@@ -72,9 +131,13 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
+      const fingerprint = await getDeviceFingerprint();
       const res = await apiFetch('/api/v1/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Device-Fingerprint': fingerprint,
+        },
         body: `username=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(password)}`,
       });
 
@@ -88,7 +151,7 @@ export default function LoginScreen() {
           /* non-JSON response */
         }
         if (status === 401 && !detail) {
-          setFormError("That email and password don't match.");
+          setFormError(t('auth.login.errors.credentials_mismatch'));
         } else {
           setFormError(detail || `Connection error (HTTP ${status})`);
         }
@@ -99,6 +162,9 @@ export default function LoginScreen() {
 
       const data = await res.json();
       await saveToken(data.access_token);
+      if (data.refresh_token) {
+        await saveRefreshToken(data.refresh_token);
+      }
       
       // Register FCM token for push notifications
       await registerFCMToken();
@@ -106,13 +172,13 @@ export default function LoginScreen() {
       setSuccess(true);
       setTimeout(() => router.replace('/(tabs)'), 1000);
     } catch {
-      setFormError("Can't reach the server. Check your connection and try again.");
+      setFormError(t('auth.login.errors.connection_error'));
       setErrorTrigger(true);
       setTimeout(() => setErrorTrigger(false), 600);
     } finally {
       setLoading(false);
     }
-  }, [email, password, router, validate]);
+  }, [email, password, router, validate, t]);
 
   return (
     <View style={[styles.root, { backgroundColor: tokens.paper }]}>
@@ -135,8 +201,8 @@ export default function LoginScreen() {
               <View style={styles.cardWrap}>
                 <View style={[styles.card, { backgroundColor: tokens.card }]}>
                   <AuthScreenEntrance
-                    title="Welcome back."
-                    subtitle="Sign in to keep earning."
+                    title={t('auth.login.title')}
+                    subtitle={t('auth.login.subtitle')}
                   />
 
                   {formError ? (
@@ -152,12 +218,28 @@ export default function LoginScreen() {
                     </View>
                   ) : null}
 
+                  {isSupported && isEnrolled ? (
+                    <Pressable
+                      onPress={handleBiometricLogin}
+                      disabled={loading}
+                      style={({ pressed }) => [
+                        styles.biometricButton,
+                        { backgroundColor: tokens.mintSoft, borderColor: tokens.mint, opacity: pressed ? 0.7 : 1 },
+                      ]}
+                    >
+                      <Ionicons name="finger-print" size={22} color={tokens.mint} />
+                      <Text style={[styles.biometricText, { color: tokens.mint }]}>
+                        {loading ? t('auth.login.authenticating') : t('auth.login.biometric_button')}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+
                   <View style={{ gap: 14 }}>
                     <AnimatedInput
-                      label="Email or phone"
+                      label={t('auth.login.email_label')}
                       value={email}
                       onChangeText={onChangeEmail}
-                      placeholder="you@example.com"
+                      placeholder={t('auth.login.email_placeholder')}
                       autoCapitalize="none"
                       autoCorrect={false}
                       keyboardType="email-address"
@@ -166,10 +248,10 @@ export default function LoginScreen() {
                       error={errors.email}
                     />
                     <AnimatedInput
-                      label="Password"
+                      label={t('auth.login.password_label')}
                       value={password}
                       onChangeText={onChangePassword}
-                      placeholder="Your password"
+                      placeholder={t('auth.login.password_placeholder')}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -192,13 +274,13 @@ export default function LoginScreen() {
                       hitSlop={8}
                     >
                       <Text style={[styles.forgot, { color: tokens.mint }]}>
-                        Forgot password?
+                        {t('auth.login.forgot_password')}
                       </Text>
                     </Pressable>
                   </View>
 
                   <AnimatedSubmitButton
-                    title="Sign in"
+                    title={t('auth.login.sign_in')}
                     isLoading={loading}
                     isSuccess={success}
                     onPress={handleLogin}
@@ -206,11 +288,11 @@ export default function LoginScreen() {
 
                   <View style={styles.tertiaryRow}>
                     <Text style={[styles.tertiaryMuted, { color: tokens.inkMuted }]}>
-                      New to PagePay?
+                      {t('auth.login.new_to_pagepay')}
                     </Text>
                     <Pressable onPress={() => router.push('/(auth)/register')} hitSlop={6}>
                       <Text style={[styles.tertiaryLink, { color: tokens.mint }]}>
-                        Create an account  →
+                        {t('auth.login.create_account')}
                       </Text>
                     </Pressable>
                   </View>
@@ -294,6 +376,20 @@ const styles = StyleSheet.create({
   },
   tertiaryLink: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  biometricText: {
+    fontSize: 15,
     fontWeight: '600',
   },
 });

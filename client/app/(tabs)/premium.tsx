@@ -6,6 +6,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Alert, ActivityIn
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { PagePay } from '@/constants/theme';
@@ -22,6 +23,7 @@ type Tier = {
 };
 
 export default function PremiumScreen() {
+  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const qc = useQueryClient();
@@ -72,8 +74,8 @@ export default function PremiumScreen() {
         qc.invalidateQueries({ queryKey: ['payments', 'subscription'] });
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Something went wrong';
-      Alert.alert('Payment Error', message);
+      const message = e instanceof Error ? e.message : t('premium.payment_error');
+      Alert.alert(t('premium.payment_error'), message);
     }
   };
 
@@ -87,10 +89,10 @@ export default function PremiumScreen() {
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.header}>
             <Text style={[styles.headline, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-              Go Premium
+              {t('premium.title')}
             </Text>
             <Text style={[styles.subline, { color: tokens.inkMuted }]}>
-              Unlock unlimited study materials and AI tutoring
+              {t('premium.subtitle')}
             </Text>
           </View>
           <SkeletonPage count={3} header={false} />
@@ -103,12 +105,12 @@ export default function PremiumScreen() {
     return (
       <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: tokens.paper, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <Ionicons name="alert-circle-outline" size={48} color={tokens.error} />
-        <Text style={[styles.errorTitle, { color: tokens.ink }]}>Failed to load plans</Text>
+        <Text style={[styles.errorTitle, { color: tokens.ink }]}>{t('premium.load_error')}</Text>
         <Text style={[styles.errorText, { color: tokens.inkMuted }]}>
-          {tiersQ.error instanceof Error ? tiersQ.error.message : 'Please check your connection and try again.'}
+          {tiersQ.error instanceof Error ? tiersQ.error.message : t('premium.connection_error')}
         </Text>
         <TouchableOpacity style={styles.retryButton} onPress={() => tiersQ.refetch()}>
-          <Text style={[styles.retryText, { color: tokens.mint }]}>Retry</Text>
+          <Text style={[styles.retryText, { color: tokens.mint }]}>{t('premium.retry')}</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -119,10 +121,10 @@ export default function PremiumScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={[styles.headline, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-            Go Premium
+            {t('premium.title')}
           </Text>
           <Text style={[styles.subline, { color: tokens.inkMuted }]}>
-            Unlock unlimited study materials and AI tutoring
+            {t('premium.subtitle')}
           </Text>
         </View>
 
@@ -130,12 +132,12 @@ export default function PremiumScreen() {
           <View style={[styles.currentTierBadge, { backgroundColor: tokens.mintSoft, borderColor: tokens.mint }]}>
             <Ionicons name="checkmark-circle" size={20} color={tokens.mint} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.badgeTitle, { color: tokens.mint }]}>Active Subscription</Text>
+              <Text style={[styles.badgeTitle, { color: tokens.mint }]}>{t('premium.active_subscription')}</Text>
               <Text style={[styles.badgeSubtitle, { color: tokens.inkMuted }]}>
                 {userTier.tier_name} •{' '}
                 {userTier.days_remaining !== null && userTier.days_remaining > 0
-                  ? `${userTier.days_remaining} days remaining`
-                  : 'Active'}
+                  ? t('premium.days_remaining', { days: userTier.days_remaining })
+                  : t('premium.active')}
               </Text>
             </View>
           </View>
@@ -147,10 +149,10 @@ export default function PremiumScreen() {
           <View style={[styles.errorCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
             <Ionicons name="alert-circle-outline" size={20} color={tokens.error} />
             <Text style={[styles.errorCardText, { color: tokens.ink }]}>
-              {tierInfoQ.error instanceof Error ? tierInfoQ.error.message : 'Could not load subscription status'}
+              {tierInfoQ.error instanceof Error ? tierInfoQ.error.message : t('premium.subscription_error')}
             </Text>
             <TouchableOpacity onPress={() => tierInfoQ.refetch()}>
-              <Text style={[styles.retryText, { color: tokens.mint }]}>Retry</Text>
+              <Text style={[styles.retryText, { color: tokens.mint }]}>{t('premium.retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -177,7 +179,7 @@ export default function PremiumScreen() {
                 </View>
 
                 <Text style={[styles.tierDuration, { color: tokens.inkMuted }]}>
-                  {tier.duration_days} days
+                  {tier.duration_days} {t('premium.days_suffix')}
                 </Text>
 
                 <View style={styles.benefits}>
@@ -191,7 +193,7 @@ export default function PremiumScreen() {
 
                 <View style={styles.button}>
                   <PrimaryButton
-                    title={isPremium && userTier?.tier === tier.tier ? 'Current Plan' : 'Choose'}
+                    title={isPremium && userTier?.tier === tier.tier ? t('premium.current_plan') : t('premium.choose')}
                     onPress={() => handleUpgrade(tier.tier)}
                     disabled={isPremium && userTier?.tier === tier.tier}
                   />
@@ -202,9 +204,9 @@ export default function PremiumScreen() {
         )}
 
         <View style={[styles.faqSection, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
-          <Text style={[styles.faqTitle, { color: tokens.ink }]}>Can I change my plan?</Text>
+          <Text style={[styles.faqTitle, { color: tokens.ink }]}>{t('premium.faq_title')}</Text>
           <Text style={[styles.faqText, { color: tokens.inkMuted }]}>
-            Yes. Upgrade or downgrade anytime. Your subscription will automatically renew.
+            {t('premium.faq_text')}
           </Text>
         </View>
       </ScrollView>

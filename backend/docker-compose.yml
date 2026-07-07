@@ -6,15 +6,15 @@ services:
       MYSQL_DATABASE: pagepay
       MYSQL_USER: pagepay
       MYSQL_PASSWORD: pagepass
-    ports:
-      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     # Without this, `depends_on: db` only waits for the container to start —
     # not for MySQL to actually accept connections. The api/cron workers
     # then boot before mysqld is ready, their first DB call raises 2003,
     # and the entrypoint logs fill with "Skipping create_all" warnings.
-    # `mysqladmin ping` returns 0 only when the server is ready for auth.
+    # `mysqladmin ping` returns 0 only when MySQL is ready for auth.
+    # NOTE: MySQL port is NOT exposed to the host. Use `docker exec` or
+    # port-forwarding if you need direct DB access in development.
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpass"]
       interval: 5s

@@ -119,11 +119,11 @@ async def create_admin(
             detail=f"Invalid role. Must be one of: {valid_roles}",
         )
 
-    # Only super_admin can create super_admin
-    if role == "super_admin" and current_admin.role != "super_admin":
+    # Only super_admin can create super_admin or finance users
+    if role in ("super_admin", "finance") and current_admin.role != "super_admin":
         raise HTTPException(
             status_code=403,
-            detail="Only super_admin can create super_admin users",
+            detail="Only super_admin can assign super_admin or finance roles",
         )
 
     # Parse permissions

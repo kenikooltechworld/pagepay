@@ -17,6 +17,7 @@ import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import {
@@ -57,18 +58,12 @@ type UserMe = {
   is_sponsor: boolean;
 };
 
-const tierLabel: Record<string, string> = {
-  free: 'Free',
-  premium_monthly: 'Premium · Monthly',
-  premium_yearly: 'Premium · Yearly',
-};
-
 const languageOptions: { value: LanguagePref; label: string; available: boolean }[] = [
   { value: 'en', label: 'English', available: true },
-  { value: 'pcm', label: 'Pidgin', available: false },
-  { value: 'yo', label: 'Yoruba', available: false },
-  { value: 'ha', label: 'Hausa', available: false },
-  { value: 'ig', label: 'Igbo', available: false },
+  { value: 'pcm', label: 'Pidgin', available: true },
+  { value: 'yo', label: 'Yoruba', available: true },
+  { value: 'ha', label: 'Hausa', available: true },
+  { value: 'ig', label: 'Igbo', available: true },
 ];
 
 const themeOptions: { value: ThemePref; label: string }[] = [
@@ -82,6 +77,7 @@ export default function ProfileScreen() {
   const tokens = PagePay[scheme];
   const router = useRouter();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   const theme = usePreferences((s) => s.theme);
   const setTheme = usePreferences((s) => s.setTheme);
@@ -99,7 +95,9 @@ export default function ProfileScreen() {
   const { data: adConfig } = useQuery({
     queryKey: ['ads-config'],
     queryFn: async () => {
-      const res = await apiFetch('/api/v1/config/ads?env=dev');
+      // Use __DEV__ to determine environment (production vs development)
+      const env = __DEV__ ? 'dev' : 'prod';
+      const res = await apiFetch(`/api/v1/config/ads?env=${env}`);
       if (!res.ok) return {};
       return (await res.json()) as Record<string, string>;
     },
@@ -130,10 +128,13 @@ export default function ProfileScreen() {
       if (!res.ok) throw new Error('Failed to load payout account');
       return (await res.json()) as PayoutAccount;
     },
-    // Phase 1 returns the row on first PUT; we cache briefly so flipping
-    // back and forth between the modal and the profile doesn't refetch.
     staleTime: 30_000,
   });
+
+  const getTierLabel = (tier: string) => {
+    const key = tier as 'free' | 'premium_monthly' | 'premium_yearly';
+    return t(`profile.tier.${key}`, { defaultValue: tier });
+  };
 
   const handleThemeChange = useCallback(
     (next: ThemePref) => {
@@ -145,16 +146,25 @@ export default function ProfileScreen() {
   );
 
   const handleLanguageChange = useCallback(
-    (next: LanguagePref) => {
+    async (next: LanguagePref) => {
       const opt = languageOptions.find((o) => o.value === next);
       if (!opt?.available) {
-        Alert.alert('Coming soon', `${opt?.label ?? 'That language'} ships in Phase 4.`);
+        Alert.alert(t('profile.coming_soon'), t('profile.coming_soon_message', { language: opt?.label ?? 'That language' }));
         return;
       }
-      setLanguage(next);
-      void persistLanguage(next);
+      
+      // Change language using i18n
+      try {
+        const i18n = await import('@/src/lib/i18n');
+        await i18n.default.changeLanguage(next);
+        setLanguage(next);
+        void persistLanguage(next);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (error) {
+        Alert.alert(t('common.error'), t('profile.language_error'));
+      }
     },
-    [setLanguage],
+    [setLanguage, t],
   );
 
   const handleNotifications = useCallback(() => {
@@ -180,8 +190,7 @@ export default function ProfileScreen() {
     (Constants.expoConfig?.version as string | undefined) ||
     ((Constants.manifest as { version?: string } | undefined)?.version as string | undefined) ||
     '1.0.0';
-  const platformLabel =
-    scheme === 'dark' ? 'Dark' : 'Light';
+  const platformLabel = scheme === 'dark' ? t('profile.appearance.theme_dark') : t('profile.appearance.theme_light');
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: tokens.paper }]}>
@@ -198,16 +207,16 @@ export default function ProfileScreen() {
               {displayName(meQuery.data)}
             </Text>
             <Text style={[styles.identifier, { color: tokens.inkMuted }]}>
-              {meQuery.data?.email || meQuery.data?.phone || 'No email or phone on file'}
+              {meQuery.data?.email || meQuery.data?.phone || t('profile.no_contact')}
             </Text>
             <View style={styles.tierRow}>
               <Text style={[styles.tier, { color: tokens.mint }]}>
-                {tierLabel[meQuery.data?.tier ?? 'free'] ?? meQuery.data?.tier}
+                {getTierLabel(meQuery.data?.tier ?? 'free')}
               </Text>
               {meQuery.data?.tier && meQuery.data.tier !== 'free' && (
                 <View style={[styles.premiumBadge, { backgroundColor: tokens.mint }]}>
                   <Ionicons name="diamond" size={10} color={tokens.mintText} />
-                  <Text style={[styles.premiumLabel, { color: tokens.mintText }]}>PRO</Text>
+                  <Text style={[styles.premiumLabel, { color: tokens.mintText }]}>{t('profile.premium_badge')}</Text>
                 </View>
               )}
             </View>
@@ -215,7 +224,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Phase 7 Roles ───────────────────────────────────── */}
-        <Text style={[styles.section, { color: tokens.inkMuted }]}>ROLES</Text>
+        <Text style={[styles.section, { color: tokens.inkMuted }]}>{t('profile.sections.roles')}</Text>
         <View style={{ gap: 10 }}>
           <Pressable
             onPress={() => router.push('/(tabs)/tasks')}
@@ -229,10 +238,10 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.roleInfo}>
               <Text style={[styles.roleTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                Tasks
+                {t('profile.roles.tasks_title')}
               </Text>
               <Text style={[styles.roleSubtitle, { color: tokens.inkMuted }]}>
-                Complete tasks and earn rewards
+                {t('profile.roles.tasks_subtitle')}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={tokens.inkMuted} />
@@ -251,10 +260,10 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.roleInfo}>
                 <Text style={[styles.roleTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                  Become a Sponsor
+                  {t('profile.roles.become_sponsor')}
                 </Text>
                 <Text style={[styles.roleSubtitle, { color: tokens.inkMuted }]}>
-                  Post tasks and grow your audience
+                  {t('profile.roles.become_sponsor_subtitle')}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={tokens.mint} />
@@ -274,10 +283,10 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.roleInfo}>
                 <Text style={[styles.roleTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                  Sponsor Dashboard
+                  {t('profile.roles.sponsor_dashboard')}
                 </Text>
                 <Text style={[styles.roleSubtitle, { color: tokens.inkMuted }]}>
-                  Manage your tasks and payouts
+                  {t('profile.roles.sponsor_dashboard_subtitle')}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={tokens.inkMuted} />
@@ -295,17 +304,17 @@ export default function ProfileScreen() {
                 </View>
                 <View style={styles.payoutInfo}>
                   <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                    Failed to load payout account
+                    {t('profile.payout.error')}
                   </Text>
                   <Text style={[styles.payoutHint, { color: tokens.inkMuted }]}>
-                    Something went wrong. Try refreshing the app.
+                    {t('profile.payout.error_hint')}
                   </Text>
                 </View>
               </View>
             </View>
           }
         >
-          <Text style={[styles.section, { color: tokens.inkMuted }]}>PAYOUT ACCOUNT</Text>
+          <Text style={[styles.section, { color: tokens.inkMuted }]}>{t('profile.sections.payout_account')}</Text>
           <View style={[styles.payoutCard, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
             {payoutQuery.isLoading ? (
               <View style={{ gap: 8, padding: 4 }}>
@@ -325,12 +334,12 @@ export default function ProfileScreen() {
                     {payoutQuery.data.verified ? (
                       <>
                         <Ionicons name="checkmark-circle" size={14} color={tokens.mint} />
-                        <Text style={[styles.verifyText, { color: tokens.mint }]}>Verified</Text>
+                        <Text style={[styles.verifyText, { color: tokens.mint }]}>{t('profile.payout.verified')}</Text>
                       </>
                     ) : (
                       <>
                         <Ionicons name="hourglass-outline" size={14} color={tokens.signal} />
-                        <Text style={[styles.verifyText, { color: tokens.signal }]}>Pending validation</Text>
+                        <Text style={[styles.verifyText, { color: tokens.signal }]}>{t('profile.payout.pending')}</Text>
                       </>
                     )}
                   </View>
@@ -340,7 +349,7 @@ export default function ProfileScreen() {
                     </Text>
                   ) : null}
                   <Text style={[styles.accountName, { color: tokens.inkMuted }]}>
-                    Min ₦1,000 per withdrawal
+                    {t('profile.payout.min_withdrawal')}
                   </Text>
                 </View>
                 <Pressable
@@ -348,7 +357,7 @@ export default function ProfileScreen() {
                   hitSlop={8}
                   accessibilityRole="button"
                 >
-                  <Text style={[styles.change, { color: tokens.mint }]}>Change</Text>
+                  <Text style={[styles.change, { color: tokens.mint }]}>{t('profile.payout.change')}</Text>
                 </Pressable>
               </View>
             ) : (
@@ -358,10 +367,10 @@ export default function ProfileScreen() {
                 </View>
                 <View style={styles.payoutInfo}>
                   <Text style={[styles.payoutBank, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                    No bank account linked
+                    {t('profile.payout.no_account')}
                   </Text>
                   <Text style={[styles.payoutHint, { color: tokens.inkMuted }]}>
-                    Add your bank account to withdraw earnings. Paystack validation is required before any withdrawal.
+                    {t('profile.payout.no_account_hint')}
                   </Text>
                 </View>
                 <Pressable
@@ -369,7 +378,7 @@ export default function ProfileScreen() {
                   hitSlop={8}
                   accessibilityRole="button"
                 >
-                  <Text style={[styles.change, { color: tokens.mint }]}>Link</Text>
+                  <Text style={[styles.change, { color: tokens.mint }]}>{t('profile.payout.link')}</Text>
                 </Pressable>
               </View>
             )}
@@ -383,11 +392,11 @@ export default function ProfileScreen() {
               <View style={styles.referralHeader}>
                 <Ionicons name="alert-circle-outline" size={20} color={tokens.signal} />
                 <Text style={[styles.referralTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-                  Referral system unavailable
+                  {t('profile.referral.unavailable')}
                 </Text>
               </View>
               <Text style={[styles.referralSubtitle, { color: tokens.inkMuted }]}>
-                Something went wrong loading your referral stats. Try refreshing.
+                {t('profile.referral.unavailable_hint')}
               </Text>
             </View>
           }
@@ -406,19 +415,19 @@ export default function ProfileScreen() {
         </ErrorBoundary>
 
         {/* ── Settings rows ────────────────────────────────────── */}
-        <Text style={[styles.section, { color: tokens.inkMuted }]}>ACCOUNT</Text>
+        <Text style={[styles.section, { color: tokens.inkMuted }]}>{t('profile.sections.account')}</Text>
         <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
           <Row
             tokens={tokens}
             icon="lock-closed-outline"
-            label="Change password"
+            label={t('profile.account.change_password')}
             onPress={() => setShowChangePassword(true)}
           />
           <Divider tokens={tokens} />
           <Row
             tokens={tokens}
             icon="receipt-outline"
-            label="Billing history"
+            label={t('profile.account.billing_history')}
             onPress={() => router.push('/billing/history')}
           />
           {meQuery.data?.tier && meQuery.data.tier !== 'free' && (
@@ -427,7 +436,7 @@ export default function ProfileScreen() {
               <Row
                 tokens={tokens}
                 icon="card-outline"
-                label="Manage subscription"
+                label={t('profile.account.manage_subscription')}
                 onPress={() => router.push('/billing/subscription')}
               />
             </>
@@ -436,17 +445,17 @@ export default function ProfileScreen() {
           <Row
             tokens={tokens}
             icon="notifications-outline"
-            label="Notifications"
+            label={t('profile.account.notifications')}
             onPress={handleNotifications}
           />
         </View>
 
-        <Text style={[styles.section, { color: tokens.inkMuted }]}>APPEARANCE</Text>
+        <Text style={[styles.section, { color: tokens.inkMuted }]}>{t('profile.sections.appearance')}</Text>
         <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <Ionicons name="sunny-outline" size={18} color={tokens.inkMuted} />
-              <Text style={[styles.rowLabel, { color: tokens.ink }]}>Theme</Text>
+              <Text style={[styles.rowLabel, { color: tokens.ink }]}>{t('profile.appearance.theme')}</Text>
             </View>
           </View>
           <View style={[styles.segmented, { backgroundColor: tokens.paper, borderColor: tokens.border }]}>
@@ -475,7 +484,7 @@ export default function ProfileScreen() {
                       },
                     ]}
                   >
-                    {opt.label}
+                    {t(`profile.appearance.theme_${opt.value}`)}
                   </Text>
                 </Pressable>
               );
@@ -487,7 +496,7 @@ export default function ProfileScreen() {
           <View style={styles.row}>
             <View style={styles.rowLeft}>
               <Ionicons name="language-outline" size={18} color={tokens.inkMuted} />
-              <Text style={[styles.rowLabel, { color: tokens.ink }]}>Language</Text>
+              <Text style={[styles.rowLabel, { color: tokens.ink }]}>{t('profile.appearance.language')}</Text>
             </View>
           </View>
           <View style={[styles.langGrid, { borderColor: tokens.border }]}>
@@ -517,7 +526,7 @@ export default function ProfileScreen() {
                       },
                     ]}
                   >
-                    {opt.label}
+                    {t(`profile.appearance.language_${opt.label.toLowerCase()}`)}
                   </Text>
                 </Pressable>
               );
@@ -525,19 +534,19 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <Text style={[styles.section, { color: tokens.inkMuted }]}>SUPPORT</Text>
+        <Text style={[styles.section, { color: tokens.inkMuted }]}>{t('profile.sections.support')}</Text>
         <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
           <Row
             tokens={tokens}
             icon="help-circle-outline"
-            label="Help & support"
+            label={t('profile.support.help')}
             onPress={() => setShowHelp(true)}
           />
           <Divider tokens={tokens} />
           <Row
             tokens={tokens}
             icon="information-circle-outline"
-            label="About / app version"
+            label={t('profile.support.about')}
             trailing={<Text style={[styles.trailingHint, { color: tokens.inkMuted }]}>v{version}</Text>}
             onPress={() => setShowAbout(true)}
           />
@@ -557,7 +566,7 @@ export default function ProfileScreen() {
         >
           <Ionicons name="log-out-outline" size={18} color={tokens.signal} />
           <Text style={[styles.signOutText, { color: tokens.signal, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-            Sign out
+            {t('profile.sign_out')}
           </Text>
         </Pressable>
 
@@ -565,7 +574,7 @@ export default function ProfileScreen() {
         <View style={styles.footer}>
           <PageMark />
           <Text style={[styles.footerText, { color: tokens.inkMuted }]}>
-            PagePay v{version} · {platformLabel}
+            {t('profile.footer', { version, theme: platformLabel })}
           </Text>
         </View>
       </ScrollView>
@@ -635,6 +644,30 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
   const statsQ = useReferralStats();
   const generateMutation = useGenerateReferral();
   const [copied, setCopied] = useState(false);
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+
+  // Socket.IO real-time updates
+  useEffect(() => {
+    const { data: user } = queryClient.getQueryData(['me']) as { data: { id: number } } | undefined;
+    if (!user?.id) return;
+
+    // Import socket functions dynamically
+    import('@/src/lib/socket').then(({ connectSocket, onReferralUpdate, offReferralUpdate }) => {
+      connectSocket(user.id);
+
+      const handleUpdate = (stats: any) => {
+        // Update cache with new stats
+        queryClient.setQueryData(['referral', 'stats'], stats);
+      };
+
+      onReferralUpdate(handleUpdate);
+
+      return () => {
+        offReferralUpdate(handleUpdate);
+      };
+    });
+  }, [queryClient]);
 
   const stats = statsQ.data as { code: string; signups: number; pending_rewards: number; claimed_rewards: number } | undefined;
   const code = stats?.code ?? '';
@@ -652,12 +685,12 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
     if (!link) return;
     
     try {
-      const message = `🎁 Join me on PagePay and earn points!\n\nSign up with my referral code: ${code}\n\nGet paid to watch ads, study, and complete tasks.\n\n${link}`;
+      const message = t('profile.referral.share_message', { code, link });
       
       const result = await Share.share({
         message,
         url: link, // iOS uses this
-        title: 'Join PagePay',
+        title: t('profile.referral.share_title'),
       });
 
       if (result.action === Share.sharedAction) {
@@ -668,7 +701,7 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
       }
     } catch (error) {
       // Fallback to Alert if share fails
-      Alert.alert('Referral link', link);
+      Alert.alert(t('profile.referral.share_title'), link);
     }
   };
 
@@ -691,11 +724,11 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
       <View style={styles.referralHeader}>
         <Ionicons name="gift-outline" size={20} color={tokens.mint} />
         <Text style={[styles.referralTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-          Refer Friends
+          {t('profile.referral.title')}
         </Text>
       </View>
       <Text style={[styles.referralSubtitle, { color: tokens.inkMuted }]}>
-        Share your code. Both you and your friend earn points!
+        {t('profile.referral.subtitle')}
       </Text>
 
       {code ? (
@@ -712,7 +745,7 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
           activeOpacity={0.7}
         >
           <Text style={[styles.generateText, { color: tokens.mintText }]}>
-            {generateMutation.isPending ? 'Generating...' : 'Generate Referral Code'}
+            {generateMutation.isPending ? t('profile.referral.generating') : t('profile.referral.generate')}
           </Text>
         </TouchableOpacity>
       )}
@@ -726,7 +759,7 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
           >
             <Ionicons name={copied ? 'checkmark-outline' : 'copy-outline'} size={16} color={tokens.mint} />
             <Text style={[styles.actionText, { color: tokens.mint }]}>
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('profile.referral.copied') : t('profile.referral.copy')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -735,7 +768,7 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
             activeOpacity={0.7}
           >
             <Ionicons name="share-social-outline" size={16} color={tokens.mint} />
-            <Text style={[styles.actionText, { color: tokens.mint }]}>Share</Text>
+            <Text style={[styles.actionText, { color: tokens.mint }]}>{t('profile.referral.share')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -744,15 +777,15 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Text style={[styles.statValue, { color: tokens.ink }]}>{stats.signups}</Text>
-            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Signups</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>{t('profile.referral.stats_signups')}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statValue, { color: tokens.ink }]}>{stats.pending_rewards}</Text>
-            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Pending</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>{t('profile.referral.stats_pending')}</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statValue, { color: tokens.mint }]}>{stats.claimed_rewards}</Text>
-            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Claimed</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>{t('profile.referral.stats_claimed')}</Text>
           </View>
         </View>
       )}
