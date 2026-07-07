@@ -62,7 +62,7 @@ async def admin_login(
         value=token,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="none",
         max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
@@ -101,5 +101,5 @@ async def admin_me(
 @router.post("/logout")
 async def admin_logout(response: Response):
     """Clear admin session cookie and logout."""
-    response.delete_cookie(key="admin_session", path="/")
+    response.delete_cookie(key="admin_session", path="/", samesite="none")
     return {"success": True, "message": "Logged out successfully"}
