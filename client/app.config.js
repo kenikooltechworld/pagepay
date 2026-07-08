@@ -1,24 +1,72 @@
-// Load environment variables from .env file.
-// Mirror of Earn9ja/app.config.js: keeps app.json as the single source of
-// static Expo config and injects EXPO_PUBLIC_* values into `extra` so the
-// runtime can read them via expo-constants.
 require("dotenv").config();
-const { expo: baseExpo } = require("./app.json");
 
 module.exports = {
   expo: {
-    ...baseExpo,
-    extra: {
-      ...(baseExpo.extra || {}),
-      eas: {
-        projectId: "b43a48ba-f084-472f-ac1c-3db5fa470326",
+    name: "pagepay",
+    slug: "pagepay",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/images/icon.png",
+    scheme: "client",
+    userInterfaceStyle: "automatic",
+    newArchEnabled: true,
+    ios: { supportsTablet: true },
+    android: {
+      package: "com.kenzola.pagepay",
+      adaptiveIcon: {
+        backgroundColor: "#0E7C66",
+        foregroundImage: "./assets/images/android-icon-foreground.png",
+        monochromeImage: "./assets/images/android-icon-monochrome.png"
       },
-      apiUrl:
-        process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000",
-      // `dev` returns Google's test unit IDs (safe for dev builds).
-      // `prod` returns the PagePay IDs seeded in app_config. CI sets
-      // this to `prod` for the staging EAS build.
-      adsEnv: process.env.EXPO_PUBLIC_ADS_ENV || "dev",
+      edgeToEdgeEnabled: true,
+      predictiveBackGestureEnabled: false,
+      googleServicesFile: "./google-services.json"
     },
-  },
+    web: {
+      output: "static",
+      favicon: "./assets/images/favicon.png"
+    },
+    plugins: [
+      "expo-router",
+      "@react-native-firebase/app",
+      [
+        "expo-build-properties",
+        {
+          android: {
+            kotlinVersion: "2.2.20",
+            extraBackgroundColor: "#ffffff",
+            packagingOptions: { pickFirst: ["**/libcrypto.so"] }
+          }
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          androidAppId: "ca-app-pub-3898064484524772~6521009021",
+          iosAppId: "ca-app-pub-3898064484524772~4871553842"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          image: "./assets/images/splash-icon.png",
+          imageWidth: 200,
+          resizeMode: "contain",
+          backgroundColor: "#FBFAF6",
+          dark: { backgroundColor: "#0E1116" }
+        }
+      ]
+    ],
+    experiments: {
+      typedRoutes: true,
+      reactCompiler: true
+    },
+    extra: {
+      eas: {
+        projectId: "b43a48ba-f084-472f-ac1c-3db5fa470326"
+      },
+      apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000",
+      adsEnv: process.env.EXPO_PUBLIC_ADS_ENV || "dev"
+    }
+  }
 };
