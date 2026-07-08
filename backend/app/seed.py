@@ -11,11 +11,10 @@ add new rows here — the existing app_config schema already has a
 column for it.
 """
 
-from __future__ import annotations
-
 import json
 import logging
-from sqlalchemy import select
+import os
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdPlacement, AppConfig, AiProviderHealth, AdminUser
@@ -90,7 +89,7 @@ async def seed_ad_placements(db: AsyncSession) -> int:
             inserted += 1
         elif existing.ad_unit_id != row["ad_unit_id"]:
             existing.ad_unit_id = row["ad_unit_id"]
-    
+
     if inserted:
         await db.commit()
     return inserted
@@ -145,7 +144,7 @@ async def seed_app_config(db: AsyncSession) -> int:
         else:
             existing.value = row["value"]
             existing.description = row["description"]
-    
+
     if inserted:
         await db.commit()
     return inserted
@@ -158,7 +157,7 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
         {"provider_name": "anthropic", "consecutive_failures": 0},
         {"provider_name": "google", "consecutive_failures": 0},
     ]
-    
+
     inserted = 0
     for row in rows:
         existing = (
@@ -171,7 +170,7 @@ async def seed_ai_provider_health(db: AsyncSession) -> int:
         if existing is None:
             db.add(AiProviderHealth(**row))
             inserted += 1
-    
+
     if inserted:
         await db.commit()
     return inserted
@@ -248,3 +247,66 @@ async def seed_admin_users(db: AsyncSession) -> int:
     ))
     await db.commit()
     return 1
+
+
+# ── Schema migrations ──────────────────────────────────────────────
+# Seed rows are easy to make idempotent: SELECT-by-key, INSERT-if-missing.
+# Schema migrations are a different problem — column adds, type changes,
+# index creates — that can't be expressed as upserts. Alembic tracks
+# applied revisions in `alembic_version`; `upgrade head` against a
+# current DB is a no-op, which is why this is safe to call on every
+# startup (matches the seed-on-startup pattern above).
+#
+# We read the current revision via the same AsyncSession the seeds use,
+# then call `alembic upgrade head` against `DATABASE_URL` from the
+# environment. We swallow exceptions and log, exactly like the seeds —
+# a half-deployed migration that crashes the API on boot is worse than
+# serving requests against a stale schema while the operator investigates.
+
+async def run_migrations(db: AsyncSession) -> bool:
+    """Apply pending Alembic migrations. Idempotent.
+
+    Returns True if a migration was applied, False if the schema
+    was already at head (or migration was skipped on error).
+    """
+    from alembic import command as alembic_command
+    from alembic.config import Config as AlembicConfig
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        logger.warning("Migrations skipped: DATABASE_URL not set.")
+        return False
+
+    cfg = AlembicConfig(os.environ.get("ALEMBIC_CONFIG", "alembic.ini"))
+    cfg.set_main_option("sqlalchemy.url", database_url)
+
+    try:
+        head = ScriptDirectory.from_config(cfg).get_heads()
+        head_rev = head[0] if head else None
+
+        current_rev = (
+            await db.execute(text("SELECT version_num FROM alembic_version"))
+        ).scalar_one_or_none()
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning("Migrations skipped: cannot read alembic_version (%s)", exc)
+        return False
+
+    logger.info("alembic: current=%s head=%s", current_rev, head_rev)
+
+    if current_rev == head_rev:
+        logger.info("alembic: already at head; skipping.")
+        return False
+
+    # `alembic upgrade` is sync (it drives its own engine). Run it
+    # off the event loop so the seed background task doesn't block.
+    import asyncio
+    try:
+        await asyncio.to_thread(alembic_command.upgrade, cfg, "head")
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.error("alembic upgrade failed: %s", exc)
+        return False
+
+    logger.info("alembic: upgrade complete")
+    return True
