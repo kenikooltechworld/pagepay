@@ -13,8 +13,8 @@
  * server-side and these constants become display-only.
  */
 
-/** Naira value of a single point. With 100 pts = ₦1, this is 0.01. */
-export const NGN_PER_POINT = 0.01;
+/** Naira value of a single point. With 10 pts = ₦1, this is 0.1. */
+export const NGN_PER_POINT = 0.1;
 
 /**
  * Format a kobo amount as a Naira string with two decimal places and

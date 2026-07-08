@@ -9,17 +9,10 @@
  * point tokens + 6 sparkle dots) until `onDone` fires.
  *
  * No Lottie — Reanimated 4 only. The motion matches `design-preview/
- * splash.html` but ported to worklets (battery-friendly, off the JS
- * thread, and survives the new architecture / Fabric renderer).
- *
- * Battery rules (from design/README §5):
- *   - Only animate `transform` (translate, scale, rotate).
- *   - Continuous loops: ≤8 floating tokens, ≤6 sparkles.
- *   - Static cold-splash PNG is the OS-cached one; never animate that
- *     image itself. This overlay is what runs *after* it.
+ * splash.html` exactly.
  */
 import { useEffect } from 'react';
-import { Dimensions, Image, StyleSheet, View } from 'react-native';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -30,6 +23,9 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
+import { SvgXml } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
+import LinearGradient from 'react-native-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 
 import { PagePay } from '@/constants/theme';
@@ -39,57 +35,79 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const TOKEN_COUNT = 8;
 const SPARKLE_COUNT = 6;
 
-// The wordmark PNG is rasterized from `assets/brand/wordmark.svg`. We
-// point to the same path used in app.json for the static splash, so
-// there's a single source of truth. If you change the wordmark, regenerate
-// `assets/images/splash-icon.png` from `scripts/render_icons.py`.
-const WORDMARK = require('@/assets/images/splash-icon.png');
-const MONOGRAM = require('@/assets/images/icon.png');
+const MONOGRAM_XML = `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="1024" rx="224" fill="#0E7C66"/>
+  <path fill="#FBFAF6" fill-rule="evenodd" d="M248 192 L600 192 C788 192 912 312 912 432 C912 552 788 672 600 672 L420 672 L420 832 L360 892 L248 892 Z M420 360 L600 360 C676 360 736 392 736 432 C736 472 676 504 600 504 L420 504 Z"/>
+  <path fill="#0E7C66" d="M360 892 L420 832 L420 892 Z"/>
+  <circle cx="580" cy="432" r="56" fill="#0E7C66"/>
+  <circle cx="580" cy="432" r="48" fill="none" stroke="#FBFAF6" stroke-width="3" opacity="0.6"/>
+  <circle cx="566" cy="418" r="6" fill="#FBFAF6" opacity="0.5"/>
+  <g transform="translate(760,320)">
+    <path fill="#FBFAF6" d="M0 -28 L6 -6 L28 0 L6 6 L0 28 L-6 6 L-28 0 L-6 -6 Z"/>
+    <path fill="#FBFAF6" opacity="0.7" transform="translate(40,40) scale(0.4)" d="M0 -28 L6 -6 L28 0 L6 6 L0 28 L-6 6 L-28 0 L-6 -6 Z"/>
+  </g>
+</svg>`;
+
+const TOKEN_SPECS = [
+  { left: '8%', top: '70%', delay: 0 },
+  { left: '18%', top: '78%', delay: 700 },
+  { left: '78%', top: '72%', delay: 1300 },
+  { left: '86%', top: '80%', delay: 2000 },
+  { left: '6%', top: '86%', delay: 2600 },
+  { left: '88%', top: '88%', delay: 3200 },
+  { left: '26%', top: '90%', delay: 3800 },
+  { left: '70%', top: '92%', delay: 4400 },
+];
+
+const SPARKLE_SPECS = [
+  { left: '28%', top: '32%', delay: 0 },
+  { left: '72%', top: '30%', delay: 600 },
+  { left: '22%', top: '50%', delay: 1100 },
+  { left: '78%', top: '52%', delay: 1500 },
+  { left: '50%', top: '26%', delay: 300 },
+  { left: '50%', top: '58%', delay: 1800 },
+];
 
 type SplashOverlayProps = {
-  /** Called once the overlay has finished its exit fade. */
   onDone: () => void;
 };
 
-/**
- * One floating point token. Randomly positioned + a `+1` / `+5` / `+10`
- * label, slowly drifting up and fading out, then looping.
- */
-function FloatingToken({ index }: { index: number }) {
+function FloatingToken({ index, left, top, delayMs }: { index: number; left: string; top: string; delayMs: number }) {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const t = useSharedValue(0);
-  const xJitter = (index * 73) % 100; // 0-99 pseudo-random, stable per index
 
   useEffect(() => {
     t.value = 0;
-    t.value = withRepeat(
-      withTiming(1, {
-        duration: 5400,
-        easing: Easing.out(Easing.quad),
-      }),
-      -1,
-      false,
+    t.value = withDelay(
+      delayMs,
+      withRepeat(
+        withTiming(1, {
+          duration: 5400,
+          easing: Easing.out(Easing.quad),
+        }),
+        -1,
+        false,
+      ),
     );
     return () => cancelAnimation(t);
-  }, [t]);
+  }, [t, delayMs]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: -SCREEN_W * 0.4 + (xJitter / 100) * (SCREEN_W * 0.8) },
       { translateY: -t.value * 220 },
+      { scale: 0.9 + t.value * 0.1 },
     ],
-    opacity: t.value < 0.1 ? t.value * 10 : 1 - t.value,
+    opacity: t.value < 0.15 ? t.value / 0.15 : 1 - t.value,
   }));
 
-  // +1 / +5 / +10 round-robin
-  const value = ['+1', '+5', '+10'][index % 3];
+  const value = ['+1', '+5', '+9'][index % 3];
 
   return (
     <Animated.View
       style={[
         styles.token,
-        { top: '55%' },
+        { left, top },
         animatedStyle,
       ]}
     >
@@ -115,44 +133,36 @@ function FloatingToken({ index }: { index: number }) {
   );
 }
 
-/**
- * One sparkle dot. A small mint circle that fades + scales in/out at
- * staggered positions around the monogram.
- */
-function Sparkle({ index }: { index: number }) {
+function Sparkle({ left, top, delayMs }: { left: string; top: string; delayMs: number }) {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
   const t = useSharedValue(0);
-  // Stable pseudo-random positions per index (no Math.random in render
-  // so SSR / layout passes don't shift).
-  const angleDeg = (index * 60) % 360;
-  const radius = 90 + (index % 3) * 18;
-  const x = Math.cos((angleDeg * Math.PI) / 180) * radius;
-  const y = Math.sin((angleDeg * Math.PI) / 180) * radius;
 
   useEffect(() => {
-    t.value = withRepeat(
-      withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.cubic) }),
-      -1,
-      true,
+    t.value = 0;
+    t.value = withDelay(
+      delayMs,
+      withRepeat(
+        withTiming(1, { duration: 2800, easing: Easing.inOut(Easing.cubic) }),
+        -1,
+        true,
+      ),
     );
     return () => cancelAnimation(t);
-  }, [t]);
+  }, [t, delayMs]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: x },
-      { translateY: y },
-      { scale: 0.3 + t.value * 0.9 },
+      { scale: 0.6 + t.value * 0.6 },
     ],
-    opacity: 0.2 + t.value * 0.8,
+    opacity: t.value * 0.8,
   }));
 
   return (
     <Animated.View
       style={[
         styles.sparkle,
-        { backgroundColor: tokens.mint },
+        { left, top, backgroundColor: tokens.mint },
         animatedStyle,
       ]}
     />
@@ -163,35 +173,53 @@ export function SplashOverlay({ onDone }: SplashOverlayProps) {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
 
-  // 0 → 1 over 800ms with a back-out easing (the spring-y bounce).
   const entry = useSharedValue(0);
-  // 1 → 0 over 250ms when we dismiss.
   const fadeOut = useSharedValue(1);
+  const shimmerX = useSharedValue(-1);
+  const progressX = useSharedValue(-1.2);
+  const breathe = useSharedValue(0);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        // Hide the OS-cached static splash the moment we're ready to
-        // overlay our own animation. This is the contract: the static
-        // image is shown until YOU call hideAsync().
         await SplashScreen.hideAsync();
       } catch {
-        // hideAsync is best-effort; failures (e.g. already hidden) are
-        // safe to ignore — we still want the overlay to play.
+        // best-effort
       }
       if (cancelled) return;
 
       entry.value = withTiming(1, {
-        duration: 800,
+        duration: 900,
         easing: Easing.bezier(0.34, 1.56, 0.64, 1),
       });
 
-      // After the entry settles + a beat for the wordmark to slide up,
-      // start the exit fade. Total visible time ≈ 1100ms.
+      shimmerX.value = withDelay(
+        500,
+        withTiming(1, {
+          duration: 1100,
+          easing: Easing.out(Easing.cubic),
+        }),
+      );
+
+      progressX.value = withRepeat(
+        withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.cubic) }),
+        -1,
+        true,
+      );
+
+      breathe.value = withDelay(
+        900,
+        withRepeat(
+          withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.cubic) }),
+          -1,
+          true,
+        ),
+      );
+
       fadeOut.value = withDelay(
-        1100,
+        1200,
         withTiming(
           0,
           { duration: 250, easing: Easing.in(Easing.cubic) },
@@ -206,22 +234,38 @@ export function SplashOverlay({ onDone }: SplashOverlayProps) {
       cancelled = true;
       cancelAnimation(entry);
       cancelAnimation(fadeOut);
+      cancelAnimation(shimmerX);
+      cancelAnimation(progressX);
+      cancelAnimation(breathe);
     };
-  }, [entry, fadeOut, onDone]);
+  }, [entry, fadeOut, shimmerX, progressX, breathe, onDone]);
 
-  const monogramStyle = useAnimatedStyle(() => ({
-    transform: [
-      // Start small + slightly tilted, land on identity.
-      {
-        scale: 0.6 + entry.value * 0.4,
-      },
-    ],
-    opacity: entry.value,
+  const monogramStyle = useAnimatedStyle(() => {
+    const s = entry.value <= 0.6
+      ? 0.6 + entry.value * 0.7667
+      : 1.06 - (entry.value - 0.6) * 0.15;
+    return {
+      transform: [
+        { scale: s },
+        { rotate: `${(1 - entry.value) * -8}deg` },
+        { scale: entry.value > 0.9 ? 1 + Math.sin((entry.value - 0.9) / 0.1 * Math.PI) * 0.04 : 1 },
+      ],
+      opacity: entry.value,
+    };
+  });
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: (shimmerX.value * 2 - 1) * SCREEN_W * 0.6 }],
+    opacity: shimmerX.value < 0 ? 0 : 1,
   }));
 
   const wordmarkStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: (1 - entry.value) * 16 }],
+    transform: [{ translateY: (1 - entry.value) * 14 }],
     opacity: entry.value,
+  }));
+
+  const progressStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progressX.value * (SCREEN_W * 2.2 - 120) }],
   }));
 
   const rootStyle = useAnimatedStyle(() => ({
@@ -237,35 +281,56 @@ export function SplashOverlay({ onDone }: SplashOverlayProps) {
         rootStyle,
       ]}
     >
-      {/* Floating point tokens — ambient loop, runs alongside the entry. */}
-      {Array.from({ length: TOKEN_COUNT }).map((_, i) => (
-        <FloatingToken key={`tok-${i}`} index={i} />
-      ))}
-
-      {/* Sparkles clustered around the monogram. */}
-      <View style={styles.sparkleRing}>
-        {Array.from({ length: SPARKLE_COUNT }).map((_, i) => (
-          <Sparkle key={`sp-${i}`} index={i} />
-        ))}
+      {/* Background blob */}
+      <View style={styles.blob}>
+        <BlurView style={StyleSheet.absoluteFill} intensity={20} tint="light" />
       </View>
 
-      {/* Monogram (entry bounce). */}
-      <Animated.View style={[styles.monogramWrap, monogramStyle]}>
-        <Image
-          source={MONOGRAM}
-          style={styles.monogram}
-          resizeMode="contain"
+      {/* Floating tokens */}
+      {TOKEN_SPECS.map((spec, i) => (
+        <FloatingToken
+          key={`tok-${i}`}
+          index={i}
+          left={spec.left}
+          top={spec.top}
+          delayMs={spec.delay}
         />
+      ))}
+
+      {/* Sparkles */}
+      {SPARKLE_SPECS.map((spec, i) => (
+        <Sparkle
+          key={`sp-${i}`}
+          left={spec.left}
+          top={spec.top}
+          delayMs={spec.delay}
+        />
+      ))}
+
+      {/* Monogram + shimmer */}
+      <Animated.View style={[styles.monogramWrap, monogramStyle]}>
+        <View style={styles.shimmerWrap}>
+          <SvgXml xml={MONOGRAM_XML} width="100%" height="100%" />
+          <Animated.View style={[styles.shimmer, shimmerStyle]}>
+            <LinearGradient
+              colors={['transparent', 'rgba(255,255,255,0.55)', 'transparent']}
+              start={{ x: 0.3, y: 0.5 }}
+              end={{ x: 0.7, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </View>
       </Animated.View>
 
-      {/* Wordmark (slide-up, delayed). */}
+      {/* Wordmark */}
       <Animated.View style={[styles.wordmarkWrap, wordmarkStyle]}>
-        <Image
-          source={WORDMARK}
-          style={styles.wordmark}
-          resizeMode="contain"
-        />
+        <Animated.Text style={[styles.wordmarkText, { color: tokens.mint }]}>PagePay</Animated.Text>
       </Animated.View>
+
+      {/* Progress bar */}
+      <View style={styles.progressTrack}>
+        <Animated.View style={[styles.progressFill, progressStyle]} />
+      </View>
     </Animated.View>
   );
 }
@@ -277,43 +342,85 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 1000,
   },
+  blob: {
+    position: 'absolute',
+    width: 360,
+    height: 360,
+    left: '50%',
+    top: '38%',
+    marginLeft: -180,
+    marginTop: -180,
+    borderRadius: 180,
+    overflow: 'hidden',
+  },
   monogramWrap: {
-    width: 144,
-    height: 144,
+    width: 152,
+    height: 152,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monogram: { width: '100%', height: '100%' },
+  shimmerWrap: {
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+    borderRadius: 28,
+  },
+  shimmer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '60%',
+  },
   wordmarkWrap: {
     marginTop: 28,
-    width: 220,
-    height: 80,
   },
-  wordmark: { width: '100%', height: '100%' },
+  wordmarkText: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 40,
+    fontWeight: '700',
+    letterSpacing: -1.4,
+    textAlign: 'center',
+  },
+  progressTrack: {
+    position: 'absolute',
+    bottom: 78,
+    left: '50%',
+    marginLeft: -60,
+    width: 120,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E6F1ED',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '35%',
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: '#0E7C66',
+  },
   token: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tokenChip: {
-    paddingHorizontal: 10,
+    height: 26,
+    paddingHorizontal: 11,
     paddingVertical: 4,
     borderRadius: 999,
-    borderWidth: 1.5,
+    borderWidth: 1,
   },
   tokenText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   sparkle: {
     position: 'absolute',
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  sparkleRing: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
 });

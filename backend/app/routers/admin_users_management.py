@@ -65,50 +65,56 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     """List platform users with filtering and search."""
-    try:
-        query = select(User)
-        if tier:
-            query = query.where(User.tier == tier)
-        if status:
-            query = query.where(User.status == status)
-        if search:
-            query = query.where(
-                (User.email.ilike(f"%{search}%")) |
-                (User.phone.ilike(f"%{search}%"))
-            )
-        
-        total = (
-            await db.execute(select(func.count()).select_from(query.subquery()))
-        ).scalar_one()
-        rows = await db.execute(
-            query.order_by(User.created_at.desc()).limit(limit).offset(
-                (page - 1) * limit
-            )
+    query = select(User)
+    if tier:
+        query = query.where(User.tier == tier)
+    if status:
+        query = query.where(User.status == status)
+    if search:
+        query = query.where(
+            (User.email.ilike(f"%{search}%")) |
+            (User.phone.ilike(f"%{search}%"))
         )
-        
-        items = []
-        for u in rows.scalars().all():
-            items.append({
-                "id": u.id,
-                "email": u.email,
-                "phone": u.phone,
-                "tier": u.tier.value if hasattr(u.tier, "value") else str(u.tier),
-                "status": u.status,
-                "points_balance": u.points_balance,
-                "referral_code": u.referral_code,
-                "created_at": u.created_at.isoformat(),
-                "last_active_at": (
-                    u.last_active_at.isoformat()
-                    if u.last_active_at else None
-                ),
-            })
-        
-        return UserListResponse(
-            items=items, total=int(total), page=page, limit=limit
+
+    total = (
+        await db.execute(select(func.count()).select_from(query.subquery()))
+    ).scalar_one()
+    rows = await db.execute(
+        query.order_by(User.created_at.desc()).limit(limit).offset(
+            (page - 1) * limit
         )
-    except Exception as exc:
-        logger.error("Failed to list users: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to load users")
+    )
+
+    items = []
+    for u in rows.scalars().all():
+        # Defensive serialization: every field defaults to a JSON-safe
+        # placeholder so a single bad row (None datetime, unknown enum
+        # value from a manual DB edit, etc) doesn't 500 the whole page.
+        # An admin list view must always render — better to show "—"
+        # for one cell than to fail the entire request.
+        tier_val = u.tier
+        if hasattr(tier_val, "value"):
+            tier_val = tier_val.value
+        elif tier_val is not None:
+            tier_val = str(tier_val)
+        items.append({
+            "id": u.id,
+            "email": u.email,
+            "phone": u.phone,
+            "tier": tier_val,
+            "status": u.status,
+            "points_balance": u.points_balance,
+            "referral_code": u.referral_code,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "last_active_at": (
+                u.last_login_at.isoformat()
+                if u.last_login_at else None
+            ),
+        })
+
+    return UserListResponse(
+        items=items, total=int(total), page=page, limit=limit
+    )
 
 
 @router.get("/{user_id}")
@@ -138,8 +144,8 @@ async def get_user_detail(
         ),
         "created_at": user.created_at.isoformat(),
         "last_active_at": (
-            user.last_active_at.isoformat()
-            if user.last_active_at else None
+            user.last_login_at.isoformat()
+            if user.last_login_at else None
         ),
     }
 

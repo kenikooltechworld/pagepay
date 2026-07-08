@@ -557,7 +557,10 @@ class WithdrawalResponse(BaseModel):
 
 
 class SowUploadRequest(BaseModel):
-    text: str = Field(min_length=10, description="SOW or syllabus text to parse")
+    # 50K chars ≈ a 12-page syllabus. The 1MB RequestSizeLimitMiddleware
+    # caps the raw JSON body, but Pydantic is the right place to
+    # enforce the domain limit too.
+    text: str = Field(min_length=10, max_length=50_000, description="SOW or syllabus text to parse")
 
 
 class SowUploadResponse(BaseModel):
@@ -733,9 +736,12 @@ class ReferralValidateResponse(BaseModel):
 
 class CommunityNoteCreate(BaseModel):
     title: str = Field(min_length=3, max_length=500)
-    content: str = Field(min_length=10)
-    course_code: str | None = None
-    university: str | None = None
+    # `content` is rendered in the public feed and in the admin
+    # moderation queue. Bound it so a malicious user can't store a
+    # 1MB XSS payload or blow up the feed query.
+    content: str = Field(min_length=10, max_length=20_000)
+    course_code: str | None = Field(default=None, max_length=50)
+    university: str | None = Field(default=None, max_length=200)
 
 
 class CommunityNoteOut(BaseModel):
@@ -1003,8 +1009,11 @@ class SponsorWalletDepositResponse(BaseModel):
 class TaskCreateRequest(BaseModel):
     """POST /sponsor/tasks - Create new task (draft)."""
     title: str = Field(min_length=5, max_length=255)
-    description: str = Field(min_length=20)
-    instructions: str = Field(min_length=20)
+    # `description` and `instructions` are shown to workers on the
+    # task detail page. Bound them so a sponsor can't ship a 700KB
+    # XSS payload / storage-DoS blob.
+    description: str = Field(min_length=20, max_length=5_000)
+    instructions: str = Field(min_length=20, max_length=5_000)
     task_type: Literal[
         "twitter_follow", "instagram_follow", "tiktok_follow", "youtube_subscribe",
         "twitter_like", "instagram_like", "twitter_retweet", "instagram_comment",
@@ -1015,7 +1024,7 @@ class TaskCreateRequest(BaseModel):
     category: Literal["social_media", "engagement", "website", "app", "content_creation", "surveys", "data_collection", "other"] = "social_media"
     target_url: str | None = None
     proof_type: Literal["screenshot", "link", "text", "photo", "video", "none"]
-    proof_instructions: str | None = None
+    proof_instructions: str | None = Field(default=None, max_length=2_000)
     reward_amount_kobo: int = Field(ge=5000, le=5000000, description="₦50 - ₦50,000 in kobo")
     max_completions: int = Field(ge=1, le=10000)
     expires_in_days: int = Field(default=7, ge=1, le=365, description="Days from now until task expires")
@@ -1083,9 +1092,13 @@ class TaskPublishRequest(BaseModel):
 
 
 class TaskSubmitRequest(BaseModel):
-    """POST /tasks/{id}/submit - Worker submits proof."""
-    proof_url: str | None = None
-    proof_text: str | None = None
+    """POST /tasks/{id}/submit - Worker submits proof.
+
+    `proof_text` is rendered in the admin review surface — bound it
+    so a worker can't ship a multi-MB XSS payload.
+    """
+    proof_url: str | None = Field(default=None, max_length=2_048)
+    proof_text: str | None = Field(default=None, max_length=2_000)
 
 
 class TaskSubmissionResponse(BaseModel):
@@ -1205,6 +1218,23 @@ class ResetPasswordRequest(BaseModel):
     """Reset password with a token."""
     token: str
     new_password: str = Field(min_length=8)
+
+
+class GoogleAuthRequest(BaseModel):
+    """POST /auth/google - Google OAuth2 ID token exchange.
+
+    Frontend sends { "id_token": "..." } and the backend verifies
+    it with Google. Bound `id_token` length so a malicious client
+    can't ship a 10MB blob and force Google API quota exhaustion.
+    """
+    id_token: str = Field(min_length=10, max_length=4_096)
+
+
+class DetectNetworkRequest(BaseModel):
+    """POST /bills/detect-network - Reverse-lookup the network for
+    a Nigerian phone number. No external API call.
+    """
+    phone: str = Field(min_length=11, max_length=11, pattern=r"^0[789][01]\d{9}$")
 
 
 class EmailVerificationRequest(BaseModel):

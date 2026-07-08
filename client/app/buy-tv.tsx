@@ -97,7 +97,7 @@ export default function BuyTvScreen() {
 
   const canSubmit = smartcard.length >= 10 && phone.length === 11 && selectedBouquet !== null;
   const estPoints = selectedPkg
-    ? Math.floor((selectedPkg.price_naira || selectedPkg.amount || 0) * 0.018 * 0.67 * 100)
+    ? Math.floor((selectedPkg.price_naira || selectedPkg.amount || 0) * 0.018 * 0.67 * 10)
     : 0;
 
   return (

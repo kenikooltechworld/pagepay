@@ -95,7 +95,7 @@ export default function BuyElectricityScreen() {
 
   const finalAmount = amount ?? (parseInt(customAmount) || 0);
   const canSubmit = meterNumber.length >= 10 && phone.length === 11 && finalAmount >= 1000;
-  const estPoints = finalAmount ? Math.floor(finalAmount * 0.012 * 0.67 * 100) : 0;
+  const estPoints = finalAmount ? Math.floor(finalAmount * 0.012 * 0.67 * 10) : 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>

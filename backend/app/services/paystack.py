@@ -379,7 +379,7 @@ class PaystackClient:
         """Send a `/transfer` request and return the receipt.
 
         `amount` is in KOBO per Paystack's contract. The wallet UI
-        converts points → kobo at request time (1 pt = 1 kobo, the
+        converts points → kobo at request time (1 pt = 10 kobo, the
         project-wide rate).
         """
         url = f"{PAYSTACK_BASE_URL}/transfer"
@@ -481,6 +481,56 @@ class PaystackClient:
             raise PaystackError(f"Paystack /transaction/initialize returned no authorization_url: {body!r}")
         
         return data
+
+    # ── Refund ──────────────────────────────────────────────────────
+
+    async def refund_charge(
+        self,
+        *,
+        reference: str,
+        amount_kobo: int | None = None,
+    ) -> RefundReceipt:
+        """Refund a Paystack transaction.
+
+        `amount_kobo` is optional — if omitted Paystack refunds the full
+        original amount. The caller (admin refund endpoint) passes the
+        original charge amount so we can do partial refunds.
+        """
+        url = f"{PAYSTACK_BASE_URL}/refund"
+        payload: dict[str, Any] = {
+            "transaction": reference,
+        }
+        if amount_kobo is not None:
+            payload["amount"] = int(amount_kobo)
+
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+                resp = await client.post(
+                    url,
+                    headers=_auth_headers(self._secret_key),
+                    json=payload,
+                )
+        except httpx.HTTPError as exc:
+            raise PaystackError(f"Paystack refund request failed: {exc}") from exc
+
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise PaystackError(
+                f"Paystack returned HTTP {resp.status_code} for POST /refund: {resp.text[:500]}"
+            )
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise PaystackError("Paystack returned non-JSON for POST /refund") from exc
+        if not isinstance(body, dict) or body.get("status") is not True:
+            raise PaystackError(f"Paystack status != true for POST /refund: {body!r}")
+
+        data = body.get("data") or {}
+        return RefundReceipt(
+            reference=str(data.get("reference") or ""),
+            transaction_id=data.get("transaction_id"),
+            amount_kobo=data.get("amount"),
+            status=str(data.get("status") or "pending"),
+        )
 
     # ── Webhook signature ──────────────────────────────────────────
 

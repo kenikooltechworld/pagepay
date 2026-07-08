@@ -26,7 +26,7 @@ from app.routers.admin import router as admin_router
 from app.routers.config import router as config_router
 from app.routers.tasks import router as tasks_router
 from app.routers.sponsor import router as sponsor_router
-from app.seed import run_all_seeds
+from app.seed import run_all_seeds, run_migrations
 from app.services.task_processor import task_processor
 from app.services.ai_verification import verification_service
 from app.websocket import sio
@@ -39,7 +39,7 @@ processor_task = None
 
 async def _seed_in_background():
     """Run seeding in the background after app is ready.
-    
+
     This allows the API to start serving requests immediately,
     then seeds the database asynchronously. Fixes Render connection
     pool instability during deployment.
@@ -51,6 +51,20 @@ async def _seed_in_background():
                 logger.info("Phase 2 seed inserted: %s", counts)
     except Exception as exc:
         logger.error("Phase 2 background seed failed: %s", exc)
+
+
+async def _migrate_in_background():
+    """Run Alembic migrations in the background after app is ready.
+
+    Same shape as _seed_in_background: API starts serving requests
+    immediately, schema migrations apply asynchronously. Idempotent —
+    `alembic upgrade head` against a current database is a no-op.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            await run_migrations(session)
+    except Exception as exc:
+        logger.error("Background migration failed: %s", exc)
 
 
 @asynccontextmanager
@@ -70,6 +84,10 @@ async def lifespan(app: FastAPI):
     # Start seeding in background (don't block app startup)
     logger.info("Scheduling background seeding...")
     asyncio.create_task(_seed_in_background())
+
+    # Apply pending migrations in background (idempotent on every boot).
+    logger.info("Scheduling background migrations...")
+    asyncio.create_task(_migrate_in_background())
     
     # Start Phase 7 background task processor
     # Only start if explicitly enabled via environment variable

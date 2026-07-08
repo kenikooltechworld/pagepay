@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from app.config import settings
+from app.services.sanitize import is_safe_url
 
 logger = logging.getLogger("uvicorn")
 
@@ -353,19 +354,25 @@ class AIVerificationService:
         """Verify URL accessibility and content."""
         url = proof_data.get("url", "")
         expected_pattern = requirements.get("url_pattern")
-        
+
         checks = {}
-        
-        # Check 1: URL format validation
-        if not url.startswith(("http://", "https://")):
+
+        # Check 1: URL format + SSRF safety. `is_safe_url` rejects
+        # `javascript:`, `file:`, private/loopback/link-local IPs,
+        # and the well-known cloud metadata endpoints. This is the
+        # central guard — the same one runs in routers/tasks.py at
+        # the API boundary, but we re-run it here because the AI
+        # verification step can also be reached via direct calls
+        # (e.g. by an internal worker) that bypass the HTTP layer.
+        if not is_safe_url(url):
             return {
                 "verified": False,
                 "confidence": 0.0,
-                "details": "Invalid URL format",
+                "details": "URL failed safety check (private IP, metadata host, or non-http(s) scheme)",
                 "fraud_score": 0.5,
-                "checks": checks
+                "checks": checks,
             }
-        
+
         # Check 2: Pattern matching
         if expected_pattern and expected_pattern not in url:
             checks["pattern"] = {"match": False, "expected": expected_pattern}
@@ -376,12 +383,14 @@ class AIVerificationService:
                 "fraud_score": 0.4,
                 "checks": checks
             }
-        
+
         checks["pattern"] = {"match": True}
-        
-        # Check 3: URL accessibility
+
+        # Check 3: URL accessibility. `follow_redirects=False` so a
+        # 30x redirect to a private/metadata host doesn't slip past
+        # the safety check above.
         try:
-            response = await self.client.head(url, follow_redirects=True)
+            response = await self.client.head(url, follow_redirects=False)
             checks["accessibility"] = {
                 "status": response.status_code,
                 "accessible": 200 <= response.status_code < 400
@@ -584,16 +593,38 @@ Respond in JSON format:
     ) -> Dict[str, Any]:
         """
         Check if follower_username follows target_username using Nitter instances.
-        
+
         Nitter is a privacy-respecting Twitter frontend that doesn't require API keys.
         """
+        # Nitter instances are hardcoded below — but the usernames come
+        # from user-submitted proof data. A username containing `?`,
+        # `#`, or `/` would inject URL components (`?evil=...`) and
+        # could SSRF to a private host. Restrict each to the canonical
+        # Twitter-username charset before interpolation.
+        import re as _re
+        _uname_re = _re.compile(r"^[A-Za-z0-9_]{1,15}$")
+        if not _uname_re.match(follower_username or ""):
+            return {
+                "is_following": False,
+                "source": None,
+                "method": "nitter",
+                "error": "Invalid follower username",
+            }
+        if not _uname_re.match(target_username or ""):
+            return {
+                "is_following": False,
+                "source": None,
+                "method": "nitter",
+                "error": "Invalid target username",
+            }
+
         nitter_instances = [
             "https://nitter.net",           # 95% uptime (verified July 2026)
             "https://nitter.space",         # 95% uptime
             "https://lightbrd.com",         # 94% uptime
             "https://nitter.catsarch.com",  # 71% uptime
         ]
-        
+
         for instance in nitter_instances:
             try:
                 # Check follower's following list

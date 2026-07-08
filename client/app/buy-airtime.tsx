@@ -165,7 +165,7 @@ export default function BuyAirtimeScreen() {
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           {AMOUNTS.map((a) => {
             const rate = 0.03;
-            const estPts = Math.floor(a * rate * 0.67 * 100);
+            const estPts = Math.floor(a * rate * 0.67 * 10);
             return (
               <TouchableOpacity
                 key={a}

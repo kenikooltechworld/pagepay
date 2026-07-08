@@ -23,6 +23,10 @@ from app.ai.router import route_ai
 from app.database import get_db
 from app.models import StudyAsset, StudyMaterial, StudyTransaction, User, ReadingSession
 from app.routers.auth import get_current_user
+from app.services.sanitize import (
+    safe_filename,
+    sanitize_for_display,
+)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -40,6 +44,25 @@ from app.schemas import (
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/study", tags=["study"])
+
+# Per-route file upload cap. The global RequestSizeLimitMiddleware
+# allows up to 1MB, but we tighten that for these routes — a 5MB
+# SOW image blows up the base64 payload (2× RAM) and the Gemini
+# Vision bill. Documents (PDF/DOCX/TXT) get a slightly larger cap.
+MAX_SOW_IMAGE_BYTES: int = 5 * 1024 * 1024   # 5 MB
+MAX_SOW_DOC_BYTES: int = 10 * 1024 * 1024    # 10 MB
+
+# Content-type allowlist for the image route. The browser-supplied
+# `file.content_type` is attacker-controlled and was previously
+# trusted verbatim — restrict it to types Gemini Vision can process.
+ALLOWED_IMAGE_TYPES: frozenset[str] = frozenset({
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+})
 
 UNLOCK_POINTS_COST = 50
 
@@ -101,9 +124,28 @@ async def upload_sow_image(
     if not api_key:
         raise HTTPException(status_code=503, detail="Gemini not configured for image upload")
 
+    # Content-type allowlist — `file.content_type` is set by the
+    # client and is attacker-controlled. Reject anything other than
+    # the types Gemini Vision actually accepts.
+    ctype = (file.content_type or "").lower().split(";", 1)[0].strip()
+    if ctype not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported image type: {ctype!r}. Use JPEG, PNG, WEBP, or HEIC.",
+        )
+
+    # Sanitize the filename BEFORE we read the body so a hostile
+    # path-traversal filename never touches the DB or the log.
+    safe_name = safe_filename(file.filename, fallback="upload.jpg")
+
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=400, detail="Empty file")
+    if len(contents) > MAX_SOW_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image too large (max {MAX_SOW_IMAGE_BYTES // (1024*1024)} MB)",
+        )
 
     # Use Gemini Vision for OCR
     import base64
@@ -148,12 +190,12 @@ async def upload_sow_image(
     except Exception:
         logger.error("SOW parser returned non-JSON: %s", ai_result["response"][:200])
 
-    title = (parsed or {}).get("title", file.filename or "Uploaded Material") if isinstance(parsed, dict) else (file.filename or "Uploaded Material")
+    title = (parsed or {}).get("title", safe_name) if isinstance(parsed, dict) else safe_name
 
     material = StudyMaterial(
         user_id=current_user.id,
         title=title,
-        raw_input=f"[IMAGE: {file.filename}]\n{extracted_text}",
+        raw_input=f"[IMAGE: {safe_name}]\n{extracted_text}",
         parsed_structure=_json.dumps(parsed) if parsed else None,
         ai_model_used=ai_result.get("provider"),
     )
@@ -175,20 +217,34 @@ async def upload_sow_document(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a SOW document (PDF, DOCX, TXT). Extract text then parse."""
+    # Sanitize filename before we read the body — the path-traversal
+    # filename is the most likely attack vector, the body size is
+    # secondary.
+    safe_name = safe_filename(file.filename, fallback="document")
+
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=400, detail="Empty file")
+    if len(contents) > MAX_SOW_DOC_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Document too large (max {MAX_SOW_DOC_BYTES // (1024*1024)} MB)",
+        )
 
     extracted_text = ""
-    filename = file.filename or "document"
+    # Use the sanitized name for the extension check too — if a
+    # malicious user names a PDF "evil.jpg", the sanitized name
+    # still ends in .jpg and is correctly rejected by the parser
+    # branch below.
+    filename = safe_name
 
     # Determine file type and extract text
     if filename.lower().endswith('.pdf'):
         # Extract text from PDF
         try:
-            import PyPDF2
+            import pypdf
             from io import BytesIO
-            pdf_reader = PyPDF2.PdfReader(BytesIO(contents))
+            pdf_reader = pypdf.PdfReader(BytesIO(contents))
             text_parts = []
             for page in pdf_reader.pages:
                 text_parts.append(page.extract_text())

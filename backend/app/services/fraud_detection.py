@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from app.models import (
-    FraudFlag, TaskSubmission, User, ReadingSession, 
+    FraudFlag, TaskSubmission, ReadingSession, 
     Referral
 )
 
@@ -86,46 +86,56 @@ class FraudDetectionService:
         ip_address: Optional[str] = None
     ) -> Optional[FraudFlag]:
         """
-        Check if user shares device/IP with other accounts.
+        Check if user shares device/IP with other accounts via TaskSubmission.
         
-        Args:
-            user_id: User to check
-            device_fingerprint: Device fingerprint
-            ip_address: IP address
-        
-        Returns:
-            FraudFlag if duplicates found, None otherwise
+        Queries TaskSubmission for matching device_fingerprint or ip_address
+        to detect multi-accounting in the task marketplace.
         """
         if not device_fingerprint and not ip_address:
             return None
         
-        # Find other users with same device fingerprint
-        duplicate_users = []
+        # Find other task submissions with same device fingerprint or IP
+        duplicate_submission_count = 0
+        duplicate_user_ids = set()
         
         if device_fingerprint:
-            stmt = select(User).where(
+            stmt = select(TaskSubmission).where(
                 and_(
-                    User.device_fingerprint == device_fingerprint,
-                    User.id != user_id
+                    TaskSubmission.device_fingerprint == device_fingerprint,
+                    TaskSubmission.worker_id != user_id
                 )
-            ).limit(10)
+            ).limit(50)
             
             result = await self.db.execute(stmt)
-            users = result.scalars().all()
-            duplicate_users.extend([u.id for u in users])
+            submissions = result.scalars().all()
+            duplicate_user_ids.update(s.worker_id for s in submissions if s.worker_id)
+            duplicate_submission_count += len(submissions)
         
-        if len(duplicate_users) >= 2:  # 3+ accounts from same device
+        if ip_address:
+            stmt = select(TaskSubmission).where(
+                and_(
+                    TaskSubmission.ip_address == ip_address,
+                    TaskSubmission.worker_id != user_id
+                )
+            ).limit(50)
+            
+            result = await self.db.execute(stmt)
+            submissions = result.scalars().all()
+            duplicate_user_ids.update(s.worker_id for s in submissions if s.worker_id)
+            duplicate_submission_count += len(submissions)
+        
+        if duplicate_user_ids:
             flag = FraudFlag(
                 user_id=user_id,
                 session_id=None,
                 flag_type="duplicate_account",
-                severity="high" if len(duplicate_users) >= 5 else "medium",
-                details=f"Device fingerprint shared with {len(duplicate_users)} other accounts: {duplicate_users[:5]}",
+                severity="high" if len(duplicate_user_ids) >= 5 else "medium",
+                details=f"Device/IP shared with {len(duplicate_user_ids)} other accounts via submissions",
                 status="pending"
             )
             self.db.add(flag)
             await self.db.commit()
-            logger.warning(f"Duplicate account detected for user {user_id}: {len(duplicate_users)} accounts on same device")
+            logger.warning(f"Duplicate account detected for user {user_id}: {len(duplicate_user_ids)} accounts share device/IP")
             return flag
         
         return None

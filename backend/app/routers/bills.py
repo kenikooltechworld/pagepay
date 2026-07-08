@@ -45,8 +45,8 @@ router = APIRouter(prefix="/bills", tags=["bills"])
 
 _USER_SHARE = 0.70  # User gets 70%, platform keeps 30%
 
-# Points conversion: 100 points = ₦1
-_POINTS_PER_NAIRA = 100
+# Points conversion: 10 points = ₦1
+_POINTS_PER_NAIRA = 10
 
 
 def _compute_points(commission_kobo: int) -> int:

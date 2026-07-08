@@ -64,9 +64,9 @@ router = APIRouter(prefix="/ads", tags=["ads"])
 PLATFORM_SHARE = 0.05
 USER_SHARE = 1.0 - PLATFORM_SHARE
 
-# 100 points = ₦1 (NGN). All point math goes through this constant so
+# 10 points = ₦1 (NGN). All point math goes through this constant so
 # the conversion rate lives in exactly one place.
-POINTS_PER_NAIRA = 100
+POINTS_PER_NAIRA = 10
 
 
 # ── POST /ads/request-token — NEW: SSV-only credit flow entry ─────

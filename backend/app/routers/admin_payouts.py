@@ -210,7 +210,7 @@ async def reject_payout(
     # Update payout status
     payout.status = "failed"
     payout.reason = reason
-    payout.settled_at = datetime.now(timezone.utc)
+    payout.settled_at = datetime.utcnow()
 
     db.add(
         _log_admin_action(
