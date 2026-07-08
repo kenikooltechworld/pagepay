@@ -6,16 +6,13 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
-      "prebuildCommand": "node scripts/setup-google-services.js"
+      "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal",
-      "prebuildCommand": "node scripts/setup-google-services.js"
+      "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true,
-      "prebuildCommand": "node scripts/setup-google-services.js"
+      "autoIncrement": true
     }
   },
   "submit": {
