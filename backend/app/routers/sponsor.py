@@ -14,6 +14,7 @@ from app.schemas import (
     TaskCreateRequest, TaskResponse, TaskPublishRequest, TaskSubmissionResponse
 )
 from app.services.auth import hash_password, create_access_token, get_current_user
+from app.services.sanitize import sanitize_for_log
 
 router = APIRouter(prefix="/sponsor", tags=["sponsor"])
 logger = logging.getLogger("uvicorn.error")
@@ -66,7 +67,10 @@ async def register_sponsor(
     await db.commit()
     
     token = create_access_token(user.id)
-    logger.info(f"Sponsor registered: {user.email} ({payload.display_name})")
+    # `user.email` and `payload.display_name` are user-controlled.
+    # Sanitize before logging so a malicious sponsor can't forge
+    # fake log lines.
+    logger.info("Sponsor registered: %s (%s)", sanitize_for_log(user.email), sanitize_for_log(payload.display_name))
     
     return TokenResponse(access_token=token)
 
@@ -199,13 +203,13 @@ async def initiate_wallet_deposit(
     db: AsyncSession = Depends(get_db),
 ):
     """Initiate Paystack deposit to sponsor wallet."""
-    from app.services.paystack import PaystackClient
+    from app.services.paystack import get_client as get_paystack_client
     from app.config import settings
     
     if not settings.paystack_secret_key:
         raise HTTPException(status_code=503, detail="Payment provider not configured")
     
-    paystack = PaystackClient()
+        paystack = get_paystack_client()
     
     # Generate reference
     import uuid
@@ -585,8 +589,9 @@ async def sponsor_reject_submission(
         )
     
     await db.commit()
-    
-    logger.info(f"Sponsor {current_user.id} rejected submission {submission_id}: {reason}")
+
+    # `reason` is a free-text admin field; sanitize before logging.
+    logger.info("Sponsor %s rejected submission %s: %s", current_user.id, submission_id, sanitize_for_log(reason))
     
     return {
         "success": True,

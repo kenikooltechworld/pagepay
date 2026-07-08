@@ -92,7 +92,7 @@ export default function FundWalletScreen() {
   const processingFee = finalAmount >= 500 ? Math.min(Math.ceil(finalAmount * 0.015), 2000) : 0;
   const totalPayment = finalAmount + processingFee;
   const canSubmit = finalAmount >= 500;
-  const pointsToReceive = finalAmount * 100; // Points based on deposit amount (not including fee)
+  const pointsToReceive = finalAmount * 10; // Points based on deposit amount (not including fee)
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.paper, paddingTop: insets.top }}>

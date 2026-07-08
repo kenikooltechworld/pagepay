@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func
@@ -16,6 +17,19 @@ from app.services.auth import get_current_user
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 logger = logging.getLogger("uvicorn.error")
+
+# Hosts that should never appear in a proof_url. Captures the obvious
+# cloud-metadata endpoints plus localhost variants — the URL validator
+# also blocks private/loopback IP literals, this list is the host-name
+# belt-and-braces.
+_BLOCKED_HOSTS: frozenset[str] = frozenset({
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",  # nosec - documented exception
+    "169.254.169.254",  # AWS / GCP / Azure instance metadata
+    "metadata.google.internal",
+    "metadata.azure.com",
+})
 
 
 @router.get("", response_model=list[TaskListItem])
@@ -243,7 +257,7 @@ async def submit_task(
     task = await db.get(Task, task_id)
     if not task or task.status != "active":
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Get started submission
     submission_result = await db.execute(
         select(TaskSubmission).where(
@@ -253,9 +267,68 @@ async def submit_task(
         )
     )
     submission = submission_result.scalar_one_or_none()
-    
+
     if not submission:
         raise HTTPException(status_code=400, detail="Task not started. Call /start first.")
+
+    # C3 audit fix: validate proof_url / proof_text inputs.
+    # proof_url is rendered in the admin review UI — unvalidated, it can
+    # be a `javascript:` URI, a private-IP SSRF target, or a megabyte
+    # of garbage. proof_text is shown in the same review surface and
+    # rendered as text, but we cap length so a worker can't blow up
+    # the review page. proof_image_base64 already goes through
+    # Cloudinary, which validates content type server-side.
+    if proof_url is not None:
+        proof_url = proof_url.strip()
+        if not proof_url:
+            proof_url = None
+        else:
+            if len(proof_url) > 2048:
+                raise HTTPException(
+                    status_code=400,
+                    detail="proof_url is too long (max 2048 characters)",
+                )
+            parsed = urlparse(proof_url)
+            if parsed.scheme not in ("http", "https"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="proof_url must be an http:// or https:// URL",
+                )
+            host = (parsed.hostname or "").lower()
+            if not host:
+                raise HTTPException(status_code=400, detail="proof_url must include a host")
+            # SSRF: block private/loopback IP literals and known
+            # metadata endpoints. DNS lookups aren't performed here
+            # (that would block the request); if you need DNS-level
+            # blocking, do it in the fraud_check step.
+            if host in _BLOCKED_HOSTS or host.endswith(".internal"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="proof_url points to a blocked host",
+                )
+            try:
+                import ipaddress
+                ipaddress.ip_address(host)
+                # Resolved to a literal IP — must be public.
+                ip = ipaddress.ip_address(host)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="proof_url must point to a public address",
+                    )
+            except ValueError:
+                # Not an IP literal — hostname, that's fine.
+                pass
+
+    if proof_text is not None:
+        proof_text = proof_text.strip()
+        if not proof_text:
+            proof_text = None
+        elif len(proof_text) > 5000:
+            raise HTTPException(
+                status_code=400,
+                detail="proof_text is too long (max 5000 characters)",
+            )
     
     # Upload image to Cloudinary if provided
     proof_image_url = None
@@ -293,7 +366,13 @@ async def submit_task(
     await db.commit()
     await db.refresh(submission)
     
-    # Run fraud checks on submission
+    # H4 audit fix: run fraud checks but don't let a fraud-check bug
+    # block a legitimate submission. We narrow the except to a known
+    # transient set (DB disconnect, AI provider rate limit) so an
+    # unexpected error (a typo in fraud_detection.py, a missing column)
+    # surfaces as ERROR in the logs instead of a silent WARNING. The
+    # submission keeps the "validating" status; an admin can re-run
+    # the check later via the admin task reviewer.
     try:
         from app.services.fraud_detection import run_fraud_checks_on_submission
         await run_fraud_checks_on_submission(
@@ -304,9 +383,22 @@ async def submit_task(
             device_fingerprint=submission.device_fingerprint,
             ip_address=submission.ip_address
         )
+    except (ConnectionError, TimeoutError) as e:
+        # Transient: fraud check will be retried by the async worker.
+        logger.warning(
+            "Transient fraud-check failure on submission %s (will retry): %s",
+            submission.id, e,
+        )
     except Exception as e:
-        # Don't fail submission if fraud check fails
-        logger.warning(f"Fraud check failed for submission {submission.id}: {e}")
+        # Unexpected: this is a bug in fraud_detection.py or a schema
+        # mismatch, not normal operation. Log at ERROR with traceback
+        # so it gets investigated, but still don't fail the submission
+        # — the worker has already done the work, and the admin
+        # reviewer will catch it during manual review.
+        logger.error(
+            "Fraud check raised an unexpected error on submission %s: %s",
+            submission.id, e, exc_info=True,
+        )
     
     return TaskSubmissionResponse(
         id=submission.id,
@@ -481,7 +573,10 @@ async def get_task_messages(
     """Get chat messages for a task."""
     stmt = select(TaskMessage).where(
         TaskMessage.task_id == task_id,
-        TaskMessage.sender_id == current_user.id | TaskMessage.receiver_id == current_user.id
+        or_(
+            TaskMessage.sender_id == current_user.id,
+            TaskMessage.receiver_id == current_user.id,
+        ),
     ).order_by(TaskMessage.created_at.asc())
     
     result = await db.execute(stmt)

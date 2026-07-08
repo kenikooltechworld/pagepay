@@ -11,8 +11,9 @@ from sqlalchemy import select, insert
 from jose import JWTError, jwt
 from app.database import get_db
 from app.models import User, PasswordResetToken, RefreshToken
-from app.schemas import UserRegister, TokenResponse, UserMe, ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest, LegalPageResponse, EmailVerificationRequest
+from app.schemas import UserRegister, TokenResponse, UserMe, ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest, LegalPageResponse, EmailVerificationRequest, GoogleAuthRequest
 from app.services.auth import hash_password, verify_password, create_access_token, create_refresh_token, get_current_user, revoke_jwt
+from app.services.sanitize import sanitize_for_log
 from app.services.email import send_verification_email, send_password_reset_email
 from app.services.user_audit import log_user_action, get_user_audit_logs
 from app.config import settings
@@ -109,7 +110,9 @@ async def register(payload: UserRegister, request: Request, db: AsyncSession = D
         if user.email:
             await send_verification_email(user.email, verification_token)
     except Exception as exc:
-        logger.error("Failed to send verification email to %s: %s", user.email, exc)
+        # `user.email` is user-controlled — sanitize before logging
+        # so a malicious email can't forge log lines.
+        logger.error("Failed to send verification email to %s: %s", sanitize_for_log(user.email), exc)
 
     # Issue tokens
     access_token = create_access_token(user.id)
@@ -345,7 +348,7 @@ async def forgot_password(
         if user.email:
             await send_password_reset_email(user.email, raw_token)
     except Exception as exc:
-        logger.error("Failed to send password reset email to %s: %s", user.email, exc)
+        logger.error("Failed to send password reset email to %s: %s", sanitize_for_log(user.email), exc)
 
     logger.info("Password reset requested for user_id=%s", user.id)
     return {
@@ -448,7 +451,7 @@ async def resend_verification(
     try:
         await send_verification_email(current_user.email, verification_token)
     except Exception as exc:
-        logger.error("Failed to resend verification email to %s: %s", current_user.email, exc)
+        logger.error("Failed to resend verification email to %s: %s", sanitize_for_log(current_user.email), exc)
         raise HTTPException(status_code=500, detail="Failed to send verification email")
 
     return {"ok": True, "message": "Verification email sent"}
@@ -457,7 +460,7 @@ async def resend_verification(
 @router.post("/google", response_model=TokenResponse)
 async def google_auth(
     request: Request,
-    payload: dict,
+    payload: GoogleAuthRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate with Google ID token.
@@ -465,9 +468,7 @@ async def google_auth(
     Frontend sends: { "id_token": "..." }
     Backend verifies with Google and creates/logs in user.
     """
-    id_token = payload.get("id_token")
-    if not id_token:
-        raise HTTPException(status_code=400, detail="id_token required")
+    id_token = payload.id_token
 
     if not settings.google_client_id:
         raise HTTPException(status_code=501, detail="Google OAuth2 is not configured")

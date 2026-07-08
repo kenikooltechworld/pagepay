@@ -1,7 +1,7 @@
 """Live USD→NGN exchange rate lookup.
 
 Why this exists: ad networks (AdMob, AppLovin MAX) report revenue in USD.
-Our reward math is denominated in NGN and points (100 pts = ₦1). We must
+Our reward math is denominated in NGN and points (10 pts = ₦1). We must
 not hardcode an FX rate — NGN/USD fluctuates daily and the user (operator)
 must not lose money to stale rates.
 

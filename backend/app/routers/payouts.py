@@ -58,6 +58,7 @@ from app.services.paystack import (
     PaystackError,
     get_client as get_paystack_client,
 )
+from app.services.money_caps import record_amount_v2
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -450,6 +451,34 @@ async def withdraw(
     # can tell the user exactly how much more they need.
     fee_kobo = compute_withdrawal_fee(payload.amount_kobo)
     total_debit_kobo = payload.amount_kobo + fee_kobo
+
+    # M2 audit fix: enforce per-tx + 24h-rolling withdrawal caps BEFORE
+    # talking to Paystack. The cap is on the user-visible withdrawal
+    # amount (not the gross debit including fee) — what the user typed
+    # in the input is what gets counted against the cap.
+    allowed, current_24h = record_amount_v2(
+        user_id=user_row.id,
+        kind="withdrawal",
+        amount_kobo=payload.amount_kobo,
+        max_per_tx=settings.max_withdrawal_kobo_per_tx,
+        max_per_day=settings.max_withdrawal_kobo_per_day,
+    )
+    if not allowed:
+        if current_24h == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Withdrawal amount exceeds the per-transaction limit of "
+                    f"{settings.max_withdrawal_kobo_per_tx} kobo."
+                ),
+            )
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"24-hour withdrawal limit reached. You've withdrawn {current_24h} of "
+                f"{settings.max_withdrawal_kobo_per_day} kobo allowed per day."
+            ),
+        )
 
     # Check Paystack balance BEFORE debiting the user's wallet. If
     # Paystack has insufficient balance (because of auto-settlement),

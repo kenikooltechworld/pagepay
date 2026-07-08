@@ -109,11 +109,15 @@ async def end_session(
 
     effective_duration = max(0, session.duration_seconds - session.total_paused_seconds)
 
-    # Run fraud checks on completed session
+    # H4 audit fix: run fraud checks but don't let a fraud-check bug
+    # block a legitimate session. Narrow the except to the transient
+    # set so unexpected errors (a bug in fraud_detection.py) get
+    # logged at ERROR with traceback for investigation. The session
+    # keeps its points; an admin can re-run the check later.
     try:
         from app.services.fraud_detection import run_fraud_checks_on_session
-        # Estimate content length (500 words per minute of reading)
-        estimated_word_count = int(effective_duration / 60 * 250)  # 250 WPM average
+        # Estimate content length (250 WPM average)
+        estimated_word_count = int(effective_duration / 60 * 250)
         await run_fraud_checks_on_session(
             db=db,
             session_id=session.id,
@@ -121,9 +125,16 @@ async def end_session(
             duration_seconds=effective_duration,
             content_length=estimated_word_count
         )
+    except (ConnectionError, TimeoutError) as e:
+        logger.warning(
+            "Transient fraud-check failure on session %s (will retry): %s",
+            session.id, e,
+        )
     except Exception as e:
-        # Don't fail session if fraud check fails
-        logger.error(f"Fraud check failed for session {session.id}: {e}")
+        logger.error(
+            "Fraud check raised an unexpected error on session %s: %s",
+            session.id, e, exc_info=True,
+        )
 
     if session.scroll_events > 0:
         session.verified = True

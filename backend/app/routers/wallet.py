@@ -11,6 +11,7 @@ from app.models import ReadingSession, ContentCatalog, AdEvent, User, Payment
 from app.routers.auth import get_current_user
 from app.services.paystack import get_client
 from app.config import settings
+from app.services.money_caps import record_amount_v2
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -130,6 +131,36 @@ async def initiate_wallet_deposit(
         raise HTTPException(
             status_code=503,
             detail="Wallet funding temporarily unavailable. Please try again later.",
+        )
+
+    # M1 audit fix: enforce per-tx + 24h-rolling deposit caps BEFORE
+    # talking to Paystack. A stolen-card deposit or a compromised
+    # account shouldn't be able to push more than the cap through
+    # the system in any 24h window.
+    allowed, current_24h = record_amount_v2(
+        user_id=current_user.id,
+        kind="deposit",
+        amount_kobo=payload.amount_kobo,
+        max_per_tx=settings.max_deposit_kobo_per_tx,
+        max_per_day=settings.max_deposit_kobo_per_day,
+    )
+    if not allowed:
+        if current_24h == 0:
+            # Per-tx cap exceeded
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Deposit amount exceeds the per-transaction limit of "
+                    f"{settings.max_deposit_kobo_per_tx} kobo."
+                ),
+            )
+        # 24h cap exceeded — current_24h is what the user has already moved
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"24-hour deposit limit reached. You've moved {current_24h} of "
+                f"{settings.max_deposit_kobo_per_day} kobo allowed per day."
+            ),
         )
     
     # Generate unique reference

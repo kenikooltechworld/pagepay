@@ -69,6 +69,21 @@ class Settings(BaseSettings):
     # points to cash out.
     min_withdrawal_kobo: int = 100000
 
+    # ── Money-flow caps (anti money-laundering) ────────────────────
+    # Per-transaction caps. The wallet.deposit and payouts.withdraw
+    # endpoints enforce these BEFORE calling Paystack. Without them,
+    # a stolen-card deposit can move through the system unconstrained.
+    # 10,000,000 kobo = ₦100,000 per single deposit.
+    max_deposit_kobo_per_tx: int = 10_000_000
+    # 20,000,000 kobo = ₦200,000 per single withdrawal.
+    max_withdrawal_kobo_per_tx: int = 20_000_000
+    # 24-hour rolling caps. Tracked in-memory per process (sufficient
+    # for a single Render instance; would need Redis if we scale out).
+    # 50,000,000 kobo = ₦500,000 deposit/day.
+    max_deposit_kobo_per_day: int = 50_000_000
+    # 50,000,000 kobo = ₦500,000 withdrawal/day.
+    max_withdrawal_kobo_per_day: int = 50_000_000
+
     admob_app_id_android: str | None = None
     admob_app_id_ios: str | None = None
     applovin_sdk_key: str | None = None
