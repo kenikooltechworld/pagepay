@@ -7,15 +7,15 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "prebuildCommand": "chmod +x scripts/setup-google-services.sh && ./scripts/setup-google-services.sh"
+      "prebuildCommand": "node scripts/setup-google-services.js"
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "chmod +x scripts/setup-google-services.sh && ./scripts/setup-google-services.sh"
+      "prebuildCommand": "node scripts/setup-google-services.js"
     },
     "production": {
       "autoIncrement": true,
-      "prebuildCommand": "chmod +x scripts/setup-google-services.sh && ./scripts/setup-google-services.sh"
+      "prebuildCommand": "node scripts/setup-google-services.js"
     }
   },
   "submit": {
