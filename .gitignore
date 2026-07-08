@@ -29,6 +29,7 @@ credentials.json
 !package*.json
 !tsconfig*.json
 !*config*.json
+!app.json
 !.vscode/*.json
 pagepay-submit-*.json
 *-submit-*.json

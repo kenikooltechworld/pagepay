@@ -65,46 +65,50 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     """List platform users with filtering and search."""
-    query = select(User)
-    if tier:
-        query = query.where(User.tier == tier)
-    if status:
-        query = query.where(User.status == status)
-    if search:
-        query = query.where(
-            (User.email.ilike(f"%{search}%")) |
-            (User.phone.ilike(f"%{search}%"))
+    try:
+        query = select(User)
+        if tier:
+            query = query.where(User.tier == tier)
+        if status:
+            query = query.where(User.status == status)
+        if search:
+            query = query.where(
+                (User.email.ilike(f"%{search}%")) |
+                (User.phone.ilike(f"%{search}%"))
+            )
+        
+        total = (
+            await db.execute(select(func.count()).select_from(query.subquery()))
+        ).scalar_one()
+        rows = await db.execute(
+            query.order_by(User.created_at.desc()).limit(limit).offset(
+                (page - 1) * limit
+            )
         )
-    
-    total = (
-        await db.execute(select(func.count()).select_from(query.subquery()))
-    ).scalar_one()
-    rows = await db.execute(
-        query.order_by(User.created_at.desc()).limit(limit).offset(
-            (page - 1) * limit
+        
+        items = []
+        for u in rows.scalars().all():
+            items.append({
+                "id": u.id,
+                "email": u.email,
+                "phone": u.phone,
+                "tier": u.tier.value if hasattr(u.tier, "value") else str(u.tier),
+                "status": u.status,
+                "points_balance": u.points_balance,
+                "referral_code": u.referral_code,
+                "created_at": u.created_at.isoformat(),
+                "last_active_at": (
+                    u.last_active_at.isoformat()
+                    if u.last_active_at else None
+                ),
+            })
+        
+        return UserListResponse(
+            items=items, total=int(total), page=page, limit=limit
         )
-    )
-    
-    items = []
-    for u in rows.scalars().all():
-        items.append({
-            "id": u.id,
-            "email": u.email,
-            "phone": u.phone,
-            "tier": u.tier.value if hasattr(u.tier, "value") else str(u.tier),
-            "status": u.status,
-            "points_balance": u.points_balance,
-            "referral_code": u.referral_code,
-            "created_at": u.created_at.isoformat(),
-            "last_active_at": (
-                u.last_active_at.isoformat()
-                if u.last_active_at else None
-            ),
-        })
-    
-    return UserListResponse(
-        items=items, total=int(total), page=page, limit=limit
-    )
+    except Exception as exc:
+        logger.error("Failed to list users: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to load users")
 
 
 @router.get("/{user_id}")
