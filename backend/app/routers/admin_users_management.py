@@ -107,8 +107,8 @@ async def list_users(
             "referral_code": u.referral_code,
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "last_active_at": (
-                u.last_active_at.isoformat()
-                if u.last_active_at else None
+                u.last_login_at.isoformat()
+                if u.last_login_at else None
             ),
         })
 
@@ -144,8 +144,8 @@ async def get_user_detail(
         ),
         "created_at": user.created_at.isoformat(),
         "last_active_at": (
-            user.last_active_at.isoformat()
-            if user.last_active_at else None
+            user.last_login_at.isoformat()
+            if user.last_login_at else None
         ),
     }
 
