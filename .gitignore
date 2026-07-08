@@ -35,7 +35,7 @@ pagepay-submit-*.json
 *-submit-*.json
 
 # Firebase config files (contain API keys)
-# google-services.json - TEMPORARILY COMMENTED TO ALLOW EAS BUILD
+google-services.json
 GoogleService-Info.plist
 firebase-service-account.json
 firebase-service-account.json
