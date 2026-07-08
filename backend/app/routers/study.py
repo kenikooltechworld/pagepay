@@ -186,9 +186,9 @@ async def upload_sow_document(
     if filename.lower().endswith('.pdf'):
         # Extract text from PDF
         try:
-            import PyPDF2
+            import pypdf
             from io import BytesIO
-            pdf_reader = PyPDF2.PdfReader(BytesIO(contents))
+            pdf_reader = pypdf.PdfReader(BytesIO(contents))
             text_parts = []
             for page in pdf_reader.pages:
                 text_parts.append(page.extract_text())
