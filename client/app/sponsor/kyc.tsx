@@ -4,17 +4,19 @@ import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useTranslation } from 'react-i18next';
 import { submitSponsorKYC } from '@/src/features/sponsor/api';
 
 const ID_TYPES = [
-  { value: 'nin', label: 'NIN (National ID)' },
-  { value: 'bvn', label: 'BVN (Bank Verification)' },
-  { value: 'voters_card', label: 'Voter\'s Card' },
-  { value: 'drivers_license', label: 'Driver\'s License' },
-  { value: 'passport', label: 'International Passport' },
+  { value: 'nin', label: 'sponsor_kyc.id_types.nin' },
+  { value: 'bvn', label: 'sponsor_kyc.id_types.bvn' },
+  { value: 'voters_card', label: 'sponsor_kyc.id_types.voters_card' },
+  { value: 'drivers_license', label: 'sponsor_kyc.id_types.drivers_license' },
+  { value: 'passport', label: 'sponsor_kyc.id_types.passport' },
 ];
 
 export default function SponsorKYCScreen() {
+  const { t } = useTranslation();
   const [idType, setIdType] = useState<'nin' | 'bvn' | 'voters_card' | 'drivers_license' | 'passport'>('nin');
   const [idNumber, setIdNumber] = useState('');
   const [idDocument, setIdDocument] = useState<string | null>(null);
@@ -25,20 +27,20 @@ export default function SponsorKYCScreen() {
     mutationFn: submitSponsorKYC,
     onSuccess: () => {
       Alert.alert(
-        'KYC Submitted!',
-        'Your KYC application is under review. You\'ll be notified within 24 hours.',
+        t('sponsor_kyc.success_title'),
+        t('sponsor_kyc.success_message'),
         [{ text: 'OK', onPress: () => router.replace('/sponsor/dashboard') }]
       );
     },
     onError: (error: any) => {
-      Alert.alert('Submission Failed', error.message);
+      Alert.alert(t('sponsor_kyc.errors.submission_failed'), error.message);
     },
   });
 
   const pickIDDocument = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant permission to access your photos.');
+      Alert.alert(t('sponsor_kyc.errors.permission_required'), t('sponsor_kyc.errors.permission_message'));
       return;
     }
 
@@ -57,7 +59,7 @@ export default function SponsorKYCScreen() {
   const pickBusinessDocument = async () => {
     const { status} = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant permission to access your photos.');
+      Alert.alert(t('sponsor_kyc.errors.permission_required'), t('sponsor_kyc.errors.permission_message'));
       return;
     }
 
@@ -75,7 +77,7 @@ export default function SponsorKYCScreen() {
 
   const handleSubmit = () => {
     if (!idNumber) {
-      Alert.alert('Missing ID', 'Please enter your ID number.');
+      Alert.alert(t('sponsor_kyc.errors.missing_id'));
       return;
     }
 
@@ -94,22 +96,22 @@ export default function SponsorKYCScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>KYC Verification</Text>
+        <Text style={styles.headerTitle}>{t('sponsor_kyc.title')}</Text>
       </View>
 
       <View style={styles.infoCard}>
         <Ionicons name="shield-checkmark" size={32} color="#6C5CE7" />
-        <Text style={styles.infoTitle}>Why KYC?</Text>
+        <Text style={styles.infoTitle}>{t('sponsor_kyc.why_kyc_title')}</Text>
         <Text style={styles.infoText}>
-          We verify all sponsors to protect workers and maintain trust. Only your ID is required - business documents are optional.
+          {t('sponsor_kyc.why_kyc_text')}
         </Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>ID Verification (Required)</Text>
+        <Text style={styles.sectionTitle}>{t('sponsor_kyc.id_verification_title')}</Text>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>ID Type</Text>
+          <Text style={styles.label}>{t('sponsor_kyc.id_type_label')}</Text>
           <View style={styles.idTypesGrid}>
             {ID_TYPES.map((type) => (
               <TouchableOpacity
@@ -118,7 +120,7 @@ export default function SponsorKYCScreen() {
                 onPress={() => setIdType(type.value as any)}
               >
                 <Text style={[styles.idTypeText, idType === type.value && styles.idTypeTextActive]}>
-                  {type.label}
+                  {t(type.label)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -126,10 +128,10 @@ export default function SponsorKYCScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>ID Number</Text>
+          <Text style={styles.label}>{t('sponsor_kyc.id_number_label')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter your ID number"
+            placeholder={t('sponsor_kyc.id_number_placeholder')}
             value={idNumber}
             onChangeText={setIdNumber}
             autoCapitalize="characters"
@@ -137,17 +139,17 @@ export default function SponsorKYCScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Upload ID Document (Optional)</Text>
+          <Text style={styles.label}>{t('sponsor_kyc.upload_id_label')}</Text>
           <TouchableOpacity style={styles.uploadButton} onPress={pickIDDocument}>
             {idDocument ? (
               <>
                 <Ionicons name="checkmark-circle" size={24} color="#00B894" />
-                <Text style={styles.uploadedText}>Document Uploaded</Text>
+                <Text style={styles.uploadedText}>{t('sponsor_kyc.document_uploaded')}</Text>
               </>
             ) : (
               <>
                 <Ionicons name="cloud-upload" size={24} color="#6C5CE7" />
-                <Text style={styles.uploadButtonText}>Choose File</Text>
+                <Text style={styles.uploadButtonText}>{t('sponsor_kyc.choose_file')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -155,13 +157,13 @@ export default function SponsorKYCScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Business Info (Optional)</Text>
+        <Text style={styles.sectionTitle}>{t('sponsor_kyc.business_info_title')}</Text>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Business Registration Number</Text>
+          <Text style={styles.label}>{t('sponsor_kyc.business_reg_label')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="CAC or RC number (optional)"
+            placeholder={t('sponsor_kyc.business_reg_placeholder')}
             value={businessRegNumber}
             onChangeText={setBusinessRegNumber}
             autoCapitalize="characters"
@@ -169,17 +171,17 @@ export default function SponsorKYCScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Business Document</Text>
+          <Text style={styles.label}>{t('sponsor_kyc.business_doc_label')}</Text>
           <TouchableOpacity style={styles.uploadButton} onPress={pickBusinessDocument}>
             {businessDocument ? (
               <>
                 <Ionicons name="checkmark-circle" size={24} color="#00B894" />
-                <Text style={styles.uploadedText}>Document Uploaded</Text>
+                <Text style={styles.uploadedText}>{t('sponsor_kyc.document_uploaded')}</Text>
               </>
             ) : (
               <>
                 <Ionicons name="cloud-upload" size={24} color="#6C5CE7" />
-                <Text style={styles.uploadButtonText}>Choose File</Text>
+                <Text style={styles.uploadButtonText}>{t('sponsor_kyc.choose_file')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -196,7 +198,7 @@ export default function SponsorKYCScreen() {
         ) : (
           <>
             <Ionicons name="send" size={24} color="#fff" />
-            <Text style={styles.submitButtonText}>Submit for Review</Text>
+            <Text style={styles.submitButtonText}>{t('sponsor_kyc.submit_button')}</Text>
           </>
         )}
       </TouchableOpacity>

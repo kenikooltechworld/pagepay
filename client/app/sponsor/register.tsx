@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { registerSponsor } from '@/src/features/sponsor/api';
 import { saveToken } from '@/src/shared/lib/storage';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PagePay } from '@/constants/theme';
 
 export default function SponsorRegisterScreen() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -22,24 +24,24 @@ export default function SponsorRegisterScreen() {
     onSuccess: async (data) => {
       await saveToken(data.access_token);
       Alert.alert(
-        'Registration Successful!',
-        'Complete KYC verification to start creating tasks.',
+        t('sponsor_register.success_title'),
+        t('sponsor_register.success_message'),
         [{ text: 'Continue', onPress: () => router.replace('/sponsor/kyc') }]
       );
     },
     onError: (error: any) => {
-      Alert.alert('Registration Failed', error.message);
+      Alert.alert(t('sponsor_register.errors.registration_failed'), error.message);
     },
   });
 
   const handleSubmit = () => {
     if (!email || !password || !displayName) {
-      Alert.alert('Missing Fields', 'Please fill in all required fields.');
+      Alert.alert(t('sponsor_register.errors.missing_fields'));
       return;
     }
 
     if (password.length < 8) {
-      Alert.alert('Weak Password', 'Password must be at least 8 characters.');
+      Alert.alert(t('sponsor_register.errors.weak_password'));
       return;
     }
 
@@ -57,19 +59,19 @@ export default function SponsorRegisterScreen() {
       <View style={styles.heroSection}>
         <Ionicons name="briefcase" size={64} color={tokens.mint} />
         <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}>
-          Become a Sponsor
+          {t('sponsor_register.title')}
         </Text>
         <Text style={[styles.subtitle, { color: tokens.inkMuted }]}>
-          Post tasks, reach thousands of users, and grow your brand
+          {t('sponsor_register.subtitle')}
         </Text>
       </View>
 
       <View style={[styles.form, { backgroundColor: tokens.card }]}>
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: tokens.ink }]}>Display Name *</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>{t('sponsor_register.display_name_required')}</Text>
           <TextInput
             style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
-            placeholder="Your name or brand name"
+            placeholder={t('sponsor_register.display_name_placeholder')}
             placeholderTextColor={tokens.inkMuted}
             value={displayName}
             onChangeText={setDisplayName}
@@ -78,10 +80,10 @@ export default function SponsorRegisterScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: tokens.ink }]}>Email *</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>{t('sponsor_register.email_label')}</Text>
           <TextInput
             style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
-            placeholder="sponsor@example.com"
+            placeholder={t('sponsor_register.email_placeholder')}
             placeholderTextColor={tokens.inkMuted}
             value={email}
             onChangeText={setEmail}
@@ -91,10 +93,10 @@ export default function SponsorRegisterScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: tokens.ink }]}>Phone (Optional)</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>{t('sponsor_register.phone_label')}</Text>
           <TextInput
             style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
-            placeholder="+234 XXX XXX XXXX"
+            placeholder={t('sponsor_register.phone_placeholder')}
             placeholderTextColor={tokens.inkMuted}
             value={phone}
             onChangeText={setPhone}
@@ -103,11 +105,11 @@ export default function SponsorRegisterScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: tokens.ink }]}>Password *</Text>
+          <Text style={[styles.label, { color: tokens.ink }]}>{t('sponsor_register.password_label')}</Text>
           <View style={[styles.passwordContainer, { backgroundColor: tokens.paper, borderColor: tokens.border }]}>
             <TextInput
               style={[styles.passwordInput, { color: tokens.ink }]}
-              placeholder="Minimum 8 characters"
+              placeholder={t('sponsor_register.password_placeholder')}
               placeholderTextColor={tokens.inkMuted}
               value={password}
               onChangeText={setPassword}
@@ -123,7 +125,7 @@ export default function SponsorRegisterScreen() {
         <View style={[styles.infoBox, { backgroundColor: tokens.mintSoft }]}>
           <Ionicons name="information-circle" size={20} color={tokens.mint} />
           <Text style={[styles.infoText, { color: tokens.ink }]}>
-            Anyone can be a sponsor - individuals, influencers, brands. No business registration required.
+            {t('sponsor_register.info_text')}
           </Text>
         </View>
 
@@ -137,13 +139,13 @@ export default function SponsorRegisterScreen() {
           ) : (
             <>
               <Ionicons name="checkmark-circle" size={24} color={tokens.mintText} />
-              <Text style={[styles.submitButtonText, { color: tokens.mintText }]}>Create Sponsor Account</Text>
+              <Text style={[styles.submitButtonText, { color: tokens.mintText }]}>{t('sponsor_register.submit_button')}</Text>
             </>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.loginLink}>
-          <Text style={[styles.loginLinkText, { color: tokens.mint }]}>Already have an account? Log in</Text>
+          <Text style={[styles.loginLinkText, { color: tokens.mint }]}>{t('sponsor_register.login_link')}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

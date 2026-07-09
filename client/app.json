@@ -33,8 +33,8 @@
         "expo-build-properties",
         {
           "android": {
-            "kotlinVersion": "2.2.20",
-            "extraBackgroundColor": "#ffffff", 
+            "kotlinVersion": "2.1.0",
+            "extraBackgroundColor": "#FBFAF6",
             "packagingOptions": {
               "pickFirst": ["**/libcrypto.so"]
             }
@@ -56,6 +56,7 @@
           "resizeMode": "contain",
           "backgroundColor": "#FBFAF6",
           "dark": {
+            "image": "./assets/images/splash-icon.png",
             "backgroundColor": "#0E1116"
           }
         }

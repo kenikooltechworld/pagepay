@@ -4,9 +4,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useTranslation } from 'react-i18next';
 import { submitTask } from '@/src/features/tasks/api';
 
 export default function TaskCompleteScreen() {
+  const { t } = useTranslation();
   const { id, submission_id } = useLocalSearchParams<{ id: string; submission_id: string }>();
   
   const [proofImage, setProofImage] = useState<string | null>(null);
@@ -22,18 +24,18 @@ export default function TaskCompleteScreen() {
       }),
     onSuccess: () => {
       Alert.alert(
-        'Submitted!',
-        'Your submission is being verified. You\'ll be notified once approved.',
+        t('task_complete.submitted_title'),
+        t('task_complete.submitted_message'),
         [
           {
-            text: 'View My Submissions',
+            text: t('task_complete.view_submissions'),
             onPress: () => router.push('/tasks/history'),
           },
         ]
       );
     },
     onError: (error: any) => {
-      Alert.alert('Error', error.message || 'Failed to submit task');
+      Alert.alert('Error', error.message || t('task_complete.errors.submit_failed'));
     },
   });
 
@@ -41,7 +43,7 @@ export default function TaskCompleteScreen() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant camera roll permissions to upload proof.');
+      Alert.alert(t('task_complete.errors.permission_required'), t('task_complete.errors.gallery_permission'));
       return;
     }
 
@@ -53,7 +55,6 @@ export default function TaskCompleteScreen() {
     });
 
     if (!result.canceled && result.assets[0].base64) {
-      // Add data URI prefix for Cloudinary
       const base64WithPrefix = `data:image/jpeg;base64,${result.assets[0].base64}`;
       setProofImage(base64WithPrefix);
     }
@@ -63,7 +64,7 @@ export default function TaskCompleteScreen() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant camera permissions to take a photo.');
+      Alert.alert(t('task_complete.errors.permission_required'), t('task_complete.errors.camera_permission'));
       return;
     }
 
@@ -81,17 +82,17 @@ export default function TaskCompleteScreen() {
 
   const handleSubmit = () => {
     if (!proofImage && !proofUrl && !proofText) {
-      Alert.alert('Proof Required', 'Please provide proof of task completion.');
+      Alert.alert(t('task_complete.errors.proof_required'));
       return;
     }
 
     Alert.alert(
-      'Submit Task',
-      'Once submitted, your proof will be verified by AI. This cannot be undone.',
+      t('task_complete.submit_title'),
+      t('task_complete.submit_message'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('task_complete.cancel_button'), style: 'cancel' },
         {
-          text: 'Submit',
+          text: t('task_complete.submit_button'),
           onPress: () => submitMutation.mutate(),
         },
       ]
@@ -105,43 +106,43 @@ export default function TaskCompleteScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Submit Proof</Text>
+        <Text style={styles.headerTitle}>{t('task_complete.title')}</Text>
       </View>
 
       {/* Instructions */}
       <View style={styles.infoCard}>
         <Ionicons name="information-circle" size={24} color="#6C5CE7" />
         <Text style={styles.infoText}>
-          Upload clear proof of task completion. AI will verify your submission automatically.
+          {t('task_complete.info_text')}
         </Text>
       </View>
 
       {/* Screenshot Upload */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
-          <Ionicons name="camera" size={18} color="#333" /> Screenshot Proof
+          <Ionicons name="camera" size={18} color="#333" /> {t('task_complete.screenshot_title')}
         </Text>
         
         {proofImage ? (
           <View style={styles.imagePreview}>
             <View style={styles.imageUploadedBox}>
               <Ionicons name="checkmark-circle" size={48} color="#00B894" />
-              <Text style={styles.imageUploadedText}>Screenshot Uploaded</Text>
+              <Text style={styles.imageUploadedText}>{t('task_complete.screenshot_uploaded')}</Text>
             </View>
             <TouchableOpacity onPress={() => setProofImage(null)} style={styles.removeImageButton}>
-              <Text style={styles.removeImageText}>Remove</Text>
+              <Text style={styles.removeImageText}>{t('task_complete.remove')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.uploadButtons}>
             <TouchableOpacity style={styles.uploadButton} onPress={pickImage}>
               <Ionicons name="images" size={24} color="#6C5CE7" />
-              <Text style={styles.uploadButtonText}>Choose from Gallery</Text>
+              <Text style={styles.uploadButtonText}>{t('task_complete.choose_gallery')}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity style={styles.uploadButton} onPress={takePhoto}>
               <Ionicons name="camera" size={24} color="#6C5CE7" />
-              <Text style={styles.uploadButtonText}>Take Photo</Text>
+              <Text style={styles.uploadButtonText}>{t('task_complete.take_photo')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -150,11 +151,11 @@ export default function TaskCompleteScreen() {
       {/* URL Proof */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
-          <Ionicons name="link" size={18} color="#333" /> URL Proof (Optional)
+          <Ionicons name="link" size={18} color="#333" /> {t('task_complete.url_title')}
         </Text>
         <TextInput
           style={styles.input}
-          placeholder="https://twitter.com/yourhandle"
+          placeholder={t('task_complete.url_placeholder')}
           value={proofUrl}
           onChangeText={setProofUrl}
           autoCapitalize="none"
@@ -165,11 +166,11 @@ export default function TaskCompleteScreen() {
       {/* Text Proof */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
-          <Ionicons name="document-text" size={18} color="#333" /> Text Proof (Optional)
+          <Ionicons name="document-text" size={18} color="#333" /> {t('task_complete.text_title')}
         </Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Enter confirmation code, survey response, or review text..."
+          placeholder={t('task_complete.text_placeholder')}
           value={proofText}
           onChangeText={setProofText}
           multiline
@@ -189,14 +190,14 @@ export default function TaskCompleteScreen() {
         ) : (
           <>
             <Ionicons name="checkmark-circle" size={24} color="#fff" />
-            <Text style={styles.submitButtonText}>Submit for Verification</Text>
+            <Text style={styles.submitButtonText}>{t('task_complete.submit_button')}</Text>
           </>
         )}
       </TouchableOpacity>
 
       {/* Cancel Button */}
       <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
-        <Text style={styles.cancelButtonText}>Cancel</Text>
+        <Text style={styles.cancelButtonText}>{t('task_complete.cancel_button')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );

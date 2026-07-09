@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { fetchTaskSubmissions, approveSubmission, rejectSubmission, type TaskSubmissionDetail } from '@/src/features/sponsor/api';
 import { SkeletonDetailPage } from '@/components/skeletons';
 
 export default function SponsorTaskDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [rejectionReason, setRejectionReason] = useState('');
@@ -22,7 +24,7 @@ export default function SponsorTaskDetailScreen() {
     mutationFn: approveSubmission,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['taskSubmissions', id] });
-      Alert.alert('Approved!', 'Worker has been paid.');
+      Alert.alert(t('sponsor_task_detail.approved_title'), t('sponsor_task_detail.approved_message'));
     },
     onError: (error: any) => {
       Alert.alert('Error', error.message);
@@ -36,7 +38,7 @@ export default function SponsorTaskDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['taskSubmissions', id] });
       setRejectingId(null);
       setRejectionReason('');
-      Alert.alert('Rejected', 'Submission rejected.');
+      Alert.alert(t('sponsor_task_detail.rejected_title'), t('sponsor_task_detail.rejected_message'));
     },
     onError: (error: any) => {
       Alert.alert('Error', error.message);
@@ -45,18 +47,18 @@ export default function SponsorTaskDetailScreen() {
 
   const handleApprove = (submissionId: number) => {
     Alert.alert(
-      'Approve Submission?',
-      'Worker will be paid immediately.',
+      t('sponsor_task_detail.approve_title'),
+      t('sponsor_task_detail.approve_message'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Approve', onPress: () => approveMutation.mutate(submissionId) },
+        { text: t('sponsor_task_detail.cancel'), style: 'cancel' },
+        { text: t('sponsor_task_detail.approve_button'), onPress: () => approveMutation.mutate(submissionId) },
       ]
     );
   };
 
   const handleReject = (submissionId: number) => {
     if (!rejectionReason.trim()) {
-      Alert.alert('Reason Required', 'Please provide a rejection reason.');
+      Alert.alert(t('sponsor_task_detail.reason_required'));
       return;
     }
     rejectMutation.mutate({ submissionId, reason: rejectionReason });
@@ -75,7 +77,7 @@ export default function SponsorTaskDetailScreen() {
             </Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-            <Text style={styles.statusText}>{item.status}</Text>
+            <Text style={styles.statusText}>{t(`sponsor_task_detail.status.${item.status}`)}</Text>
           </View>
         </View>
 
@@ -83,7 +85,7 @@ export default function SponsorTaskDetailScreen() {
           <View style={styles.aiScore}>
             <Ionicons name="analytics" size={16} color="#6C5CE7" />
             <Text style={styles.aiScoreText}>
-              AI Confidence: {(item.ai_confidence * 100).toFixed(1)}%
+              {t('sponsor_task_detail.ai_confidence', { percent: (item.ai_confidence * 100).toFixed(1) })}
             </Text>
           </View>
         )}
@@ -91,7 +93,7 @@ export default function SponsorTaskDetailScreen() {
         {item.proof_image_url && (
           <View style={styles.proofItem}>
             <Ionicons name="image" size={16} color="#666" />
-            <Text style={styles.proofText}>Screenshot provided</Text>
+            <Text style={styles.proofText}>{t('sponsor_task_detail.screenshot_provided')}</Text>
           </View>
         )}
 
@@ -118,7 +120,7 @@ export default function SponsorTaskDetailScreen() {
                   onPress={() => handleApprove(item.id)}
                 >
                   <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.approveButtonText}>Approve</Text>
+                  <Text style={styles.approveButtonText}>{t('sponsor_task_detail.approve_button')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -126,21 +128,21 @@ export default function SponsorTaskDetailScreen() {
                   onPress={() => setRejectingId(item.id)}
                 >
                   <Ionicons name="close-circle" size={20} color="#fff" />
-                  <Text style={styles.rejectButtonText}>Reject</Text>
+                  <Text style={styles.rejectButtonText}>{t('sponsor_task_detail.reject_button')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.rejectForm}>
                 <TextInput
                   style={styles.rejectInput}
-                  placeholder="Rejection reason..."
+                  placeholder={t('sponsor_task_detail.rejection_reason_label')}
                   value={rejectionReason}
                   onChangeText={setRejectionReason}
                   multiline
                 />
                 <View style={styles.rejectActions}>
                   <TouchableOpacity onPress={() => setRejectingId(null)}>
-                    <Text style={styles.cancelText}>Cancel</Text>
+                    <Text style={styles.cancelText}>{t('sponsor_task_detail.cancel')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.confirmRejectButton}
@@ -150,7 +152,7 @@ export default function SponsorTaskDetailScreen() {
                     {rejectMutation.isPending ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Text style={styles.confirmRejectText}>Confirm Reject</Text>
+                      <Text style={styles.confirmRejectText}>{t('sponsor_task_detail.confirm_reject')}</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -161,7 +163,7 @@ export default function SponsorTaskDetailScreen() {
 
         {item.rejection_reason && (
           <View style={styles.rejectionBox}>
-            <Text style={styles.rejectionLabel}>Rejection Reason:</Text>
+            <Text style={styles.rejectionLabel}>{t('sponsor_task_detail.rejection_reason_title')}</Text>
             <Text style={styles.rejectionText}>{item.rejection_reason}</Text>
           </View>
         )}
@@ -183,7 +185,7 @@ export default function SponsorTaskDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Submissions</Text>
+        <Text style={styles.headerTitle}>{t('sponsor_task_detail.title')}</Text>
       </View>
 
       <FlatList
@@ -194,7 +196,7 @@ export default function SponsorTaskDetailScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="documents-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No submissions yet</Text>
+            <Text style={styles.emptyText}>{t('sponsor_task_detail.no_submissions')}</Text>
           </View>
         }
       />

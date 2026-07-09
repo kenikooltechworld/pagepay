@@ -1,70 +1,15 @@
 require("dotenv").config();
 
+// Import the static configuration from app.json
+const appJson = require("./app.json");
+
 module.exports = {
+  ...appJson,
   expo: {
-    name: "pagepay",
-    slug: "pagepay",
-    version: "1.0.0",
-    orientation: "portrait",
-    icon: "./assets/images/icon.png",
-    scheme: "client",
-    userInterfaceStyle: "automatic",
-    newArchEnabled: true,
-    ios: { supportsTablet: true },
-    android: {
-      package: "com.kenzola.pagepay",
-      adaptiveIcon: {
-        backgroundColor: "#0E7C66",
-        foregroundImage: "./assets/images/android-icon-foreground.png",
-        monochromeImage: "./assets/images/android-icon-monochrome.png"
-      },
-      edgeToEdgeEnabled: true,
-      predictiveBackGestureEnabled: false,
-      googleServicesFile: "./google-services.json"
-    },
-    web: {
-      output: "static",
-      favicon: "./assets/images/favicon.png"
-    },
-    plugins: [
-      "expo-router",
-      "@react-native-firebase/app",
-      [
-        "expo-build-properties",
-        {
-          android: {
-            kotlinVersion: "2.2.20",
-            extraBackgroundColor: "#ffffff",
-            packagingOptions: { pickFirst: ["**/libcrypto.so"] }
-          }
-        }
-      ],
-      [
-        "react-native-google-mobile-ads",
-        {
-          androidAppId: "ca-app-pub-3898064484524772~6521009021",
-          iosAppId: "ca-app-pub-3898064484524772~4871553842"
-        }
-      ],
-      [
-        "expo-splash-screen",
-        {
-          image: "./assets/images/splash-icon.png",
-          imageWidth: 200,
-          resizeMode: "contain",
-          backgroundColor: "#FBFAF6",
-          dark: { backgroundColor: "#0E1116" }
-        }
-      ]
-    ],
-    experiments: {
-      typedRoutes: true,
-      reactCompiler: true
-    },
+    ...appJson.expo,
+    // Override/add dynamic values from environment variables
     extra: {
-      eas: {
-        projectId: "b43a48ba-f084-472f-ac1c-3db5fa470326"
-      },
+      ...appJson.expo.extra,
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000",
       adsEnv: process.env.EXPO_PUBLIC_ADS_ENV || "dev"
     }

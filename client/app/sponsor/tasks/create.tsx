@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { createTask, publishTask } from '@/src/features/sponsor/api';
 
 const PLATFORMS = ['twitter', 'instagram', 'tiktok', 'youtube', 'facebook', 'linkedin', 'website', 'app'];
 const TASK_TYPES = ['follow', 'like', 'subscribe', 'retweet', 'comment', 'share', 'visit', 'signup', 'download', 'review'];
 
 export default function CreateTaskScreen() {
+  const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -21,31 +23,31 @@ export default function CreateTaskScreen() {
   const createMutation = useMutation({
     mutationFn: createTask,
     onSuccess: async (data) => {
-      Alert.alert('Task Created!', 'Publish now to make it live?', [
-        { text: 'Later', onPress: () => router.back() },
+      Alert.alert(t('sponsor_create_task.success_title'), t('sponsor_create_task.publish_prompt'), [
+        { text: t('sponsor_create_task.later_button'), onPress: () => router.back() },
         {
-          text: 'Publish',
+          text: t('sponsor_create_task.publish_button'),
           onPress: async () => {
             try {
               await publishTask(data.id);
-              Alert.alert('Published!', 'Your task is now live.', [
+              Alert.alert(t('sponsor_create_task.published_title'), t('sponsor_create_task.published_message'), [
                 { text: 'OK', onPress: () => router.back() }
               ]);
             } catch (error: any) {
-              Alert.alert('Publish Failed', error.message);
+              Alert.alert(t('sponsor_create_task.errors.publish_failed'), error.message);
             }
           },
         },
       ]);
     },
     onError: (error: any) => {
-      Alert.alert('Creation Failed', error.message);
+      Alert.alert(t('sponsor_create_task.errors.creation_failed'), error.message);
     },
   });
 
   const handleSubmit = () => {
     if (!title || !description || !instructions) {
-      Alert.alert('Missing Fields', 'Please fill in all required fields.');
+      Alert.alert(t('sponsor_create_task.errors.missing_fields'));
       return;
     }
 
@@ -53,12 +55,12 @@ export default function CreateTaskScreen() {
     const max = parseInt(maxCompletions);
 
     if (isNaN(reward) || reward < 1000) {
-      Alert.alert('Invalid Reward', 'Minimum reward is ₦10 (1000 kobo).');
+      Alert.alert(t('sponsor_create_task.errors.invalid_reward'));
       return;
     }
 
     if (isNaN(max) || max < 1) {
-      Alert.alert('Invalid Completions', 'Minimum 1 completion required.');
+      Alert.alert(t('sponsor_create_task.errors.invalid_completions'));
       return;
     }
 
@@ -84,24 +86,24 @@ export default function CreateTaskScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Task</Text>
+        <Text style={styles.headerTitle}>{t('sponsor_create_task.title')}</Text>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Title *</Text>
+        <Text style={styles.label}>{t('sponsor_create_task.title_label')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. Follow us on Twitter"
+          placeholder={t('sponsor_create_task.title_placeholder')}
           value={title}
           onChangeText={setTitle}
         />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Description *</Text>
+        <Text style={styles.label}>{t('sponsor_create_task.description_label')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="What should workers do?"
+          placeholder={t('sponsor_create_task.description_placeholder')}
           value={description}
           onChangeText={setDescription}
           multiline
@@ -110,10 +112,10 @@ export default function CreateTaskScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Instructions *</Text>
+        <Text style={styles.label}>{t('sponsor_create_task.instructions_label')}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Step-by-step guide"
+          placeholder={t('sponsor_create_task.instructions_placeholder')}
           value={instructions}
           onChangeText={setInstructions}
           multiline
@@ -122,7 +124,7 @@ export default function CreateTaskScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Platform</Text>
+        <Text style={styles.label}>{t('sponsor_create_task.platform_label')}</Text>
         <View style={styles.pillsContainer}>
           {PLATFORMS.map((p) => (
             <TouchableOpacity
@@ -139,16 +141,16 @@ export default function CreateTaskScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Task Type</Text>
+        <Text style={styles.label}>{t('sponsor_create_task.task_type_label')}</Text>
         <View style={styles.pillsContainer}>
-          {TASK_TYPES.map((t) => (
+          {TASK_TYPES.map((type) => (
             <TouchableOpacity
-              key={t}
-              style={[styles.pill, taskType === t && styles.pillActive]}
-              onPress={() => setTaskType(t)}
+              key={type}
+              style={[styles.pill, taskType === type && styles.pillActive]}
+              onPress={() => setTaskType(type)}
             >
-              <Text style={[styles.pillText, taskType === t && styles.pillTextActive]}>
-                {t}
+              <Text style={[styles.pillText, taskType === type && styles.pillTextActive]}>
+                {type}
               </Text>
             </TouchableOpacity>
           ))}
@@ -156,10 +158,10 @@ export default function CreateTaskScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Target URL (Optional)</Text>
+        <Text style={styles.label}>{t('sponsor_create_task.target_url_label')}</Text>
         <TextInput
           style={styles.input}
-          placeholder="https://twitter.com/yourhandle"
+          placeholder={t('sponsor_create_task.target_url_placeholder')}
           value={targetUrl}
           onChangeText={setTargetUrl}
           autoCapitalize="none"
@@ -168,10 +170,10 @@ export default function CreateTaskScreen() {
 
       <View style={styles.row}>
         <View style={[styles.section, styles.halfWidth]}>
-          <Text style={styles.label}>Reward (₦)</Text>
+          <Text style={styles.label}>{t('sponsor_create_task.reward_label')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="50"
+            placeholder={t('sponsor_create_task.reward_placeholder')}
             value={(parseInt(rewardKobo) / 100).toFixed(2)}
             onChangeText={(val) => setRewardKobo((parseFloat(val) * 100).toString())}
             keyboardType="numeric"
@@ -179,10 +181,10 @@ export default function CreateTaskScreen() {
         </View>
 
         <View style={[styles.section, styles.halfWidth]}>
-          <Text style={styles.label}>Max Workers</Text>
+          <Text style={styles.label}>{t('sponsor_create_task.max_workers_label')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="100"
+            placeholder={t('sponsor_create_task.max_workers_placeholder')}
             value={maxCompletions}
             onChangeText={setMaxCompletions}
             keyboardType="numeric"
@@ -191,11 +193,11 @@ export default function CreateTaskScreen() {
       </View>
 
       <View style={styles.costCard}>
-        <Text style={styles.costLabel}>Estimated Cost</Text>
+        <Text style={styles.costLabel}>{t('sponsor_create_task.estimated_cost_label')}</Text>
         <Text style={styles.costValue}>
           ₦{((parseInt(rewardKobo) * parseInt(maxCompletions)) / 100).toFixed(2)}
         </Text>
-        <Text style={styles.costNote}>+ 15% platform fee</Text>
+        <Text style={styles.costNote}>{t('sponsor_create_task.platform_fee_note')}</Text>
       </View>
 
       <TouchableOpacity
@@ -208,7 +210,7 @@ export default function CreateTaskScreen() {
         ) : (
           <>
             <Ionicons name="checkmark-circle" size={24} color="#fff" />
-            <Text style={styles.submitButtonText}>Create Task</Text>
+            <Text style={styles.submitButtonText}>{t('sponsor_create_task.submit_button')}</Text>
           </>
         )}
       </TouchableOpacity>

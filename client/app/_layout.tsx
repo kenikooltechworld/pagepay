@@ -157,18 +157,17 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Splash overlay state. Mounted on first render, dismissed by the
-  // overlay's own exit callback (which calls `SplashScreen.hideAsync()`
-  // on mount and runs an entry bounce + 250ms fade-out, then calls
-  // back here to flip `splashDismissed`). Once dismissed, the overlay
-  // unmounts and the real route tree paints for the first time.
+  // Splash overlay state. Native splash (expo-splash-screen) shows first
+  // as a static image while JS loads. Once fonts are loaded and auth is
+  // ready, we show the animated SplashOverlay which hides the native splash
+  // and runs the full animation sequence. When complete, it calls onDone
+  // to dismiss and reveal the app.
   const [splashDismissed, setSplashDismissed] = useState(false);
 
   if (!isReady || !fontsLoaded) {
-    // Pre-splash: render the in-app overlay. The overlay's own mount
-    // effect calls `SplashScreen.hideAsync()` to dismiss the OS-cached
-    // static PNG, then runs the entry animation. When it finishes
-    // its fade-out it calls `onDone` to flip `splashDismissed`.
+    // Show animated splash overlay during initialization.
+    // Native splash (expo-splash-screen) shows first, then we take over
+    // with the full animated sequence when JS loads and fonts are ready.
     if (!splashDismissed) {
       return <SplashOverlay onDone={() => setSplashDismissed(true)} />;
     }

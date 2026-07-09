@@ -4,12 +4,14 @@ import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { fetchSponsorTasks, type TaskResponseFull } from '@/src/features/sponsor/api';
 import { SkeletonPage } from '@/components/skeletons';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 import { PagePay } from '@/constants/theme';
 
 export default function SponsorDashboardScreen() {
+  const { t } = useTranslation();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'draft' | 'active' | 'completed'>('all');
   const scheme = useEffectiveScheme();
@@ -38,39 +40,39 @@ export default function SponsorDashboardScreen() {
       >
         <View style={styles.taskHeader}>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status, tokens) }]}>
-            <Text style={[styles.statusText, { color: tokens.mintText }]}>{item.status}</Text>
+            <Text style={[styles.statusText, { color: tokens.mintText }]}>{t(`sponsor_dashboard.status_${item.status}`)}</Text>
           </View>
-          <Text style={[styles.rewardText, { color: tokens.mint }]}>₦{(item.reward_amount / 100).toFixed(2)} each</Text>
+          <Text style={[styles.rewardText, { color: tokens.mint }]}>{t('sponsor_dashboard.reward_each', { amount: (item.reward_amount / 100).toFixed(2) })}</Text>
         </View>
 
         <Text style={[styles.taskTitle, { color: tokens.ink }]} numberOfLines={2}>{item.title}</Text>
 
         <View style={[styles.statsRow, { borderColor: tokens.border }]}>
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: tokens.ink }]}>{item.completed_count}/{item.max_completions}</Text>
-            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Completed</Text>
+            <Text style={[styles.statValue, { color: tokens.ink }]}>{t('sponsor_dashboard.completed_of', { completed: item.completed_count, total: item.max_completions })}</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>{t('sponsor_dashboard.completed_label')}</Text>
           </View>
 
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: tokens.ink }]}>{item.pending_count}</Text>
-            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Pending</Text>
+            <Text style={[styles.statValue, { color: tokens.ink }]}>{t('sponsor_dashboard.pending_count', { count: item.pending_count })}</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>{t('sponsor_dashboard.pending_label')}</Text>
           </View>
 
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: tokens.ink }]}>{completionRate}%</Text>
-            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>Progress</Text>
+            <Text style={[styles.statValue, { color: tokens.ink }]}>{t('sponsor_dashboard.progress_percent', { percent: completionRate })}</Text>
+            <Text style={[styles.statLabel, { color: tokens.inkMuted }]}>{t('sponsor_dashboard.progress_label')}</Text>
           </View>
         </View>
 
         <View style={styles.taskFooter}>
           <View style={styles.taskMeta}>
             <Ionicons name="calendar-outline" size={14} color={tokens.inkMuted} />
-            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>{new Date(item.expires_at).toLocaleDateString()}</Text>
+            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>{t('sponsor_dashboard.expires_date', { date: new Date(item.expires_at).toLocaleDateString() })}</Text>
           </View>
 
           <View style={styles.taskMeta}>
             <Ionicons name="cash-outline" size={14} color={tokens.inkMuted} />
-            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>Spent: ₦{(item.total_spent / 100).toFixed(2)}</Text>
+            <Text style={[styles.taskMetaText, { color: tokens.inkMuted }]}>{t('sponsor_dashboard.spent_label', { amount: (item.total_spent / 100).toFixed(2) })}</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -84,7 +86,7 @@ export default function SponsorDashboardScreen() {
   return (
     <View style={[styles.container, { backgroundColor: tokens.paper }]}>
       <View style={[styles.header, { backgroundColor: tokens.card, borderBottomColor: tokens.border }]}>
-        <Text style={[styles.headerTitle, { color: tokens.ink }]}>My Tasks</Text>
+        <Text style={[styles.headerTitle, { color: tokens.ink }]}>{t('sponsor_dashboard.title')}</Text>
         <TouchableOpacity onPress={() => router.push('/sponsor/tasks/create')}>
           <Ionicons name="add-circle" size={32} color={tokens.mint} />
         </TouchableOpacity>
@@ -104,7 +106,7 @@ export default function SponsorDashboardScreen() {
             onPress={() => setFilter(status as any)}
           >
             <Text style={[styles.filterText, { color: filter === status ? tokens.mintText : tokens.inkMuted }]}>
-              {status.charAt(0).toUpperCase() + status.slice(1)}
+              {t(`sponsor_dashboard.filter_${status}`)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -119,13 +121,13 @@ export default function SponsorDashboardScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="briefcase-outline" size={64} color={tokens.border} />
-            <Text style={[styles.emptyText, { color: tokens.ink }]}>No tasks yet</Text>
+            <Text style={[styles.emptyText, { color: tokens.ink }]}>{t('sponsor_dashboard.empty_title')}</Text>
             <TouchableOpacity
               style={[styles.createButton, { backgroundColor: tokens.mint }]}
               onPress={() => router.push('/sponsor/tasks/create')}
             >
               <Ionicons name="add" size={20} color={tokens.mintText} />
-              <Text style={[styles.createButtonText, { color: tokens.mintText }]}>Create Your First Task</Text>
+              <Text style={[styles.createButtonText, { color: tokens.mintText }]}>{t('sponsor_dashboard.create_first')}</Text>
             </TouchableOpacity>
           </View>
         }

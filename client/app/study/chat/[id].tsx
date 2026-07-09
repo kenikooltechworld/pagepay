@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { PagePay } from '@/constants/theme';
@@ -35,6 +36,7 @@ type Message = {
 };
 
 export default function StudyChatScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const materialId = Number(id);
   const router = useRouter();
@@ -123,7 +125,7 @@ export default function StudyChatScreen() {
     [materialId, streaming],
   );
 
-  const title = materialQ.data?.title ?? 'Study Chat';
+  const title = materialQ.data?.title ?? t('study_chat.title');
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: tokens.paper }}>
@@ -139,7 +141,7 @@ export default function StudyChatScreen() {
           <Text style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]} numberOfLines={1}>
             {title}
           </Text>
-          <Text style={[styles.subtitle, { color: tokens.inkMuted }]}>AI Study Tutor</Text>
+          <Text style={[styles.subtitle, { color: tokens.inkMuted }]}>{t('study_chat.subtitle')}</Text>
         </View>
       </View>
 
@@ -153,7 +155,7 @@ export default function StudyChatScreen() {
             <View style={styles.emptyState}>
               <Ionicons name="chatbubbles-outline" size={40} color={tokens.mint} />
               <Text style={[styles.emptyText, { color: tokens.inkMuted }]}>
-                Ask anything about your study material.
+                {t('study_chat.empty_message')}
               </Text>
             </View>
           )}
@@ -202,7 +204,7 @@ export default function StudyChatScreen() {
         <View style={[styles.inputBar, { backgroundColor: tokens.card, borderTopColor: tokens.border }]}>
           <TextInput
             style={[styles.input, { backgroundColor: tokens.paper, color: tokens.ink, borderColor: tokens.border }]}
-            placeholder="Ask a question..."
+            placeholder={t('study_chat.placeholder')}
             placeholderTextColor={tokens.inkMuted}
             value={input}
             onChangeText={setInput}

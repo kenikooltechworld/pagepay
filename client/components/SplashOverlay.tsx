@@ -1,15 +1,12 @@
 /**
- * In-app splash overlay.
+ * Animated splash overlay (JS handoff).
  *
- * Bridges the gap between the OS-cached cold splash (a static PNG shown
- * by `expo-splash-screen`) and the first paint of `RootLayout`. Mounted
- * for ~600-900ms; calls `SplashScreen.hideAsync()` on mount to dismiss
- * the native splash, runs the entry bounce on the monogram + a slide-up
- * on the wordmark, and rides continuous ambient loops (8 floating
- * point tokens + 6 sparkle dots) until `onDone` fires.
+ * Shows immediately after the native splash (expo-splash-screen) dismisses.
+ * Runs the full animation sequence from splash.html: entry bounce on the
+ * monogram, slide-up on wordmark, continuous ambient loops (8 floating
+ * point tokens + 6 sparkle dots), then fades out to reveal the app.
  *
- * No Lottie — Reanimated 4 only. The motion matches `design-preview/
- * splash.html` exactly.
+ * No Lottie — Reanimated 4 only. Matches design-preview/splash.html exactly.
  */
 import { useEffect } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
@@ -184,6 +181,7 @@ export function SplashOverlay({ onDone }: SplashOverlayProps) {
 
     (async () => {
       try {
+        // Hide the native splash to reveal this animated overlay
         await SplashScreen.hideAsync();
       } catch {
         // best-effort

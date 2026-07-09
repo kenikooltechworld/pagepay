@@ -2,10 +2,12 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { fetchWorkerStats } from '@/src/features/tasks/api';
 import { SkeletonDetailPage } from '@/components/skeletons';
 
 export default function WorkerProfileScreen() {
+  const { t } = useTranslation();
   const { data: stats, isLoading } = useQuery({
     queryKey: ['workerStats'],
     queryFn: fetchWorkerStats,
@@ -18,7 +20,7 @@ export default function WorkerProfileScreen() {
   if (!stats) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Failed to load worker stats</Text>
+        <Text style={styles.errorText}>{t('task_profile.load_error')}</Text>
       </View>
     );
   }
@@ -34,7 +36,7 @@ export default function WorkerProfileScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Worker Profile</Text>
+        <Text style={styles.headerTitle}>{t('task_profile.title')}</Text>
       </View>
 
       {/* Level Card */}
@@ -42,13 +44,13 @@ export default function WorkerProfileScreen() {
         <View style={styles.levelBadge}>
           <Text style={styles.levelNumber}>{stats.worker_level}</Text>
         </View>
-        <Text style={styles.levelLabel}>Worker Level</Text>
+        <Text style={styles.levelLabel}>{t('task_profile.level_label')}</Text>
         <View style={styles.xpContainer}>
           <View style={styles.xpBar}>
             <View style={[styles.xpFill, { width: `${progressPercent}%` }]} />
           </View>
           <Text style={styles.xpText}>
-            {stats.worker_xp} / {stats.worker_xp + stats.xp_to_next_level} XP
+            {t('task_profile.xp_label', { current: stats.worker_xp, total: stats.worker_xp + stats.xp_to_next_level })}
           </Text>
         </View>
       </View>
@@ -58,42 +60,42 @@ export default function WorkerProfileScreen() {
         <View style={styles.statCard}>
           <Ionicons name="checkmark-circle" size={32} color="#00B894" />
           <Text style={styles.statValue}>{stats.tasks_completed}</Text>
-          <Text style={styles.statLabel}>Tasks Completed</Text>
+          <Text style={styles.statLabel}>{t('task_profile.stats.completed')}</Text>
         </View>
 
         <View style={styles.statCard}>
           <Ionicons name="trending-up" size={32} color="#6C5CE7" />
           <Text style={styles.statValue}>{approvalRate}%</Text>
-          <Text style={styles.statLabel}>Approval Rate</Text>
+          <Text style={styles.statLabel}>{t('task_profile.stats.approval_rate')}</Text>
         </View>
 
         <View style={styles.statCard}>
           <Ionicons name="cash" size={32} color="#00B894" />
           <Text style={styles.statValue}>₦{totalEarned}</Text>
-          <Text style={styles.statLabel}>Total Earned</Text>
+          <Text style={styles.statLabel}>{t('task_profile.stats.total_earned')}</Text>
         </View>
 
         <View style={styles.statCard}>
           <Ionicons name="close-circle" size={32} color="#ff6b6b" />
           <Text style={styles.statValue}>{stats.tasks_rejected}</Text>
-          <Text style={styles.statLabel}>Rejected</Text>
+          <Text style={styles.statLabel}>{t('task_profile.stats.rejected')}</Text>
         </View>
       </View>
 
       {/* Streak Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
-          <Ionicons name="flame" size={20} color="#FF6B35" /> Streaks
+          <Ionicons name="flame" size={20} color="#FF6B35" /> {t('task_profile.streaks_title')}
         </Text>
         <View style={styles.streakRow}>
           <View style={styles.streakItem}>
             <Text style={styles.streakValue}>{stats.current_streak}</Text>
-            <Text style={styles.streakLabel}>Current Streak</Text>
+            <Text style={styles.streakLabel}>{t('task_profile.current_streak')}</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.streakItem}>
             <Text style={styles.streakValue}>{stats.longest_streak}</Text>
-            <Text style={styles.streakLabel}>Longest Streak</Text>
+            <Text style={styles.streakLabel}>{t('task_profile.longest_streak')}</Text>
           </View>
         </View>
       </View>
@@ -102,7 +104,7 @@ export default function WorkerProfileScreen() {
       {stats.badges && stats.badges.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            <Ionicons name="ribbon" size={20} color="#FFD700" /> Badges
+            <Ionicons name="ribbon" size={20} color="#FFD700" /> {t('task_profile.badges_title')}
           </Text>
           <View style={styles.badgesGrid}>
             {stats.badges.map((badge, index) => (
@@ -121,7 +123,7 @@ export default function WorkerProfileScreen() {
         onPress={() => router.push('/tasks/history')}
       >
         <Ionicons name="list" size={24} color="#6C5CE7" />
-        <Text style={styles.historyButtonText}>View Submission History</Text>
+        <Text style={styles.historyButtonText}>{t('task_profile.history_button')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -129,7 +131,7 @@ export default function WorkerProfileScreen() {
         onPress={() => router.push('/(tabs)/tasks')}
       >
         <Ionicons name="briefcase" size={24} color="#fff" />
-        <Text style={styles.tasksButtonText}>Browse Tasks</Text>
+        <Text style={styles.tasksButtonText}>{t('task_profile.browse_tasks_button')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
