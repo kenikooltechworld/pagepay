@@ -11,7 +11,7 @@
 - **Services**: Airtime (MTN/Airtel/GLO/9mobile), Data bundles, Electricity (AEDC/EKEDC/IKEDC/etc), TV (DSTV/GOtv/Startimes)
 - **Commission Model**: User earns 70% of provider commission, platform keeps 30%
 - **Pricing**: All prices fetched from Peyflex API in real-time (no hardcoded values)
-- **Payment**: Deducted from user's points balance (100 points = ₦1)
+- **Payment**: Deducted from user's points balance (10 points = ₦1)
 - **Validation**: Phone numbers, meter numbers, smartcard numbers validated before purchase
 
 ---

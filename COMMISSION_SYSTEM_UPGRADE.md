@@ -147,13 +147,13 @@ Same logic as electricity - tries `discount` first, then `charged` calculation.
 4. Peyflex responds: `"discount": "15.00"` (3% of ₦500)
 5. Extract commission: `15.00 * 100 = 1,500 kobo`
 6. Calculate user share: `1,500 * 0.67 = 1,005 kobo`
-7. Convert to points: `1,005 * 100 = 100,500 points` (₦10.05)
-8. Credit user: 100,500 points
+7. Convert to points: `1,005 * 10 = 10,050 points` (₦10.05)
+8. Credit user: 10,050 points
 9. Platform keeps: 495 kobo (₦4.95)
 
 ### Net Result
 - User paid: ₦500 (50,000 points)
-- User earned back: ₦10.05 (1,005 points)
+- User earned back: ₦10.05 (10,050 points)
 - **Effective cost to user**: ₦489.95
 - **Platform profit**: ₦4.95
 
@@ -172,7 +172,7 @@ Same logic as electricity - tries `discount` first, then `charged` calculation.
 **Before Upgrade (Free API - 3%)**:
 - User buys ₦1,000 data
 - Commission: ₦30
-- User earns: 2,010 points (₦20.10)
+- User earns: 201 points (₦20.10)
 - Platform keeps: ₦9.90
 
 **After Upgrade (Top Reseller - 6%)**:
@@ -220,7 +220,7 @@ Before deploying to production:
 ### Data (MTN Shared)
 - [ ] Buy ₦500 MTN Shared Data
 - [ ] Check commission = 1,500 kobo (₦15 = 3%)
-- [ ] Check user earned ~1,005 points (₦10.05)
+- [ ] Check user earned ~101 points (₦10.05)
 
 ### Data (Gifting)
 - [ ] Buy ₦500 MTN Gifting Data

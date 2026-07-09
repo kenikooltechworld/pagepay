@@ -123,7 +123,7 @@ async def initiate_wallet_deposit(
     Initiate Paystack payment to fund user wallet.
     
     Minimum deposit: ₦500 (50,000 kobo)
-    Conversion: Amount deposited = Points credited (1 kobo = 1 point, 100 pts = ₦1)
+    Conversion: 10 points = ₦1 (amount_kobo = points to credit)
     
     After successful payment, webhook will credit user's points_balance.
     """

@@ -66,7 +66,7 @@ Build, maintain, and evolve the PagePay backend API. Own database schema, API co
 - **Wallet Deposits:**
   - `POST /api/v1/wallet/deposit` → returns Paystack payment URL
   - User pays: deposit amount + 1.5% processing fee (capped at ₦2,000)
-  - User receives: deposit amount in points (100 points = ₦1)
+  - User receives: deposit amount in points (10 points = ₦1)
   - Webhook: `POST /api/v1/payments/webhook` → credits wallet after payment
   - Paystack signature verification required (HMAC-SHA512 with secret key)
   

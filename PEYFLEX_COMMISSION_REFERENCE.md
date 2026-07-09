@@ -2,7 +2,7 @@
 
 **Your Current Tier**: Free API (₦0/year)  
 **Upgrade Option**: Top Reseller (₦5,000/year)  
-**Points System**: 100 points = ₦1
+**Points System**: 10 points = ₦1
 
 ---
 
@@ -54,7 +54,7 @@
 
 **MTN Shared Data ₦1,000**:
 - Commission: ₦30 (3%)
-- User earns: 2,010 points = **₦20.10**
+- User earns: 201 points = **₦20.10**
 - Platform keeps: **₦9.90**
 
 **MTN Airtime ₦100**:

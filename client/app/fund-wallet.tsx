@@ -137,7 +137,7 @@ export default function FundWalletScreen() {
               <Text style={[
                 styles.ptsText,
                 { color: amount === a ? tokens.mintText : tokens.mint },
-              ]}>{(a * 100).toLocaleString()} pts</Text>
+              ]}>{(a * 10).toLocaleString()} pts</Text>
             </TouchableOpacity>
           ))}
         </View>

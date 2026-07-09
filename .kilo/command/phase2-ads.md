@@ -34,7 +34,7 @@
   - `credit_status` values: 'credited', 'rejected_low_value', 'duplicate'
   - Ad revenue converted to NGN using live FX rate, then to points
   - User share: 80% of revenue (platform keeps 20%)
-  - Conversion: 100 points = ₦1
+  - Conversion: 10 points = ₦1
 - New table `app_config`:
   ```
   key (PK), value (TEXT), environment ('dev' | 'prod'), description, updated_at
@@ -53,7 +53,7 @@
   - Check `transaction_id` unique constraint (idempotency)
   - If not exists and `reward_amount > 0`:
     - Fetch live USD→NGN exchange rate
-    - Calculate user points: `revenue_usd * fx_rate * 0.80 * 100` (80% user share, 100 pts = ₦1)
+    - Calculate user points: `revenue_usd * fx_rate * 0.80 * 10` (80% user share, 10 pts = ₦1)
     - Credit points to `User.points_balance`
     - Create `AdEvent` with `credit_status='credited'`, store `revenue_usd`, `fx_rate_used`, `user_points_credited`
   - Handle edge cases:

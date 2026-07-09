@@ -125,10 +125,10 @@ All 4 services credit users with points from third-party commissions:
 
 | Service | Commission Source | User Share | How Points Work |
 |---------|------------------|------------|-----------------|
-| **Airtime** | Peyflex commission (3-4%) | 67% | User pays ₦100 → Peyflex gives ₦3 commission → User earns ~200 points |
-| **Data** | Peyflex commission (varies) | 67% | User pays ₦1000 → Peyflex gives ₦30 commission → User earns ~2,000 points |
-| **Electricity** | Peyflex commission (1.2%) | 67% | User pays ₦5000 → Peyflex gives ₦60 commission → User earns ~4,000 points |
-| **TV** | Peyflex commission (1.8%) | 67% | User pays ₦3000 → Peyflex gives ₦54 commission → User earns ~3,600 points |
+| **Airtime** | Peyflex commission (3-4%) | 67% | User pays ₦100 → Peyflex gives ₦3 commission → User earns ~20 points |
+| **Data** | Peyflex commission (varies) | 67% | User pays ₦1000 → Peyflex gives ₦30 commission → User earns ~200 points |
+| **Electricity** | Peyflex commission (1.2%) | 67% | User pays ₦5000 → Peyflex gives ₦60 commission → User earns ~400 points |
+| **TV** | Peyflex commission (1.8%) | 67% | User pays ₦3000 → Peyflex gives ₦54 commission → User earns ~360 points |
 
 **Key Point**: Platform never pays users from pocket money — all rewards come from Peyflex's commission split.
 
@@ -196,6 +196,6 @@ All 4 services will:
 1. Let users pay bills from their points balance
 2. Earn commission from Peyflex
 3. Split commission 67% to user, 33% to platform
-4. Credit points automatically (100 points = ₦1)
+4. Credit points automatically (10 points = ₦1)
 
 **This keeps users engaged daily with earning opportunities while you build to 500-1k users before approaching brands for direct partnerships.**

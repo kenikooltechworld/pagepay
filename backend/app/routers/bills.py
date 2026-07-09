@@ -57,7 +57,7 @@ def _compute_points(commission_kobo: int) -> int:
     - Free API tier: 0.5-3% depending on service
     - Top Reseller tier: 1-6% (higher earnings for your users)
     
-    Users receive 70% of the commission as points (100 pts = ₦1).
+    Users receive 70% of the commission as points (10 pts = ₦1).
     Platform keeps 30% to cover infrastructure costs.
     """
     user_share_kobo = int(commission_kobo * _USER_SHARE)

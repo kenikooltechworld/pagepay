@@ -1,7 +1,7 @@
 # Wallet Funding System - Complete Implementation Guide
 
 ## Overview
-Users can now fund their wallet via Paystack to pay for utilities (data, airtime, electricity, TV). The wallet uses a points-based system where **100 points = ₦1**.
+Users can now fund their wallet via Paystack to pay for utilities (data, airtime, electricity, TV). The wallet uses a points-based system where **10 points = ₦1**.
 
 ---
 
@@ -155,7 +155,7 @@ if payment.tier == "wallet_deposit":
 **Features**:
 - Quick amount selection: ₦500, ₦1,000, ₦2,000, ₦5,000, ₦10,000, ₦20,000
 - Custom amount input (min ₦500, max 7 digits)
-- Real-time points calculation (amount × 100)
+- Real-time points calculation (amount × 10)
 - Summary card showing:
   - Amount to deposit
   - Points you'll receive
@@ -302,19 +302,18 @@ points_balance BIGINT DEFAULT 0  -- 1 kobo = 1 point, 100 pts = ₦1
 ## Conversion Rates
 
 ### Points to Naira
-- **1 point = 1 kobo**
-- **100 points = ₦1**
-- **1,000 points = ₦10**
-- **10,000 points = ₦100**
-- **100,000 points = ₦1,000**
+- **10 points = ₦1**
+- **100 points = ₦10**
+- **1,000 points = ₦100**
+- **10,000 points = ₦1,000**
 
 ### Examples
 | Deposit Amount | Points Received |
 |---------------|----------------|
-| ₦500 | 50,000 pts |
-| ₦1,000 | 100,000 pts |
-| ₦5,000 | 500,000 pts |
-| ₦10,000 | 1,000,000 pts |
+| ₦500 | 5,000 pts |
+| ₦1,000 | 10,000 pts |
+| ₦5,000 | 50,000 pts |
+| ₦10,000 | 100,000 pts |
 
 ---
 
