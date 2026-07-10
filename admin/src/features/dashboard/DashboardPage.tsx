@@ -7,6 +7,7 @@ import { BarChart } from '@/shared/components/BarChart';
 import { ShimmerLoader } from '@/shared/components/ShimmerLoader';
 import { Container } from '@/shared/components/Container';
 import { useLayoutContext } from '@/shared/components/Layout';
+import { usePlatformConfig } from '@/src/shared/hooks/use-platform-config';
 
 function formatNgn(kobo: number = 0) {
   return `₦${(kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -26,6 +27,10 @@ export function DashboardPage() {
     },
     staleTime: 60_000,
   });
+
+  const { data: platformConfig } = usePlatformConfig();
+  const adPlatformPercent = Math.round((platformConfig?.ad_revenue_platform_percent ?? 0.15) * 100);
+  const adUserPercent = Math.round((platformConfig?.ad_revenue_user_percent ?? 0.85) * 100);
 
   const { data: dau = [], isLoading: dauLoading } = useQuery({
     queryKey: ['admin', 'analytics', 'dau'],
@@ -108,11 +113,11 @@ export function DashboardPage() {
                       value={(stats.total_points_distributed ?? 0).toLocaleString()} 
                     />
                     <StatCard 
-                      label="Platform Share (20%)" 
+                      label={`Platform Share (${adPlatformPercent}%)`} 
                       value={`${formatUsd(stats.ad_platform_share_usd ?? 0)} / ${formatNgn(stats.ad_platform_share_ngn ?? 0)}`} 
                     />
                     <StatCard 
-                      label="User Share (80%)" 
+                      label={`User Share (${adUserPercent}%)`} 
                       value={`${formatUsd(stats.ad_user_share_usd ?? 0)} / ${formatNgn(stats.ad_user_share_ngn ?? 0)}`} 
                     />
                   </div>
@@ -138,14 +143,27 @@ export function DashboardPage() {
                   </div>
                 </div>
               </Card>
-            </>
-          )}
 
-          <Card>
-            <div className="border-b border-border px-4 py-4 sm:px-6">
-              <h3 className="text-sm font-semibold text-text-main">Daily Active Users</h3>
-              <p className="mt-0.5 text-sm text-text-muted">Last 7 days</p>
-            </div>
+              {/* Task Revenue */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Task Revenue</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Platform fees and worker payouts from completed tasks</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <StatCard label="Total Task Escrow (NGN)" value={formatNgn(stats.task_revenue_ngn ?? 0)} />
+                    <StatCard label="Platform Fee (NGN)" value={formatNgn(stats.task_platform_share_ngn ?? 0)} />
+                    <StatCard label="Paid to Workers (NGN)" value={formatNgn(stats.task_worker_share_ngn ?? 0)} />
+                  </div>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Daily Active Users</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Last 7 days</p>
+                </div>
             <div className="p-4 sm:p-6">
               {dauLoading && <ShimmerLoader lines={4} />}
               {!dauLoading && dau.length > 0 && (

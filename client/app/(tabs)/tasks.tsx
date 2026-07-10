@@ -44,6 +44,16 @@ export default function TasksScreen() {
         return 'logo-facebook';
       case 'linkedin':
         return 'logo-linkedin';
+      case 'pinterest':
+        return 'logo-pinterest';
+      case 'telegram':
+        return 'logo-telegram';
+      case 'snapchat':
+        return 'logo-snapchat';
+      case 'reddit':
+        return 'logo-reddit';
+      case 'discord':
+        return 'logo-discord';
       case 'website':
         return 'globe-outline';
       case 'app':
@@ -54,7 +64,7 @@ export default function TasksScreen() {
   };
 
   const renderTask = ({ item }: { item: Task }) => {
-    const netReward = Math.floor(item.reward_amount * 0.85);
+    const netReward = Math.floor(item.reward_amount * (item.reward_multiplier ?? 1) * 0.85);
     const remaining = item.max_completions - item.completed_count;
     const taskTypeKey = item.task_type as keyof typeof t extends `tasks.task_types.${infer K}` ? K : string;
 

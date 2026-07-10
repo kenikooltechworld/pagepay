@@ -687,7 +687,7 @@
     "max_workers_label": "Awọn Oṣiṣẹ Ti O Pọju",
     "max_workers_placeholder": "100",
     "estimated_cost_label": "Iye Owo Ti A Foju",
-    "platform_fee_note": "+ 15% owo syeed",
+    "platform_fee_note": "+ {{percent}}% owo syeed",
     "submit_button": "Ṣẹda Iṣẹ",
     "success_title": "Iṣẹ Ti Ṣẹda!",
     "publish_prompt": "Ṣe o fẹ ṣe atẹjade ni bayi?",
@@ -731,7 +731,7 @@
   "task_detail": {
     "title": "Awọn Alaye Iṣẹ",
     "you_earn": "O Yoo Gba",
-    "after_fee": "Lẹhin 15% owo syeed",
+    "after_fee": "Lẹhin {{percent}}% owo syeed",
     "description_title": "Apejuwe",
     "instructions_title": "Awọn Ilana",
     "target_title": "Ibi-afẹde",

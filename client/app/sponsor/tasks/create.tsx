@@ -1,24 +1,38 @@
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { createTask, publishTask } from '@/src/features/sponsor/api';
+import { usePlatformConfig } from '@/src/shared/hooks/use-platform-config';
+import { useTaskRateCard, TaskRateEntry } from '@/src/shared/hooks/use-task-rate-card';
 
-const PLATFORMS = ['twitter', 'instagram', 'tiktok', 'youtube', 'facebook', 'linkedin', 'website', 'app'];
+const PLATFORMS = ['twitter', 'instagram', 'tiktok', 'youtube', 'facebook', 'linkedin', 'pinterest', 'telegram', 'snapchat', 'reddit', 'discord', 'website', 'app'];
 const TASK_TYPES = ['follow', 'like', 'subscribe', 'retweet', 'comment', 'share', 'visit', 'signup', 'download', 'review'];
 
 export default function CreateTaskScreen() {
   const { t } = useTranslation();
+  const { data: platformConfig } = usePlatformConfig();
+  const taskPlatformFeePercent = Math.round((platformConfig?.task_revenue_platform_percent ?? 0.30) * 100);
+  const rateCard = useTaskRateCard(platform);
+  const activeRate = rateCard.find((rate) => rate.taskType === taskType);
+  const hasRates = rateCard.length > 0;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
   const [platform, setPlatform] = useState('twitter');
-  const [taskType, setTaskType] = useState('follow');
+  const [taskType, setTaskType] = useState<string | null>(null);
   const [targetUrl, setTargetUrl] = useState('');
   const [rewardKobo, setRewardKobo] = useState('5000');
-  const [maxCompletions, setMaxCompletions] = useState('100');
+  const [rewardMultiplier, setRewardMultiplier] = useState(1.0);
+  const [maxCompletions, setMaxCompletions] = useState('500');
+
+  useEffect(() => {
+    setTaskType(null);
+    setRewardKobo('5000');
+    setRewardMultiplier(1.0);
+  }, [platform]);
 
   const createMutation = useMutation({
     mutationFn: createTask,
@@ -51,6 +65,11 @@ export default function CreateTaskScreen() {
       return;
     }
 
+    if (!taskType) {
+      Alert.alert('Select a task type');
+      return;
+    }
+
     const reward = parseInt(rewardKobo);
     const max = parseInt(maxCompletions);
 
@@ -59,8 +78,16 @@ export default function CreateTaskScreen() {
       return;
     }
 
-    if (isNaN(max) || max < 1) {
-      Alert.alert(t('sponsor_create_task.errors.invalid_completions'));
+    if (activeRate && reward < activeRate.baseRateKobo) {
+      Alert.alert(
+        'Invalid reward',
+        `Minimum reward for ${activeRate.label} is ₦${(activeRate.baseRateKobo / 100).toFixed(2)}`,
+      );
+      return;
+    }
+
+    if (isNaN(max) || max < 500) {
+      Alert.alert(t('sponsor_create_task.errors.invalid_completions'), 'Minimum 500 tasks per order');
       return;
     }
 
@@ -74,6 +101,7 @@ export default function CreateTaskScreen() {
       target_url: targetUrl || undefined,
       proof_type: 'screenshot',
       reward_amount_kobo: reward,
+      reward_multiplier: rewardMultiplier,
       max_completions: max,
       expires_in_days: 7,
       ai_verification_enabled: true,
@@ -142,19 +170,41 @@ export default function CreateTaskScreen() {
 
       <View style={styles.section}>
         <Text style={styles.label}>{t('sponsor_create_task.task_type_label')}</Text>
-        <View style={styles.pillsContainer}>
-          {TASK_TYPES.map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={[styles.pill, taskType === type && styles.pillActive]}
-              onPress={() => setTaskType(type)}
-            >
-              <Text style={[styles.pillText, taskType === type && styles.pillTextActive]}>
-                {type}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {hasRates ? (
+          <View style={styles.rateGrid}>
+            {rateCard.map((rate) => (
+              <TouchableOpacity
+                key={rate.taskType}
+                style={[
+                  styles.rateOption,
+                  taskType === rate.taskType && styles.rateOptionActive,
+                ]}
+                onPress={() => handleSelectRate(rate)}
+              >
+                <Text style={[styles.rateOptionLabel, taskType === rate.taskType && styles.rateOptionLabelActive]}>
+                  {rate.label}
+                </Text>
+                <Text style={[styles.rateOptionValue, taskType === rate.taskType && styles.rateOptionValueActive]}>
+                  ₦{(rate.baseRateKobo / 100).toFixed(2)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.pillsContainer}>
+            {TASK_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[styles.pill, taskType === type && styles.pillActive]}
+                onPress={() => setTaskType(type)}
+              >
+                <Text style={[styles.pillText, taskType === type && styles.pillTextActive]}>
+                  {type}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       <View style={styles.section}>
@@ -171,6 +221,13 @@ export default function CreateTaskScreen() {
       <View style={styles.row}>
         <View style={[styles.section, styles.halfWidth]}>
           <Text style={styles.label}>{t('sponsor_create_task.reward_label')}</Text>
+          {activeRate ? (
+            <View style={styles.rateCard}>
+              <Text style={styles.rateLabel}>Base rate</Text>
+              <Text style={styles.rateValue}>₦{(activeRate.baseRateKobo / 100).toFixed(2)}</Text>
+              <Text style={styles.rateNote}>Platform-controlled minimum</Text>
+            </View>
+          ) : null}
           <TextInput
             style={styles.input}
             placeholder={t('sponsor_create_task.reward_placeholder')}
@@ -192,12 +249,34 @@ export default function CreateTaskScreen() {
         </View>
       </View>
 
+      <View style={styles.section}>
+        <Text style={styles.label}>Visibility boost</Text>
+        <View style={styles.pillsContainer}>
+          {[1.0, 1.5, 2.0, 3.0, 5.0].map((mult) => (
+            <TouchableOpacity
+              key={String(mult)}
+              style={[styles.pill, rewardMultiplier === mult && styles.pillActive]}
+              onPress={() => setRewardMultiplier(mult)}
+            >
+              <Text style={[styles.pillText, rewardMultiplier === mult && styles.pillTextActive]}>
+                {mult}x
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.multiplierNote}>
+          {rewardMultiplier > 1.0
+            ? `Workers earn ₦${((parseInt(rewardKobo) * rewardMultiplier) / 100).toFixed(2)} per task`
+            : 'No boost — workers earn the base rate'}
+        </Text>
+      </View>
+
       <View style={styles.costCard}>
         <Text style={styles.costLabel}>{t('sponsor_create_task.estimated_cost_label')}</Text>
         <Text style={styles.costValue}>
-          ₦{((parseInt(rewardKobo) * parseInt(maxCompletions)) / 100).toFixed(2)}
+          ₦{((parseInt(rewardKobo) * rewardMultiplier * parseInt(maxCompletions)) / 100).toFixed(2)}
         </Text>
-        <Text style={styles.costNote}>{t('sponsor_create_task.platform_fee_note')}</Text>
+        <Text style={styles.costNote}>{t('sponsor_create_task.platform_fee_note', { percent: taskPlatformFeePercent })}</Text>
       </View>
 
       <TouchableOpacity
@@ -298,6 +377,68 @@ const styles = StyleSheet.create({
   },
   halfWidth: {
     flex: 1,
+  },
+  rateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  rateOption: {
+    flexBasis: '48%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    padding: 12,
+  },
+  rateOptionActive: {
+    backgroundColor: '#6C5CE7',
+    borderColor: '#6C5CE7',
+  },
+  rateOptionLabel: {
+    fontSize: 13,
+    color: '#333',
+    marginBottom: 4,
+    textTransform: 'capitalize',
+  },
+  rateOptionLabelActive: {
+    color: '#fff',
+  },
+  rateOptionValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#6C5CE7',
+  },
+  rateOptionValueActive: {
+    color: '#fff',
+  },
+  rateCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+  rateLabel: {
+    fontSize: 12,
+    color: '#2E7D32',
+    marginBottom: 4,
+  },
+  rateValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1B5E20',
+    marginBottom: 2,
+  },
+  rateNote: {
+    fontSize: 11,
+    color: '#2E7D32',
+  },
+  multiplierNote: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   costCard: {
     backgroundColor: '#E3F2FD',

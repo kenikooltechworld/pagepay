@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
+from app.config import settings
 from app.models import User, SponsorKYC, Task, SponsorWalletTransaction, TaskSubmission, UserReputation
 from app.schemas import (
     SponsorRegisterRequest, TokenResponse, SponsorKYCSubmitRequest, SponsorKYCResponse,
@@ -204,7 +205,6 @@ async def initiate_wallet_deposit(
 ):
     """Initiate Paystack deposit to sponsor wallet."""
     from app.services.paystack import get_client as get_paystack_client
-    from app.config import settings
     
     if not settings.paystack_secret_key:
         raise HTTPException(status_code=503, detail="Payment provider not configured")
@@ -244,11 +244,24 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
 ):
     """Create new task (draft status)."""
-    # Calculate escrow
-    worker_rewards_total = payload.reward_amount_kobo * payload.max_completions
-    platform_fee = int(worker_rewards_total * 0.15)  # 15% platform fee
-    total_escrowed = worker_rewards_total + platform_fee
+    # Calculate escrow: sponsor pays exactly the worker reward total.
+    # The platform fee is deducted from the worker's payout, not added
+    # on top — keeps the math transparent and avoids double-dipping.
+    worker_rewards_total = int(payload.reward_amount_kobo * payload.max_completions * payload.reward_multiplier)
+    total_escrowed = worker_rewards_total
+    platform_fee = int(worker_rewards_total * settings.platform_task_revenue_percent)
     
+    # Validate platform-controlled base rate
+    from app.constants.task_rates import get_task_rates_from_db
+    task_rates = await get_task_rates_from_db(db)
+    if payload.task_type in task_rates:
+        min_reward = task_rates[payload.task_type]
+        if payload.reward_amount_kobo < min_reward:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Minimum reward for {payload.task_type.replace('youtube_', '')} is ₦{min_reward / 100:.2f}"
+            )
+
     expires_at = datetime.utcnow() + timedelta(days=payload.expires_in_days)
     
     # Create task
@@ -264,6 +277,7 @@ async def create_task(
         proof_type=payload.proof_type,
         proof_instructions=payload.proof_instructions,
         reward_amount=payload.reward_amount_kobo,
+        reward_multiplier=payload.reward_multiplier,
         max_completions=payload.max_completions,
         total_escrowed=total_escrowed,
         platform_fee_amount=platform_fee,
@@ -459,7 +473,7 @@ async def sponsor_approve_submission(
     
     net_reward = 0
     if worker:
-        net_reward = int(task.reward_amount * (100 - task.platform_fee_percent) / 100)
+        net_reward = int(task.reward_amount * task.reward_multiplier * (100 - task.platform_fee_percent) / 100)
         worker.points_balance += net_reward
         submission.reward_paid = net_reward
         submission.payment_status = "paid"

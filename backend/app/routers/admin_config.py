@@ -109,3 +109,64 @@ async def update_config(
     await db.commit()
     
     return {"success": True}
+
+
+@router.get("/task-rates")
+async def get_task_rates(
+    current_admin: AdminUser = Depends(require_permission("config.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return current task base rates from AppConfig or constants."""
+    from app.constants.task_rates import get_task_rates_from_db
+    rates = await get_task_rates_from_db(db)
+    return {"task_base_rates_kobo": rates}
+
+
+@router.put("/task-rates")
+async def update_task_rates(
+    request: Request,
+    payload: dict,
+    current_admin: AdminUser = Depends(require_permission("config.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update task base rates.
+
+    Payload shape:
+        {
+          "youtube_subscribe": 15000,
+          "youtube_like": 5000,
+          ...
+        }
+    """
+    from app.constants.task_rates import get_task_rates_from_db, set_task_rates_in_db, TASK_RATES_CONFIG_KEY
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload must be a JSON object")
+
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            raise HTTPException(status_code=400, detail=f"Invalid task rate key: {key}")
+        try:
+            int_value = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"Invalid kobo value for {key}: {value}")
+        if int_value < 0:
+            raise HTTPException(status_code=400, detail=f"Negative rate not allowed: {key}")
+
+    old_rates = await get_task_rates_from_db(db)
+    await set_task_rates_in_db(db, {str(k): int(v) for k, v in payload.items()})
+
+    db.add(
+        _log_admin_action(
+            current_admin.id,
+            current_admin.email,
+            "update_task_rates",
+            "config",
+            None,
+            {"old": old_rates, "new": payload},
+            request.client.host,
+        )
+    )
+    await db.commit()
+
+    return {"success": True, "task_base_rates_kobo": payload}

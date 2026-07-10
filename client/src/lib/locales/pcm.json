@@ -687,7 +687,7 @@
     "max_workers_label": "Max Workers",
     "max_workers_placeholder": "100",
     "estimated_cost_label": "Estimated Cost",
-    "platform_fee_note": "+ 15% platform fee",
+    "platform_fee_note": "+ {{percent}}% platform fee",
     "submit_button": "Create Work",
     "success_title": "Work Don Create!",
     "publish_prompt": "Publish now make e go live?",
@@ -731,7 +731,7 @@
   "task_detail": {
     "title": "Work Details",
     "you_earn": "You Go Collect",
-    "after_fee": "After 15% platform fee",
+    "after_fee": "After {{percent}}% platform fee",
     "description_title": "Description",
     "instructions_title": "Instructions",
     "target_title": "Target",

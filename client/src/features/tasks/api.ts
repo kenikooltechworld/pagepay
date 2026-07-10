@@ -10,6 +10,7 @@ export type Task = {
   platform: string;
   category: string;
   reward_amount: number;
+  reward_multiplier: number;
   max_completions: number;
   completed_count: number;
   expires_at: string;
@@ -28,6 +29,7 @@ export type TaskDetail = {
   proof_type: string;
   proof_instructions: string | null;
   reward_amount: number;
+  reward_multiplier: number;
   max_completions: number;
   completed_count: number;
   expires_at: string;

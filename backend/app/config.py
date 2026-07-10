@@ -176,6 +176,14 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str | None = None
     cloudinary_upload_folder: str = "pagepay/tasks"
 
+    # ── Platform revenue splits ──────────────────────────────────────
+    # Ads: portion of ad revenue kept by platform (rest goes to user as points).
+    # 0.15 = platform keeps 15%, user gets 85%.
+    platform_ad_revenue_percent: float = 0.15
+    # Tasks: platform fee added on top of worker reward.
+    # 0.30 = platform keeps 30% of total escrow, worker gets 70%.
+    platform_task_revenue_percent: float = 0.30
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

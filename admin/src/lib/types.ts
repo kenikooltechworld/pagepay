@@ -30,6 +30,10 @@ export interface DashboardStats {
   ad_platform_share_ngn: number; // In kobo
   ad_user_share_usd: number;
   ad_user_share_ngn: number; // In kobo
+  // Task Revenue breakdown
+  task_revenue_ngn: number; // In kobo
+  task_platform_share_ngn: number; // In kobo
+  task_worker_share_ngn: number; // In kobo
   // Premium Revenue
   premium_revenue_ngn: number; // In kobo
   premium_revenue_usd: number;

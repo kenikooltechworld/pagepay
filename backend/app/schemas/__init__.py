@@ -881,18 +881,22 @@ class DashboardStats(BaseModel):
     # Ad Revenue breakdown
     ad_revenue_usd: float  # Total ad revenue in USD
     ad_revenue_ngn: int  # Total ad revenue in kobo (using historical FX rates)
-    ad_platform_share_usd: float  # 20% platform share in USD
-    ad_platform_share_ngn: int  # 20% platform share in kobo
-    ad_user_share_usd: float  # 80% user share in USD
-    ad_user_share_ngn: int  # 80% user share in kobo
+    ad_platform_share_usd: float  # Platform share in USD (from settings)
+    ad_platform_share_ngn: int  # Platform share in kobo
+    ad_user_share_usd: float  # User share in USD
+    ad_user_share_ngn: int  # User share in kobo
+    # Task Revenue breakdown
+    task_revenue_ngn: int  # Total task escrow in kobo
+    task_platform_share_ngn: int  # Platform fee collected in kobo
+    task_worker_share_ngn: int  # Paid to workers in kobo
     # Premium Revenue
     premium_revenue_ngn: int  # Premium subscriptions in kobo
     premium_revenue_usd: float  # Premium converted to USD (current FX)
     # Combined totals
-    total_revenue_usd: float  # Ad + Premium in USD
-    total_revenue_ngn: int  # Ad + Premium in kobo
-    platform_earnings_ngn: int  # Ad platform share + Premium in kobo
-    user_earnings_ngn: int  # Ad user share in kobo (matches points/100)
+    total_revenue_usd: float  # Ad + Premium + Task in USD
+    total_revenue_ngn: int  # Ad + Premium + Task in kobo
+    platform_earnings_ngn: int  # Ad platform share + Task fee + Premium in kobo
+    user_earnings_ngn: int  # Ad user share + Task worker pay in kobo
     total_points_distributed: int  # Sum of all user_points_credited
     # Other stats
     pending_payouts: int
@@ -904,18 +908,22 @@ class RevenueSummary(BaseModel):
     # Ad Revenue breakdown
     ad_revenue_usd: float  # Total ad revenue in USD
     ad_revenue_ngn: int  # Total ad revenue in kobo (using historical FX rates)
-    ad_platform_share_usd: float  # 20% platform share in USD
-    ad_platform_share_ngn: int  # 20% platform share in kobo
-    ad_user_share_usd: float  # 80% user share in USD
-    ad_user_share_ngn: int  # 80% user share in kobo
+    ad_platform_share_usd: float  # Platform share in USD (from settings)
+    ad_platform_share_ngn: int  # Platform share in kobo
+    ad_user_share_usd: float  # User share in USD
+    ad_user_share_ngn: int  # User share in kobo
+    # Task Revenue breakdown
+    task_revenue_ngn: int  # Total task escrow in kobo
+    task_platform_share_ngn: int  # Platform fee collected in kobo
+    task_worker_share_ngn: int  # Paid to workers in kobo
     # Premium Revenue
     premium_revenue_ngn: int  # Premium subscriptions in kobo
     premium_revenue_usd: float  # Premium converted to USD (current FX)
     # Combined totals
-    total_revenue_usd: float  # Ad + Premium in USD
-    total_revenue_ngn: int  # Ad + Premium in kobo
-    platform_earnings_ngn: int  # Ad platform share + Premium in kobo
-    user_earnings_ngn: int  # Ad user share in kobo
+    total_revenue_usd: float  # Ad + Premium + Task in USD
+    total_revenue_ngn: int  # Ad + Premium + Task in kobo
+    platform_earnings_ngn: int  # Ad platform share + Task fee + Premium in kobo
+    user_earnings_ngn: int  # Ad user share + Task worker pay in kobo
     total_points_distributed: int  # Sum of all user_points_credited
     average_fx_rate: float  # Average FX rate used during period
     current_fx_rate: float  # Current FX rate for reference
@@ -1016,17 +1024,28 @@ class TaskCreateRequest(BaseModel):
     instructions: str = Field(min_length=20, max_length=5_000)
     task_type: Literal[
         "twitter_follow", "instagram_follow", "tiktok_follow", "youtube_subscribe",
-        "twitter_like", "instagram_like", "twitter_retweet", "instagram_comment",
+        "youtube_like", "youtube_watch", "youtube_comment", "youtube_share",
+        "twitter_like", "instagram_like", "twitter_retweet", "instagram_comment", "instagram_repost",
+        "twitter_comment", "twitter_share",
+        "tiktok_comment", "tiktok_share",
+        "facebook_follow", "facebook_like",
+        "linkedin_follow", "linkedin_like", "linkedin_comment",
+        "pinterest_follow", "pinterest_like", "pinterest_repin", "pinterest_comment",
+        "telegram_join", "telegram_view",
+        "snapchat_add_friend", "snapchat_view_story",
+        "reddit_follow", "reddit_upvote", "reddit_comment",
+        "discord_join_server", "discord_verify", "discord_message",
         "website_visit", "website_signup", "app_download", "app_review",
         "photo_upload", "video_upload", "written_review", "survey", "custom"
     ]
-    platform: Literal["twitter", "instagram", "tiktok", "youtube", "facebook", "linkedin", "web", "android", "ios", "custom"]
+    platform: Literal["twitter", "instagram", "tiktok", "youtube", "facebook", "linkedin", "pinterest", "telegram", "snapchat", "reddit", "discord", "web", "android", "ios", "custom"]
     category: Literal["social_media", "engagement", "website", "app", "content_creation", "surveys", "data_collection", "other"] = "social_media"
     target_url: str | None = None
     proof_type: Literal["screenshot", "link", "text", "photo", "video", "none"]
     proof_instructions: str | None = Field(default=None, max_length=2_000)
     reward_amount_kobo: int = Field(ge=5000, le=5000000, description="₦50 - ₦50,000 in kobo")
-    max_completions: int = Field(ge=1, le=10000)
+    reward_multiplier: float = Field(default=1.0, ge=1.0, le=5.0, description="1.0 = base rate, up to 5.0x for boosted visibility")
+    max_completions: int = Field(ge=500, le=10000, description="Minimum 500 tasks per order")
     expires_in_days: int = Field(default=7, ge=1, le=365, description="Days from now until task expires")
     time_limit_minutes: int | None = Field(default=None, ge=5, le=1440)
     target_countries: list[str] | None = None
@@ -1052,6 +1071,7 @@ class TaskResponse(BaseModel):
     proof_type: str
     proof_instructions: str | None
     reward_amount: int
+    reward_multiplier: float
     max_completions: int
     completed_count: int
     approved_count: int
@@ -1077,6 +1097,7 @@ class TaskListItem(BaseModel):
     task_type: str
     platform: str
     reward_amount: int
+    reward_multiplier: float
     max_completions: int
     completed_count: int
     expires_at: datetime

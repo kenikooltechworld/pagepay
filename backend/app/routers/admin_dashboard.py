@@ -12,9 +12,10 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.config import settings
 from app.models import (
     User, ReadingSession, AdEvent, PayoutTransaction, Payment, CommunityNote,
-    FraudFlag, AdminUser,
+    FraudFlag, AdminUser, Task, TaskSubmission,
 )
 from app.schemas import DashboardStats
 from app.services.admin_auth import require_permission
@@ -98,14 +99,36 @@ async def dashboard_stats(
         if event.user_points_credited:
             total_points += event.user_points_credited
 
-    # Calculate 95/5 split for ads
-    PLATFORM_SHARE = 0.05
-    USER_SHARE = 0.95
+    # Calculate platform/user split for ads from config
+    PLATFORM_SHARE = settings.platform_ad_revenue_percent
+    USER_SHARE = 1.0 - PLATFORM_SHARE
 
     ad_platform_share_usd = ad_revenue_usd * PLATFORM_SHARE
     ad_user_share_usd = ad_revenue_usd * USER_SHARE
     ad_platform_share_ngn = int(ad_revenue_ngn_kobo * PLATFORM_SHARE)
     ad_user_share_ngn = int(ad_revenue_ngn_kobo * USER_SHARE)
+
+    # Task Revenue - from completed task submissions today
+    task_revenue_kobo = 0
+    task_platform_share_kobo = 0
+    task_worker_share_kobo = 0
+
+    today_task_submissions = (
+        await db.execute(
+            select(TaskSubmission)
+            .join(Task, Task.id == TaskSubmission.task_id)
+            .where(TaskSubmission.payment_status == "paid")
+            .where(TaskSubmission.paid_at >= today_start)
+        )
+    ).scalars().all()
+
+    for submission in today_task_submissions:
+        task = await db.get(Task, submission.task_id)
+        if task:
+            reward = submission.reward_paid or 0
+            task_revenue_kobo += task.reward_amount
+            task_platform_share_kobo += task.platform_fee_amount
+            task_worker_share_kobo += reward
 
     # Premium Revenue (already in kobo)
     premium_revenue_kobo = (
@@ -132,9 +155,9 @@ async def dashboard_stats(
 
     # Combined totals
     total_revenue_usd = ad_revenue_usd + premium_revenue_usd
-    total_revenue_ngn = ad_revenue_ngn_kobo + int(premium_revenue_kobo)
-    platform_earnings_ngn = ad_platform_share_ngn + int(premium_revenue_kobo)
-    user_earnings_ngn = ad_user_share_ngn
+    total_revenue_ngn = ad_revenue_ngn_kobo + int(premium_revenue_kobo) + task_revenue_kobo
+    platform_earnings_ngn = ad_platform_share_ngn + int(premium_revenue_kobo) + task_platform_share_kobo
+    user_earnings_ngn = ad_user_share_ngn + task_worker_share_kobo
 
     return DashboardStats(
         total_users=int(total_users),
@@ -145,6 +168,9 @@ async def dashboard_stats(
         ad_platform_share_ngn=ad_platform_share_ngn,
         ad_user_share_usd=ad_user_share_usd,
         ad_user_share_ngn=ad_user_share_ngn,
+        task_revenue_ngn=task_revenue_kobo,
+        task_platform_share_ngn=task_platform_share_kobo,
+        task_worker_share_ngn=task_worker_share_kobo,
         premium_revenue_ngn=int(premium_revenue_kobo),
         premium_revenue_usd=premium_revenue_usd,
         total_revenue_usd=total_revenue_usd,

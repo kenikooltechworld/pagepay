@@ -303,7 +303,7 @@ async def admin_approve_submission(
 
     if worker:
         net_reward = int(
-            task.reward_amount * (100 - task.platform_fee_percent) / 100
+            task.reward_amount * task.reward_multiplier * (100 - task.platform_fee_percent) / 100
         )
         worker.points_balance += net_reward
         submission.reward_paid = net_reward

@@ -164,7 +164,7 @@ class TaskProcessor:
         
         if worker:
             # Calculate net reward (after platform fee)
-            net_reward = int(task.reward_amount * (100 - task.platform_fee_percent) / 100)
+            net_reward = int(task.reward_amount * task.reward_multiplier * (100 - task.platform_fee_percent) / 100)
             
             worker.points_balance += net_reward
             submission.reward_paid = net_reward

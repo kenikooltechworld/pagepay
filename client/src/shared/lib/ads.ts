@@ -33,6 +33,7 @@
  */
 
 import Constants from 'expo-constants';
+import { TASK_BASE_RATES_KOB } from '@/src/shared/constants/task-rates';
 import { apiFetch } from '@/src/shared/api/client';
 
 
@@ -245,4 +246,37 @@ export async function pollRecentCredits(
     }
   }
   return null;
+}
+
+
+// ── Platform revenue config ────────────────────────────────────────
+
+export type PlatformConfig = {
+  ad_revenue_platform_percent: number;
+  ad_revenue_user_percent: number;
+  task_revenue_platform_percent: number;
+  task_revenue_worker_percent: number;
+  task_base_rates_kobo: Record<string, number>;
+};
+
+export const PLATFORM_CONFIG_QUERY_KEY = ['platform', 'config'] as const;
+
+export async function fetchPlatformConfig(): Promise<PlatformConfig> {
+  const url = '/api/v1/config/platform';
+  try {
+    const res = await apiFetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as PlatformConfig;
+  } catch (err) {
+    if (__DEV__) {
+      console.warn('[platform] fetchPlatformConfig failed, falling back to defaults', err);
+    }
+    return {
+      ad_revenue_platform_percent: 0.15,
+      ad_revenue_user_percent: 0.85,
+      task_revenue_platform_percent: 0.30,
+      task_revenue_worker_percent: 0.70,
+      task_base_rates_kobo: TASK_BASE_RATES_KOB,
+    };
+  }
 }

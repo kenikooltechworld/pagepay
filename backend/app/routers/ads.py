@@ -56,12 +56,10 @@ logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/ads", tags=["ads"])
 
 
-# Platform revenue share: 5% to us, 95% to the user. Kept as a
-# constant for any future code that needs the ratio. The new
-# SSV-only flow credits `settings.rewarded_ad_payout_points ×
-# USER_SHARE` points per rewarded ad (see
-# services/ads.py:points_for_rewarded_ad).
-PLATFORM_SHARE = 0.05
+# Platform revenue share is read from settings so ops can change it
+# without a deploy. Default is set in config.py
+# (platform_ad_revenue_percent, default 0.15 = 15% platform, 85% user).
+PLATFORM_SHARE = settings.platform_ad_revenue_percent
 USER_SHARE = 1.0 - PLATFORM_SHARE
 
 # 10 points = ₦1 (NGN). All point math goes through this constant so

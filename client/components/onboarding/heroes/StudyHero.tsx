@@ -21,19 +21,16 @@ import Animated, {
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-// `<G>` from react-native-svg doesn't accept React Native `style`, so we
-// drive its `transform` prop with a string and `useAnimatedProps`.
+// Simplified AnimatedG
 const AnimatedG = Animated.createAnimatedComponent(G);
 
+// Reduced flashcards from 6 to 3 to minimize concurrent animations
 const FLASHCARDS: {
   x: number; y: number; w: number; h: number; rot: number; delay: number; lines: number;
 }[] = [
   { x: 40,  y: 64,  w: 36, h: 48, rot: -8, delay: 0,   lines: 3 },
-  { x: 244, y: 68,  w: 40, h: 52, rot: 6,  delay: 600, lines: 2 },
-  { x: 34,  y: 180, w: 40, h: 52, rot: -4, delay: 1200, lines: 2 },
-  { x: 248, y: 196, w: 44, h: 56, rot: 7,  delay: 1800, lines: 2 },
-  { x: 260, y: 40,  w: 32, h: 42, rot: -3, delay: 2400, lines: 1 },
-  { x: 24,  y: 108, w: 32, h: 42, rot: 4,  delay: 3000, lines: 1 },
+  { x: 244, y: 68,  w: 40, h: 52, rot: 6,  delay: 1200, lines: 2 },
+  { x: 248, y: 196, w: 44, h: 56, rot: 7,  delay: 2400, lines: 2 },
 ];
 
 function Flashcard({
@@ -41,26 +38,23 @@ function Flashcard({
 }: typeof FLASHCARDS[number]) {
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
-  const t = useSharedValue(0);
-  const cx = x + w / 2;
-  const cy = y + h / 2;
+  const translateY = useSharedValue(0);
 
   useEffect(() => {
-    t.value = withDelay(
+    translateY.value = withDelay(
       delay,
       withRepeat(
-        withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.cubic) }),
+        withTiming(-8, { duration: 4000, easing: Easing.inOut(Easing.cubic) }),
         -1,
         true,
       ),
     );
-    return () => cancelAnimation(t);
-  }, [t, delay]);
+    return () => cancelAnimation(translateY);
+  }, [translateY, delay]);
 
-  // SVG transform string: rotate around the card's center, then drift
-  // up by `-t * 8` for the float.
+  // Simplified transform: static rotation + animated translateY only
   const animatedProps = useAnimatedProps(() => ({
-    transform: `translate(${cx} ${cy}) rotate(${rot}) translate(${-cx} ${-cy}) translate(0 ${-t.value * 8})`,
+    transform: `translate(${x + w / 2} ${y + h / 2}) rotate(${rot}) translate(${-(x + w / 2)} ${-(y + h / 2)}) translate(0 ${translateY.value})`,
   }));
 
   return (
@@ -129,8 +123,7 @@ export function StudyHero() {
     };
   }, [aiSpark, card, cardL, cardR]);
 
-  // Quiz card stack: front card bobs + breathes; back cards fan out.
-  // SVG transform strings avoid the RN-style `style` prop on `<G>`.
+  // Simplified card animations - single transform property each
   const cardLProps = useAnimatedProps(() => ({
     transform: `rotate(${-4 - cardL.value * 3} 160 192)`,
   }));
@@ -138,18 +131,16 @@ export function StudyHero() {
     transform: `rotate(${4 + cardR.value * 3} 160 192)`,
   }));
   const cardProps = useAnimatedProps(() => {
-    const t = card.value;
-    const ty = t > 0.5 ? -6 : 0;
-    const s = t > 0.4 && t < 0.55 ? 1.04 : t > 0.6 ? 0.98 : 1;
-    // First scale around the card center, then bob by `ty` in world space.
+    const ty = card.value > 0.5 ? -6 : 0;
+    const s = card.value > 0.4 && card.value < 0.55 ? 1.04 : card.value > 0.6 ? 0.98 : 1;
     return {
       transform: `translate(160 192) scale(${s}) translate(-160 -192) translate(0 ${ty})`,
     };
   });
 
-  // AI spark orbits the phone by rotating the wrapper around (232, 96).
+  // Simplified AI spark orbit
   const aiSparkProps = useAnimatedProps(() => ({
-    transform: `translate(232 96) rotate(${aiSpark.value}) translate(-232 -96)`,
+    transform: `rotate(${aiSpark.value} 232 96)`,
   }));
 
   return (

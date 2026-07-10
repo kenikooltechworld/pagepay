@@ -12,7 +12,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import AdEvent, Payment, AdminUser
+from app.config import settings
+from app.models import AdEvent, Payment, AdminUser, Task, TaskSubmission
 from app.schemas import RevenueSummary
 from app.services.admin_auth import require_permission
 
@@ -79,9 +80,9 @@ async def revenue_summary(
         total_fx_rate / fx_count if fx_count > 0 else 0.0
     )
 
-    # Calculate 95/5 split for ads
-    PLATFORM_SHARE = 0.05
-    USER_SHARE = 0.95
+    # Calculate platform/user split for ads from config
+    PLATFORM_SHARE = settings.platform_ad_revenue_percent
+    USER_SHARE = 1.0 - PLATFORM_SHARE
 
     ad_platform_share_usd = ad_revenue_usd * PLATFORM_SHARE
     ad_user_share_usd = ad_revenue_usd * USER_SHARE
@@ -112,11 +113,34 @@ async def revenue_summary(
         premium_ngn = float(prem_rev_kobo) / 100
         premium_revenue_usd = premium_ngn / current_fx
 
+    # Task Revenue - from published tasks in the period
+    task_revenue_kobo = 0
+    task_platform_share_kobo = 0
+    task_worker_share_kobo = 0
+
+    completed_task_submissions = (
+        await db.execute(
+            select(TaskSubmission)
+            .join(Task, Task.id == TaskSubmission.task_id)
+            .where(TaskSubmission.payment_status == "paid")
+            .where(TaskSubmission.paid_at >= start)
+            .where(TaskSubmission.paid_at <= end)
+        )
+    ).scalars().all()
+
+    for submission in completed_task_submissions:
+        task = await db.get(Task, submission.task_id)
+        if task:
+            reward = submission.reward_paid or 0
+            task_revenue_kobo += task.reward_amount
+            task_platform_share_kobo += task.platform_fee_amount
+            task_worker_share_kobo += reward
+
     # Combined totals
     total_revenue_usd = ad_revenue_usd + premium_revenue_usd
-    total_revenue_ngn = ad_revenue_ngn_kobo + int(prem_rev_kobo)
-    platform_earnings_ngn = ad_platform_share_ngn + int(prem_rev_kobo)
-    user_earnings_ngn = ad_user_share_ngn
+    total_revenue_ngn = ad_revenue_ngn_kobo + int(prem_rev_kobo) + task_revenue_kobo
+    platform_earnings_ngn = ad_platform_share_ngn + int(prem_rev_kobo) + task_platform_share_kobo
+    user_earnings_ngn = ad_user_share_ngn + task_worker_share_kobo
 
     return RevenueSummary(
         ad_revenue_usd=ad_revenue_usd,
@@ -125,6 +149,9 @@ async def revenue_summary(
         ad_platform_share_ngn=ad_platform_share_ngn,
         ad_user_share_usd=ad_user_share_usd,
         ad_user_share_ngn=ad_user_share_ngn,
+        task_revenue_ngn=task_revenue_kobo,
+        task_platform_share_ngn=task_platform_share_kobo,
+        task_worker_share_ngn=task_worker_share_kobo,
         premium_revenue_ngn=int(prem_rev_kobo),
         premium_revenue_usd=premium_revenue_usd,
         total_revenue_usd=total_revenue_usd,

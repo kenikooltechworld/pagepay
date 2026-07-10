@@ -33,7 +33,7 @@ credentials.json
 !.vscode/*.json
 !client/src/lib/locales/*.json
 pagepay-submit-*.json
-*-submit-*.json
+*-submit-*
 
 # Firebase config files (contain API keys)
 google-services.json

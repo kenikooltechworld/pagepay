@@ -53,6 +53,7 @@ export type TaskCreateRequest = {
   proof_type: string;
   proof_instructions?: string;
   reward_amount_kobo: number;
+  reward_multiplier: number;
   max_completions: number;
   time_limit_minutes?: number;
   expires_in_days: number;
@@ -79,6 +80,7 @@ export type TaskResponseFull = {
   proof_type: string;
   proof_instructions: string | null;
   reward_amount: number;
+  reward_multiplier: number;
   max_completions: number;
   completed_count: number;
   approved_count: number;

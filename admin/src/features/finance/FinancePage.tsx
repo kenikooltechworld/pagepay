@@ -7,6 +7,7 @@ import { TopHeader } from '@/shared/components/TopHeader';
 import { useLayoutContext } from '@/shared/components/Layout';
 import { useAuthStore } from '@/store/auth';
 import { CheckCircle, XCircle } from 'lucide-react';
+import { usePlatformConfig } from '@/src/shared/hooks/use-platform-config';
 
 function formatNgn(kobo: number = 0) {
   return `₦${(kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -33,8 +34,11 @@ export function FinancePage() {
       const { data } = await adminApi.get<RevenueSummary>('/admin/revenue/summary');
       return data;
     },
-    staleTime: 60_000,
   });
+
+  const { data: platformConfig } = usePlatformConfig();
+  const adPlatformPercent = Math.round((platformConfig?.ad_revenue_platform_percent ?? 0.15) * 100);
+  const adUserPercent = Math.round((platformConfig?.ad_revenue_user_percent ?? 0.85) * 100);
 
   const { data: payouts, isLoading: payoutsLoading } = useQuery({
     queryKey: ['admin', 'finance', 'payouts', payoutPage],
@@ -139,7 +143,7 @@ export function FinancePage() {
               {/* Ad Revenue Breakdown */}
               <Card>
                 <div className="border-b border-border px-4 py-4 sm:px-6">
-                  <h3 className="text-sm font-semibold text-text-main">Ad Revenue (80/20 Split)</h3>
+                  <h3 className="text-sm font-semibold text-text-main">Ad Revenue ({adPlatformPercent}/{adUserPercent} Split)</h3>
                   <p className="mt-0.5 text-sm text-text-muted">Revenue from ads with historical FX rates</p>
                 </div>
                 <div className="p-4 sm:p-6">
@@ -150,19 +154,34 @@ export function FinancePage() {
                   </div>
                   <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="rounded-lg border border-border bg-bg-muted p-4">
-                      <div className="text-xs font-semibold uppercase text-text-muted">Platform Share (20%)</div>
-                      <div className="mt-2 space-y-1">
-                        <div className="text-sm text-text-main">{formatUsd(revenue.ad_platform_share_usd ?? 0)}</div>
-                        <div className="text-sm text-text-main">{formatNgn(revenue.ad_platform_share_ngn ?? 0)}</div>
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-border bg-bg-muted p-4">
-                      <div className="text-xs font-semibold uppercase text-text-muted">User Share (80%)</div>
-                      <div className="mt-2 space-y-1">
-                        <div className="text-sm text-text-main">{formatUsd(revenue.ad_user_share_usd ?? 0)}</div>
-                        <div className="text-sm text-text-main">{formatNgn(revenue.ad_user_share_ngn ?? 0)}</div>
-                      </div>
-                    </div>
+                       <div className="text-xs font-semibold uppercase text-text-muted">Platform Share ({adPlatformPercent}%)</div>
+                       <div className="mt-2 space-y-1">
+                         <div className="text-sm text-text-main">{formatUsd(revenue.ad_platform_share_usd ?? 0)}</div>
+                         <div className="text-sm text-text-main">{formatNgn(revenue.ad_platform_share_ngn ?? 0)}</div>
+                       </div>
+                     </div>
+                     <div className="rounded-lg border border-border bg-bg-muted p-4">
+                       <div className="text-xs font-semibold uppercase text-text-muted">User Share ({adUserPercent}%)</div>
+                       <div className="mt-2 space-y-1">
+                         <div className="text-sm text-text-main">{formatUsd(revenue.ad_user_share_usd ?? 0)}</div>
+                         <div className="text-sm text-text-main">{formatNgn(revenue.ad_user_share_ngn ?? 0)}</div>
+                       </div>
+                     </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Task Revenue */}
+              <Card>
+                <div className="border-b border-border px-4 py-4 sm:px-6">
+                  <h3 className="text-sm font-semibold text-text-main">Task Revenue</h3>
+                  <p className="mt-0.5 text-sm text-text-muted">Platform fees and worker payouts from completed tasks</p>
+                </div>
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <StatCard label="Total Task Escrow (NGN)" value={formatNgn(revenue.task_revenue_ngn ?? 0)} />
+                    <StatCard label="Platform Fee (NGN)" value={formatNgn(revenue.task_platform_share_ngn ?? 0)} />
+                    <StatCard label="Paid to Workers (NGN)" value={formatNgn(revenue.task_worker_share_ngn ?? 0)} />
                   </div>
                 </div>
               </Card>

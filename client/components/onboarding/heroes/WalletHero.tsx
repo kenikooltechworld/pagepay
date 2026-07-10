@@ -22,20 +22,19 @@ import Animated, {
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-// `<G>` from react-native-svg doesn't accept React Native `style`, so we
-// drive its `transform` prop with a string and `useAnimatedProps`.
+// Simplified AnimatedG
 const AnimatedG = Animated.createAnimatedComponent(G);
 
+// Reduced to 2 coins (from 3)
 const STACK_COINS = [
   { y: 194, delay: 0 },
-  { y: 170, delay: 250 },
-  { y: 146, delay: 500 },
+  { y: 170, delay: 400 },
 ];
 
+// Reduced to 2 trail symbols (from 3)
 const TRAIL_SYMBOLS = [
   { y: 100, size: 14, delay: 0,   opacity: 0.6 },
-  { y: 100, size: 11, delay: 600, opacity: 0.5 },
-  { y: 100, size: 8,  delay: 1200, opacity: 0.4 },
+  { y: 100, size: 11, delay: 800, opacity: 0.5 },
 ];
 
 function StackCoin({ y, delay }: { y: number; delay: number }) {
@@ -138,12 +137,9 @@ export function WalletHero() {
     transform: `translate(244 138) scale(${1 + naira.value * 0.18}) translate(-244 -138)`,
   }));
 
-  // Wallet flap: react-native-svg doesn't expose 3D transforms, so we
-  // approximate "flap opening" with a Y-translate + opacity to fake a
-  // hinge at the top edge.
+  // Simplified flap animation - no opacity change
   const flapProps = useAnimatedProps(() => ({
     transform: `translate(0 ${flap.value * 8})`,
-    opacity: 1 - flap.value * 0.4,
   }));
 
   return (

@@ -30,8 +30,7 @@ import Animated, {
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-// `<G>` from react-native-svg doesn't accept React Native `style`, so we
-// drive its `transform` prop with a string and `useAnimatedProps`.
+// Simplified AnimatedG
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 const DAYS = [
@@ -44,12 +43,11 @@ const DAYS = [
   { x: 244, letter: 'S', today: false, locked: true  },
 ];
 
+// Reduced to 3 embers (from 5)
 const EMBERS: { cx: number; cy: number; r: number; color: string; delay: number }[] = [
   { cx: 120, cy: 80, r: 3,   color: '#C2410C', delay: 0 },
-  { cx: 200, cy: 60, r: 2.5, color: '#FB923C', delay: 600 },
-  { cx: 100, cy: 100, r: 2,  color: '#FBBF24', delay: 1200 },
-  { cx: 220, cy: 90, r: 2.5, color: '#C2410C', delay: 1800 },
-  { cx: 180, cy: 40, r: 2,   color: '#FB923C', delay: 2400 },
+  { cx: 200, cy: 60, r: 2.5, color: '#FB923C', delay: 1000 },
+  { cx: 180, cy: 40, r: 2,   color: '#FB923C', delay: 2000 },
 ];
 
 function DayCell({ x, letter, today, locked }: typeof DAYS[number]) {
@@ -143,11 +141,9 @@ function Ember({ cx, cy, r, color, delay }: typeof EMBERS[number]) {
     return () => cancelAnimation(t);
   }, [t, delay]);
 
-  // The ember is a small circle — we want it to rise (`translateY`)
-  // and grow (`scale`), around its own center. The wrapper applies
-  // the transforms in SVG-transform order (right-to-left).
+  // Simplified ember animation - removed complex nested transforms
   const animProps = useAnimatedProps(() => ({
-    transform: `translate(${cx} ${cy}) scale(${0.6 + t.value * 0.4}) translate(${-cx} ${-cy}) translate(0 ${-t.value * 90})`,
+    transform: `translate(0 ${-t.value * 90}) scale(${0.6 + t.value * 0.4})`,
     opacity: t.value < 0.15 ? t.value * 6 : 0.9 * (1 - t.value),
   }));
 

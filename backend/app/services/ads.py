@@ -35,14 +35,10 @@ from app.services import fx as fx_module
 
 logger = logging.getLogger("uvicorn.error")
 
-
-# Platform revenue share: 5% to us, 95% to the user. Keep this as a
-# constant — flipping it requires a deploy, which is the right blast
-# radius for a money-affecting change. (Legacy /ads/credit and
-# /ads/reward-claim documented this as 80/20 — the actual constants
-# have been 95/5 since the rate was bumped to retain users in
-# mid-2026; this comment is the source of truth.)
-PLATFORM_SHARE = 0.05
+# Platform revenue share is read from settings so ops can change it
+# without a deploy. Default is set in config.py
+# (platform_ad_revenue_percent, default 0.15 = 15% platform, 85% user).
+PLATFORM_SHARE = settings.platform_ad_revenue_percent
 USER_SHARE = 1.0 - PLATFORM_SHARE
 
 # 10 points = ₦1 (NGN). All point math goes through this constant so

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { fetchTaskDetail, startTask } from '@/src/features/tasks/api';
+import { usePlatformConfig } from '@/src/shared/hooks/use-platform-config';
 import { SkeletonDetailPage } from '@/components/skeletons';
 
 export default function TaskDetailScreen() {
@@ -18,6 +19,9 @@ export default function TaskDetailScreen() {
     queryFn: () => fetchTaskDetail(Number(id)),
     enabled: !!id,
   });
+
+  const { data: platformConfig } = usePlatformConfig();
+  const taskPlatformFeePercent = Math.round((platformConfig?.task_revenue_platform_percent ?? 0.30) * 100);
 
   const startTaskMutation = useMutation({
     mutationFn: () => startTask(Number(id)),
@@ -61,7 +65,7 @@ export default function TaskDetailScreen() {
     );
   }
 
-  const netReward = Math.floor(task.reward_amount * 0.85);
+  const netReward = Math.floor(task.reward_amount * (task.reward_multiplier ?? 1) * (1 - (platformConfig?.task_revenue_platform_percent ?? 0.30)));
   const remaining = task.max_completions - task.completed_count;
   const expiresDate = new Date(task.expires_at);
 
@@ -87,7 +91,7 @@ export default function TaskDetailScreen() {
       <View style={styles.rewardCard}>
         <Text style={styles.rewardLabel}>{t('task_detail.you_earn')}</Text>
         <Text style={styles.rewardAmount}>₦{(netReward / 100).toFixed(2)}</Text>
-        <Text style={styles.rewardNote}>{t('task_detail.after_fee')}</Text>
+        <Text style={styles.rewardNote}>{t('task_detail.after_fee', { percent: taskPlatformFeePercent })}</Text>
       </View>
 
       <View style={styles.section}>

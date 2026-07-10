@@ -21,17 +21,15 @@ import Animated, {
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-// `<G>` from react-native-svg doesn't accept React Native `style`, so we
-// drive its `transform` prop with a string and `useAnimatedProps`.
+// Simplified AnimatedG
 const AnimatedG = Animated.createAnimatedComponent(G);
 
+// Reduced to 2 sparks (from 4)
 const SPARKS: {
   cx: number; cy: number; path: string; delay: number;
 }[] = [
   { cx: 80,  cy: 80,  path: 'M 0 0 L 2 6 L 8 8 L 2 10 L 0 16 L -2 10 L -8 8 L -2 6 Z', delay: 0 },
-  { cx: 240, cy: 90,  path: 'M 0 0 L 2 6 L 8 8 L 2 10 L 0 16 L -2 10 L -8 8 L -2 6 Z', delay: 600 },
-  { cx: 70,  cy: 180, path: 'M 0 0 L 2 4 L 6 6 L 2 8 L 0 12 L -2 8 L -6 6 L -2 4 Z', delay: 1200 },
-  { cx: 250, cy: 170, path: 'M 0 0 L 2 4 L 6 6 L 2 8 L 0 12 L -2 8 L -6 6 L -2 4 Z', delay: 1800 },
+  { cx: 240, cy: 90,  path: 'M 0 0 L 2 6 L 8 8 L 2 10 L 0 16 L -2 10 L -8 8 L -2 6 Z', delay: 1200 },
 ];
 
 function CrownSpark({ cx, cy, path, delay }: typeof SPARKS[number]) {
@@ -51,9 +49,9 @@ function CrownSpark({ cx, cy, path, delay }: typeof SPARKS[number]) {
     return () => cancelAnimation(t);
   }, [t, delay]);
 
-  // Scale + rotate around the spark's own center (cx, cy).
+  // Simplified spark animation
   const animProps = useAnimatedProps(() => ({
-    transform: `translate(${cx} ${cy}) scale(${0.4 + t.value * 0.8}) rotate(${t.value * 45}) translate(${-cx} ${-cy})`,
+    transform: `scale(${0.4 + t.value * 0.8}) rotate(${t.value * 45})`,
     opacity: t.value,
   }));
 
@@ -102,9 +100,9 @@ export function PremiumHero() {
     };
   }, [crown, aura, badge, eyebrow]);
 
-  // Crown: bob up/down + slight rotation around its own center (160, 130).
+  // Simplified crown animation
   const crownProps = useAnimatedProps(() => ({
-    transform: `translate(160 130) rotate(${-crown.value * 2}) translate(0 ${-crown.value * 6}) translate(-160 -130)`,
+    transform: `translate(0 ${-crown.value * 6}) rotate(${-crown.value * 2})`,
   }));
 
   // Aura: scale + opacity around (160, 140).

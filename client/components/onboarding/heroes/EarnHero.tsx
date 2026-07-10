@@ -30,11 +30,10 @@ import Animated, {
 import { PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
 
-// `<G>` from react-native-svg doesn't accept React Native `style`, so we
-// drive its `transform` prop with a string and `useAnimatedProps`.
+// Simplified AnimatedG using createAnimatedComponent
 const AnimatedG = Animated.createAnimatedComponent(G);
 
-// Coin positions in the 320x320 artboard, in falling-order.
+// Reduced to 3 coins (from 5) to minimize concurrent animations
 const COINS: {
   cx: number;
   startCy: number;
@@ -44,34 +43,54 @@ const COINS: {
   ring?: boolean;
 }[] = [
   { cx: 84,  startCy: 60, r: 14, delay: 0,   value: '+5',  ring: true },
-  { cx: 124, startCy: 40, r: 11, delay: 500, value: '+1' },
-  { cx: 160, startCy: 20, r: 16, delay: 1000, value: '+10', ring: true },
-  { cx: 196, startCy: 40, r: 11, delay: 1600, value: '+1' },
-  { cx: 236, startCy: 60, r: 14, delay: 2100, value: '+5',  ring: true },
+  { cx: 160, startCy: 20, r: 16, delay: 1200, value: '+10', ring: true },
+  { cx: 236, startCy: 60, r: 14, delay: 2400, value: '+5',  ring: true },
 ];
 
 function Coin({ cx, startCy, r, delay, value, ring }: typeof COINS[number]) {
-  const t = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const opacity = useSharedValue(0);
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
 
   useEffect(() => {
-    t.value = 0;
-    t.value = withDelay(
+    translateY.value = 0;
+    opacity.value = 0;
+    
+    // Simplified animation: just falling, no rotation
+    translateY.value = withDelay(
       delay,
       withRepeat(
-        withTiming(1, { duration: 3200, easing: Easing.in(Easing.cubic) }),
+        withTiming(200, { duration: 3200, easing: Easing.in(Easing.cubic) }),
         -1,
         false,
       ),
     );
-    return () => cancelAnimation(t);
-  }, [t, delay]);
+    
+    opacity.value = withDelay(
+      delay,
+      withRepeat(
+        withTiming(1, { duration: 3200, easing: Easing.linear }),
+        -1,
+        false,
+      ),
+    );
+    
+    return () => {
+      cancelAnimation(translateY);
+      cancelAnimation(opacity);
+    };
+  }, [translateY, opacity, delay]);
 
-  const animProps = useAnimatedProps(() => ({
-    transform: `translate(0, ${t.value * 200}) rotate(${t.value * 540} ${cx} ${startCy})`,
-    opacity: t.value < 0.1 ? t.value * 10 : t.value > 0.85 ? (1 - t.value) * 6.5 : 1,
-  }));
+  // Simple transform string - just translate, no rotation
+  const animProps = useAnimatedProps(() => {
+    const t = translateY.value / 200; // normalize to 0-1
+    const op = t < 0.1 ? t * 10 : t > 0.85 ? (1 - t) * 6.5 : 1;
+    return {
+      transform: `translate(0 ${translateY.value})`,
+      opacity: op,
+    };
+  });
 
   return (
     <AnimatedG animatedProps={animProps}>
@@ -143,16 +162,17 @@ export function EarnHero() {
     };
   }, [book, leftPage, rightPage, glow]);
 
+  // Simplified book animations - removed nested translations
   const bookAnimProps = useAnimatedProps(() => ({
-    transform: `translate(160, 205) scale(${1 + book.value * 0.025}) translate(-160, -205)`,
+    transform: `scale(${1 + book.value * 0.025})`,
   }));
 
   const leftPageAnimProps = useAnimatedProps(() => ({
-    transform: `translate(160, 205) skewY(${-leftPage.value * 2}) translate(-160, -205)`,
+    transform: `skewY(${-leftPage.value * 2})`,
   }));
 
   const rightPageAnimProps = useAnimatedProps(() => ({
-    transform: `translate(160, 205) skewY(${rightPage.value * 2}) translate(-160, -205)`,
+    transform: `skewY(${rightPage.value * 2})`,
   }));
 
   const glowStyle = useAnimatedStyle(() => ({
@@ -186,9 +206,9 @@ export function EarnHero() {
         {/* book base shadow */}
         <Rect x={58} y={148} width={204} height={120} rx={10} fill="#0B5C4B" />
 
-        <AnimatedG animatedProps={bookAnimProps}>
+        <AnimatedG animatedProps={bookAnimProps} origin="160, 205">
           {/* Left page */}
-          <AnimatedG animatedProps={leftPageAnimProps}>
+          <AnimatedG animatedProps={leftPageAnimProps} origin="160, 205">
             <Path
               d="M60 152 L160 158 L160 258 L60 252 Z"
               fill={tokens.paper}
@@ -202,7 +222,7 @@ export function EarnHero() {
           </AnimatedG>
 
           {/* Right page */}
-          <AnimatedG animatedProps={rightPageAnimProps}>
+          <AnimatedG animatedProps={rightPageAnimProps} origin="160, 205">
             <Path
               d="M160 158 L260 152 L260 252 L160 258 Z"
               fill={tokens.card}

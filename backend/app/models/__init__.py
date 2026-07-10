@@ -664,6 +664,7 @@ class Task(Base):
     proof_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     
     reward_amount: Mapped[int] = mapped_column(BigInteger)
+    reward_multiplier: Mapped[float] = mapped_column(Float, default=1.0)
     max_completions: Mapped[int] = mapped_column(Integer)
     completed_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
     approved_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -671,7 +672,7 @@ class Task(Base):
     pending_count: Mapped[int] = mapped_column(Integer, default=0)
     
     total_escrowed: Mapped[int] = mapped_column(BigInteger)
-    platform_fee_percent: Mapped[int] = mapped_column(Integer, default=15)
+    platform_fee_percent: Mapped[int] = mapped_column(Integer, default=30)
     platform_fee_amount: Mapped[int] = mapped_column(BigInteger)
     
     target_countries: Mapped[str | None] = mapped_column(Text, nullable=True)
