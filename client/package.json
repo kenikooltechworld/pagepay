@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start --clear",
+    "start:dev": "powershell -ExecutionPolicy Bypass -File ./scripts/start-dev-with-ip.ps1",
     "reset-project": "node ./scripts/reset-project.js",
     "dev:api-url": "powershell -ExecutionPolicy Bypass -File ./scripts/set-dev-api-url.ps1",
     "dev:ip": "powershell -ExecutionPolicy Bypass -File ./scripts/print-dev-ip.ps1",
