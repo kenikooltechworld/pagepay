@@ -13,7 +13,6 @@ import pcm from './locales/pcm.json';
 i18n
   .use(initReactI18next)
   .init({
-    compatibilityJSON: 'v3',
     resources: {
       en: { translation: en },
       yo: { translation: yo },

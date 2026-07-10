@@ -104,7 +104,7 @@ function FloatingToken({ index, left, top, delayMs }: { index: number; left: str
     <Animated.View
       style={[
         styles.token,
-        { left, top },
+        { left: left as any, top: top as any },
         animatedStyle,
       ]}
     >
@@ -159,7 +159,7 @@ function Sparkle({ left, top, delayMs }: { left: string; top: string; delayMs: n
     <Animated.View
       style={[
         styles.sparkle,
-        { left, top, backgroundColor: tokens.mint },
+        { left: left as any, top: top as any, backgroundColor: tokens.mint },
         animatedStyle,
       ]}
     />

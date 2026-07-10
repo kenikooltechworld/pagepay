@@ -3,15 +3,33 @@
  * Handles permission requests, token registration, and notification listening.
  * Phase 3 feature.
  */
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { getApp } from '@react-native-firebase/app';
-import { getMessaging, onMessage, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
+import {
+  getMessaging,
+  onMessage,
+  setBackgroundMessageHandler,
+  requestPermission,
+  AuthorizationStatus,
+} from '@react-native-firebase/messaging';
 import { apiFetch } from '@/src/shared/api/client';
 
-// Get Firebase app and messaging instances using modular API
-const app = getApp();
-const messaging = getMessaging(app);
+let messaging: ReturnType<typeof getMessaging> | null = null;
+let initError: Error | null = null;
+
+async function getFirebaseMessaging() {
+  if (!messaging && !initError) {
+    try {
+      const app = getApp();
+      messaging = getMessaging(app);
+    } catch (error) {
+      console.error('[notifications] Firebase init failed:', error);
+      initError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  return messaging;
+}
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -19,6 +37,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -45,10 +65,15 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
     // For iOS, also request Firebase messaging authorization
     if (Platform.OS === 'ios') {
-      const authStatus = await messaging().requestPermission();
+      const messagingInstance = await getFirebaseMessaging();
+      if (!messagingInstance) {
+        console.log('Firebase messaging unavailable, skipping iOS auth request');
+        return false;
+      }
+      const authStatus = await requestPermission(messagingInstance);
       const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+        authStatus === AuthorizationStatus.AUTHORIZED ||
+        authStatus === AuthorizationStatus.PROVISIONAL;
 
       if (!enabled) {
         console.log('iOS Firebase messaging authorization denied');
@@ -69,15 +94,14 @@ export async function requestNotificationPermissions(): Promise<boolean> {
  */
 export async function getFCMToken(): Promise<string | null> {
   try {
-    // Request permissions first
     const hasPermission = await requestNotificationPermissions();
     if (!hasPermission) {
       return null;
     }
-
-    // Get FCM token using modular API
-    const { getToken } = await import('@react-native-firebase/messaging');
-    const token = await getToken(messaging);
+    const messagingInstance = await getFirebaseMessaging();
+    if (!messagingInstance) return null;
+    const { getToken: getFCMTokenFromModule } = await import('@react-native-firebase/messaging');
+    const token = await getFCMTokenFromModule(messagingInstance);
     
     if (!token) {
       console.warn('No FCM token available');
@@ -139,8 +163,12 @@ export async function registerFCMToken(): Promise<boolean> {
  */
 export async function deregisterFCMToken(): Promise<boolean> {
   try {
+    const messagingInstance = await getFirebaseMessaging();
+    if (!messagingInstance) {
+      return true;
+    }
     const { getToken } = await import('@react-native-firebase/messaging');
-    const token = await getToken(messaging);
+    const token = await getToken(messagingInstance);
     
     if (!token) {
       return true; // No token to deregister
@@ -168,29 +196,29 @@ export async function deregisterFCMToken(): Promise<boolean> {
  * Should be called once at app startup (e.g., in _layout.tsx).
  */
 export function setupNotificationListeners() {
-  // Note: Token refresh is handled automatically by Firebase in v25+
-  // The SDK automatically refreshes tokens and you just need to call getToken() 
-  // whenever you need the current token. No listener needed.
-  
-  // Listen for foreground messages using modular API
-  const unsubscribeForeground = onMessage(messaging, async (remoteMessage) => {
-    console.log('Foreground notification received:', remoteMessage);
-    
-    // Display notification using expo-notifications
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: remoteMessage.notification?.title || 'PagePay',
-        body: remoteMessage.notification?.body || '',
-        data: remoteMessage.data || {},
-        sound: 'default',
-      },
-      trigger: null, // Show immediately
-    });
-  });
+  let unsubscribeForeground: (() => void) | undefined;
+  getFirebaseMessaging().then((messagingInstance) => {
+    if (!messagingInstance) return;
 
-  // Listen for background/quit state messages using modular API
-  setBackgroundMessageHandler(messaging, async (remoteMessage) => {
-    console.log('Background notification received:', remoteMessage);
+    unsubscribeForeground = onMessage(messagingInstance, async (remoteMessage) => {
+      console.log('Foreground notification received:', remoteMessage);
+      
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: remoteMessage.notification?.title || 'PagePay',
+          body: remoteMessage.notification?.body || '',
+          data: remoteMessage.data || {},
+          sound: 'default',
+        },
+        trigger: null,
+      });
+    });
+
+    setBackgroundMessageHandler(messagingInstance, async (remoteMessage) => {
+      console.log('Background notification received:', remoteMessage);
+    });
+  }).catch((error) => {
+    console.error('[notifications] setupNotificationListeners failed:', error);
   });
 
   // Listen for notification taps (when user opens app from notification)
@@ -219,7 +247,9 @@ export function setupNotificationListeners() {
 
   // Return cleanup function
   return () => {
-    unsubscribeForeground();
+    if (unsubscribeForeground) {
+      unsubscribeForeground();
+    }
     notificationListener.remove();
     responseListener.remove();
   };
@@ -244,7 +274,7 @@ export async function areNotificationsEnabled(): Promise<boolean> {
  */
 export async function openNotificationSettings(): Promise<void> {
   try {
-    await Notifications.openSettingsAsync();
+    await Linking.openSettings();
   } catch (error) {
     console.error('Error opening notification settings:', error);
   }

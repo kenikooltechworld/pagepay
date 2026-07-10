@@ -6,6 +6,7 @@ const API_URL =
   Constants.expoConfig?.extra?.apiUrl ||
   process.env.EXPO_PUBLIC_API_URL ||
   'http://localhost:8000';
+export { API_URL };
 
 /** Global callback the layout registers so apiFetch can redirect
  *  to the login screen when the server rejects a token (401).

@@ -24,7 +24,7 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "@tanstack/react-query": "^5.101.1",
-    "babel-preset-expo": "^54.0.10",
+    "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.34",
     "expo-blur": "~15.0.8",
     "expo-build-properties": "~1.0.10",

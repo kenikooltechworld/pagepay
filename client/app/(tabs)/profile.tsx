@@ -649,7 +649,8 @@ function ReferralSection({ tokens }: { tokens: (typeof PagePay)['light'] | (type
 
   // Socket.IO real-time updates
   useEffect(() => {
-    const { data: user } = queryClient.getQueryData(['me']) as { data: { id: number } } | undefined;
+    const queryData = queryClient.getQueryData(['me']) as { data: { id: number } } | undefined;
+    const user = queryData?.data;
     if (!user?.id) return;
 
     // Import socket functions dynamically
