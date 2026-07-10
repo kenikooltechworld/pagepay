@@ -30,7 +30,6 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { useTranslation } from 'react-i18next';
 
 import { Fonts, PagePay } from '@/constants/theme';
 import { useEffectiveScheme } from '@/src/shared/hooks/use-effective-scheme';
@@ -104,7 +103,6 @@ export function OnboardingScreen({
   children,
   style,
 }: OnboardingScreenProps) {
-  const { t } = useTranslation();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
 
@@ -188,10 +186,10 @@ export function OnboardingScreen({
               onPress={onSkip}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel={t('onboarding.skip')}
+              accessibilityLabel="Skip"
             >
               <Text style={[styles.skip, { color: tokens.inkMuted }]}>
-                {t('onboarding.skip')}
+                Skip
               </Text>
             </Pressable>
           )}
@@ -231,7 +229,7 @@ export function OnboardingScreen({
               onPressIn={handlePress}
               onPress={handlePrimary}
               accessibilityRole="button"
-              accessibilityLabel={isLast ? t('onboarding.get_started') : t('onboarding.next')}
+              accessibilityLabel={isLast ? 'Get Started' : 'Next'}
             >
               <View
                 style={[
@@ -245,7 +243,7 @@ export function OnboardingScreen({
                     { color: tokens.mintText, fontFamily: Fonts.display },
                   ]}
                 >
-                  {isLast ? t('onboarding.get_started') : t('onboarding.next')}
+                  {isLast ? 'Get Started' : 'Next'}
                 </Text>
               </View>
             </Pressable>
