@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, AppState, AppStateStatus, Platform, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '@/src/shared/api/client';
 import { RewardedAd } from '@/components/ads/RewardedAd';
 import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
@@ -84,6 +85,7 @@ export default function ReaderScreen() {
   // schemes so reading doesn't feel like a separate app.
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  const { t } = useTranslation();
   const [content, setContent] = useState<ContentDetail | null>(null);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
@@ -494,7 +496,7 @@ export default function ReaderScreen() {
   if (!content) {
     return (
       <View style={[styles.center, { backgroundColor: tokens.paper }]}>
-        <Text style={{ color: tokens.ink }}>Content not found</Text>
+        <Text style={{ color: tokens.ink }}>{t('reader.content_not_found')}</Text>
       </View>
     );
   }
@@ -504,14 +506,14 @@ export default function ReaderScreen() {
       <View style={[styles.header, { borderBottomColor: tokens.border }]}>
         <Text style={[styles.title, { color: tokens.ink }]}>{content.title}</Text>
         <Text style={[styles.meta, { color: tokens.inkMuted }]}>
-          {content.author || 'Unknown'} • {content.estimated_read_minutes} min read
+          {content.author || t('reader.unknown_author')} • {t('reader.min_read', { minutes: content.estimated_read_minutes })}
         </Text>
         <View style={styles.timerRow}>
           <Text style={[styles.status, { color: tokens.mint }, paused && { color: tokens.signal }]}>
-            {sessionId ? (paused ? '⏸ Paused' : '✅ Active') : '⏳ Waiting'}
+            {sessionId ? (paused ? t('reader.paused') : t('reader.active')) : t('reader.waiting')}
           </Text>
           <Text style={[styles.timerText, { color: tokens.ink }]}>{formatTime(elapsedSeconds)}</Text>
-          <Text style={[styles.pointsText, { color: tokens.mint }]}>+{potentialPoints} pts</Text>
+          <Text style={[styles.pointsText, { color: tokens.mint }]}>{t('reader.points_suffix', { points: potentialPoints })}</Text>
         </View>
       </View>
 
@@ -523,7 +525,7 @@ export default function ReaderScreen() {
       >
         {/* Split content and inject native ads every 400 characters */}
         {(() => {
-          const bodyText = content.body_text || 'No content available.';
+          const bodyText = content.body_text || t('reader.no_content');
           const adInterval = 400; // Insert ad every 400 characters
           const chunks: Array<{ type: 'text' | 'ad'; content: string; key: string }> = [];
           
@@ -592,13 +594,13 @@ export default function ReaderScreen() {
           {elapsedSeconds >= 60 ? (
             <>
               <Text style={[styles.endLabel, { color: tokens.inkMuted }]}>
-                1 minute reached — ready when you are
+                {t('reader.end_label_reached')}
               </Text>
               <TouchableOpacity
                 onPress={onFinishTap}
                 disabled={!sessionId || finishFiredRef.current}
                 accessibilityRole="button"
-                accessibilityLabel="Finish this slice and claim points"
+                accessibilityLabel={t('reader.finish_claim')}
                 activeOpacity={0.85}
                 style={[
                   styles.finishBtn,
@@ -609,13 +611,13 @@ export default function ReaderScreen() {
                 ]}
               >
                 <Text style={styles.finishBtnText}>
-                  {finishFiredRef.current ? 'Finishing…' : 'Finish & claim'}
+                  {finishFiredRef.current ? t('reader.finishing') : t('reader.finish_claim')}
                 </Text>
               </TouchableOpacity>
             </>
           ) : (
             <Text style={[styles.endLabel, { color: tokens.inkMuted }]}>
-              Keep reading — finish unlocks at 1 min
+              {t('reader.end_label_reading')}
             </Text>
           )}
         </View>
@@ -627,12 +629,12 @@ export default function ReaderScreen() {
         adUnit={adUnit}
         adUnitName={Platform.OS === 'android' ? 'rewarded_android' : 'rewarded_ios'}
         userId={user?.id ?? 0}
-        title="Watch to start earning"
-        eyebrow="Sponsored"
-        body="Watch this ad to unlock the reading timer. You'll earn points based on how long you read."
-        claimLabel="Watch ad & start"
+        title={t('reader.ad_pre_title')}
+        eyebrow={t('reader.ad_pre_eyebrow')}
+        body={t('reader.ad_pre_body')}
+        claimLabel={t('reader.ad_pre_claim')}
         allowSkip
-        skipLabel="Skip & go home"
+        skipLabel={t('reader.ad_pre_skip')}
         onClaimed={onPreReadClaimed}
         onSkipped={onPreReadSkipped}
         onClose={() => {}}
@@ -650,12 +652,12 @@ export default function ReaderScreen() {
         adUnit={adUnit}
         adUnitName={Platform.OS === 'android' ? 'rewarded_android' : 'rewarded_ios'}
         userId={user?.id ?? 0}
-        title="One more ad to wrap up"
-        eyebrow="Sponsored"
-        body="Watch this ad to lock in your points for this read. Skip forfeits the reward but still saves your progress."
-        claimLabel="Watch ad & finish"
+        title={t('reader.ad_post_title')}
+        eyebrow={t('reader.ad_post_eyebrow')}
+        body={t('reader.ad_post_body')}
+        claimLabel={t('reader.ad_post_claim')}
         allowSkip
-        skipLabel="Skip & forfeit"
+        skipLabel={t('reader.ad_post_skip')}
         onClaimed={onPostReadAdClaimed}
         onSkipped={onPostReadAdSkipped}
         onClose={() => {}}

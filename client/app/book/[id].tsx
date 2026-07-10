@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 
 import { apiFetch } from '@/src/shared/api/client';
 import { NativeAdBanner } from '@/components/ads/NativeAdBanner';
@@ -67,6 +68,7 @@ export default function BookDetailScreen() {
   const router = useRouter();
   const scheme = useEffectiveScheme();
   const tokens = PagePay[scheme];
+  const { t } = useTranslation();
 
   const workId = Number(id);
 
@@ -159,7 +161,7 @@ export default function BookDetailScreen() {
         <TouchableOpacity
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t('book_detail.go_back')}
           hitSlop={8}
           style={styles.backBtn}
         >
@@ -169,7 +171,7 @@ export default function BookDetailScreen() {
           style={[styles.headerTitle, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
           numberOfLines={1}
         >
-          {bookQuery.data?.title ?? 'Book'}
+          {bookQuery.data?.title ?? t('book_detail.book_title')}
         </Text>
         <View style={styles.headerRight} />
       </View>
@@ -180,13 +182,13 @@ export default function BookDetailScreen() {
         <View style={[styles.stateBlock, { borderColor: tokens.signal }]}>
           <Ionicons name="cloud-offline-outline" size={20} color={tokens.signal} />
           <Text style={[styles.stateText, { color: tokens.signal }]}>
-            Couldn&apos;t load this book.
+            {t('book_detail.load_error')}
           </Text>
           <TouchableOpacity
             onPress={onRefreshAll}
             style={[styles.retry, { borderColor: tokens.signal }]}
           >
-            <Text style={[styles.retryText, { color: tokens.signal }]}>Try again</Text>
+            <Text style={[styles.retryText, { color: tokens.signal }]}>{t('book_detail.try_again')}</Text>
           </TouchableOpacity>
         </View>
       ) : bookQuery.data ? (
@@ -200,7 +202,7 @@ export default function BookDetailScreen() {
             <Text
               style={[styles.category, { color: tokens.mint, fontFamily: 'SpaceGrotesk_500Medium' }]}
             >
-              {(bookQuery.data.category || 'Reading').toUpperCase()}
+              {t('book_detail.reading_category')}
             </Text>
             <Text
               style={[styles.title, { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' }]}
@@ -216,14 +218,13 @@ export default function BookDetailScreen() {
               <View style={[styles.metaPill, { borderColor: tokens.border }]}>
                 <Ionicons name="time-outline" size={14} color={tokens.inkMuted} />
                 <Text style={[styles.metaText, { color: tokens.inkMuted }]}>
-                  {bookQuery.data.estimated_read_minutes} min total
+                  {t('book_detail.min_total', { minutes: bookQuery.data.estimated_read_minutes })}
                 </Text>
               </View>
               <View style={[styles.metaPill, { borderColor: tokens.border }]}>
                 <Ionicons name="layers-outline" size={14} color={tokens.inkMuted} />
                 <Text style={[styles.metaText, { color: tokens.inkMuted }]}>
-                  {bookQuery.data.slices.length} session
-                  {bookQuery.data.slices.length === 1 ? '' : 's'}
+                  {t(`book_detail.session_${bookQuery.data.slices.length === 1 ? 'one' : 'other'}`, { count: bookQuery.data.slices.length })}
                 </Text>
               </View>
             </View>
@@ -237,10 +238,10 @@ export default function BookDetailScreen() {
                 { color: tokens.ink, fontFamily: 'SpaceGrotesk_700Bold' },
               ]}
             >
-              Sessions
+              {t('book_detail.sessions_title')}
             </Text>
             <Text style={[styles.listHint, { color: tokens.inkMuted }]}>
-              Read 1 minute → watch ad → unlock the next
+              {t('book_detail.sessions_hint')}
             </Text>
           </View>
 
@@ -265,8 +266,12 @@ export default function BookDetailScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={
                     unlocked
-                      ? `Session ${slice.read_order} of ${slice.total_slices}, ${slice.estimated_read_minutes} minute${slice.estimated_read_minutes === 1 ? '' : 's'}`
-                      : `Locked session ${slice.read_order}. Finish the previous session to unlock.`
+                      ? t(`book_detail.session_label${slice.estimated_read_minutes === 1 ? '' : '_plural'}`, {
+                          order: slice.read_order,
+                          total: slice.total_slices,
+                          minutes: slice.estimated_read_minutes
+                        })
+                      : t('book_detail.locked_session', { order: slice.read_order })
                   }
                   style={[
                     styles.sliceCard,
@@ -315,10 +320,10 @@ export default function BookDetailScreen() {
                         ]}
                       >
                         {unlocked
-                          ? `${slice.estimated_read_minutes} min read · Session ${slice.read_order} of ${slice.total_slices}`
+                          ? `${t('book_detail.min_read', { minutes: slice.estimated_read_minutes })} · ${t('book_detail.session_of', { order: slice.read_order, total: slice.total_slices })}`
                           : isCurrent
-                          ? 'Continue here'
-                          : `Unlocks after session ${Math.max(1, slice.read_order - 1)}`}
+                          ? t('book_detail.continue_here')
+                          : t('book_detail.unlocks_after', { order: Math.max(1, slice.read_order - 1) })}
                       </Text>
                     </View>
 

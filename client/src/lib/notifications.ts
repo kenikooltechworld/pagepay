@@ -5,8 +5,13 @@
  */
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import messaging from '@react-native-firebase/messaging';
+import { getApp } from '@react-native-firebase/app';
+import { getMessaging, onMessage, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
 import { apiFetch } from '@/src/shared/api/client';
+
+// Get Firebase app and messaging instances using modular API
+const app = getApp();
+const messaging = getMessaging(app);
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -70,8 +75,9 @@ export async function getFCMToken(): Promise<string | null> {
       return null;
     }
 
-    // Get FCM token
-    const token = await messaging().getToken();
+    // Get FCM token using modular API
+    const { getToken } = await import('@react-native-firebase/messaging');
+    const token = await getToken(messaging);
     
     if (!token) {
       console.warn('No FCM token available');
@@ -133,7 +139,8 @@ export async function registerFCMToken(): Promise<boolean> {
  */
 export async function deregisterFCMToken(): Promise<boolean> {
   try {
-    const token = await messaging().getToken();
+    const { getToken } = await import('@react-native-firebase/messaging');
+    const token = await getToken(messaging);
     
     if (!token) {
       return true; // No token to deregister
@@ -161,14 +168,12 @@ export async function deregisterFCMToken(): Promise<boolean> {
  * Should be called once at app startup (e.g., in _layout.tsx).
  */
 export function setupNotificationListeners() {
-  // Listen for token refresh
-  const unsubscribeTokenRefresh = messaging().onTokenRefresh(async (newToken) => {
-    console.log('FCM token refreshed:', newToken);
-    await registerFCMToken();
-  });
-
-  // Listen for foreground messages
-  const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
+  // Note: Token refresh is handled automatically by Firebase in v25+
+  // The SDK automatically refreshes tokens and you just need to call getToken() 
+  // whenever you need the current token. No listener needed.
+  
+  // Listen for foreground messages using modular API
+  const unsubscribeForeground = onMessage(messaging, async (remoteMessage) => {
     console.log('Foreground notification received:', remoteMessage);
     
     // Display notification using expo-notifications
@@ -183,8 +188,8 @@ export function setupNotificationListeners() {
     });
   });
 
-  // Listen for background/quit state messages (already handled by FCM)
-  messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+  // Listen for background/quit state messages using modular API
+  setBackgroundMessageHandler(messaging, async (remoteMessage) => {
     console.log('Background notification received:', remoteMessage);
   });
 
@@ -214,7 +219,6 @@ export function setupNotificationListeners() {
 
   // Return cleanup function
   return () => {
-    unsubscribeTokenRefresh();
     unsubscribeForeground();
     notificationListener.remove();
     responseListener.remove();

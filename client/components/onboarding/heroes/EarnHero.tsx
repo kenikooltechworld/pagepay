@@ -148,11 +148,11 @@ export function EarnHero() {
   }));
 
   const leftPageAnimProps = useAnimatedProps(() => ({
-    transform: `translate(160, 205) rotateY(${-leftPage.value * 12}) translate(-160, -205)`,
+    transform: `translate(160, 205) skewY(${-leftPage.value * 2}) translate(-160, -205)`,
   }));
 
   const rightPageAnimProps = useAnimatedProps(() => ({
-    transform: `translate(160, 205) rotateY(${rightPage.value * 12}) translate(-160, -205)`,
+    transform: `translate(160, 205) skewY(${rightPage.value * 2}) translate(-160, -205)`,
   }));
 
   const glowStyle = useAnimatedStyle(() => ({
