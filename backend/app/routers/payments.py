@@ -51,6 +51,17 @@ async def get_paystack_payment_status(
     return await controller.get_payment_status(current_user, reference)
 
 
+@router.get("/paystack/verify/{reference}", response_model=PaystackVerifyResponse)
+async def verify_paystack_deposit(
+    reference: str,
+    current_user: User = Depends(get_current_user),
+    controller: PaymentController = Depends(get_controller),
+):
+    """Server-verify a Paystack reference and idempotently credit CB (webhook fallback)."""
+    logger.info("endpoint.payments.verify user=%s ref=%s", current_user.id, reference)
+    return await controller.verify_reference(current_user, reference)
+
+
 @router.post("/paystack/refund")
 async def refund_paystack_deposit(
     payload: PaystackRefundRequest,
