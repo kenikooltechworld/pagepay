@@ -37,14 +37,16 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {_secret()}", "Content-Type": "application/json"}
 
 
-async def initialize_transaction(*, email: str, amount_kobo: int, reference: str, callback_url: str | None = None, metadata: dict[str, Any] | None = None) -> InitResult:
+async def initialize_transaction(*, email: str, amount_kobo: int, reference: str, callback_url: str | None = None, metadata: dict[str, Any] | None = None, channels: list[str] | None = None) -> InitResult:
     url = f"{settings.paystack_base_url.rstrip('/')}/transaction/initialize"
     payload: dict[str, Any] = {"email": email, "amount": int(amount_kobo), "reference": reference, "currency": "NGN"}
     if callback_url:
         payload["callback_url"] = callback_url
     if metadata:
         payload["metadata"] = metadata
-    logger.info("paystack.initialize request reference=%s amount_kobo=%s email=%s", reference, amount_kobo, email)
+    if channels:
+        payload["channels"] = channels
+    logger.info("paystack.initialize request reference=%s amount_kobo=%s email=%s channels=%s", reference, amount_kobo, email, channels)
     try:
         async with httpx.AsyncClient(timeout=settings.paystack_http_timeout_seconds) as client:
             resp = await client.post(url, headers=_headers(), json=payload)

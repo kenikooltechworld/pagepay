@@ -25,9 +25,13 @@ async def init_paystack_deposit(
     current_user: User = Depends(get_current_user),
     controller: PaymentController = Depends(get_controller),
 ):
-    """Initialize a Paystack transaction to fund cashable CB (kobo)."""
-    logger.info("endpoint.payments.deposit user=%s amount_kobo=%s", current_user.id, payload.amount_kobo)
-    return await controller.init_wallet_deposit(current_user, payload.amount_kobo)
+    """Initialize a Paystack transaction to fund cashable CB. Send `amount_naira` (preferred) or `amount_kobo`."""
+    amount_kobo = payload.resolved_amount_kobo()
+    if amount_kobo <= 0:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Provide amount_naira or amount_kobo")
+    logger.info("endpoint.payments.deposit user=%s amount_naira=%s amount_kobo=%s", current_user.id, payload.amount_naira, amount_kobo)
+    return await controller.init_wallet_deposit(current_user, amount_kobo)
 
 
 @router.get("/paystack/verify/{reference}", response_model=PaystackVerifyResponse)

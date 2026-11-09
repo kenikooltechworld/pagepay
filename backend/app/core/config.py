@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     paystack_base_url: str = "https://api.paystack.co"
     paystack_http_timeout_seconds: float = 10.0
     paystack_callback_path: str = "/wallet"
+    # Minimum deposit in kobo (₦1=100 kobo). Enforced server-side. Keep >= Paystack channel minimums.
+    wallet_deposit_min_kobo: int = 10000  # default ₦100; override with WALLET_DEPOSIT_MIN_KOBO
 
     # --- Email (Resend) ---
     resend_api_key: str | None = None

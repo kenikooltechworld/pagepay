@@ -24,8 +24,9 @@ class PaymentController:
 
     async def init_wallet_deposit(self, current_user: User, amount_kobo: int) -> dict:
         logger.info("paystack.deposit.init start user=%s amount_kobo=%s", current_user.id, amount_kobo)
-        if amount_kobo < 100:
-            raise HTTPException(status_code=400, detail="Minimum deposit is 100 kobo (₦1)")
+        min_kobo = max(100, int(getattr(settings, "wallet_deposit_min_kobo", 10000) or 10000))
+        if amount_kobo < min_kobo:
+            raise HTTPException(status_code=400, detail=f"Minimum deposit is {min_kobo} kobo (₦{min_kobo / 100:g})")
         if not (settings.paystack_secret_key or "").strip():
             logger.error("paystack.deposit.init missing PAYSTACK_SECRET_KEY")
             raise HTTPException(status_code=503, detail="Payments not configured")
@@ -39,15 +40,15 @@ class PaymentController:
         try:
             result = await initialize_transaction(
                 email=current_user.email, amount_kobo=amount_kobo, reference=reference,
-                callback_url=callback_url, metadata=metadata,
+                callback_url=callback_url, metadata=metadata, channels=["card", "bank", "ussd", "bank_transfer"],
             )
         except PaystackError as exc:
             logger.exception("paystack.deposit.init provider error user=%s ref=%s: %s", current_user.id, reference, exc)
             raise HTTPException(status_code=502, detail="Payment provider unavailable")
 
         payment = Payment(
-            user_id=current_user.id, purpose="wallet_deposit_cb", amount_kobo=amount_kobo,
-            credit_amount_kobo=amount_kobo, provider="paystack", provider_tx_ref=reference,
+            user_id=current_user.id, purpose="wallet_deposit_cb", tier="wallet_deposit_cb", amount_kobo=amount_kobo,
+            credit_amount_kobo=amount_kobo, currency="NGN", provider="paystack", provider_tx_ref=reference,
             status="pending", webhook_confirmed=False, payment_metadata=metadata,
         )
         self.db.add(payment)

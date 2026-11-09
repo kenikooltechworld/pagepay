@@ -60,9 +60,13 @@ async def initiate_wallet_deposit(
     current_user: User = Depends(get_current_user),
     controller: PaymentController = Depends(get_payment_controller),
 ):
-    """Initialize Paystack CB (cashable) wallet deposit (pp_wallet_* reference)."""
-    logger.info("endpoint.wallet.deposit user=%s amount_kobo=%s", current_user.id, payload.amount_kobo)
-    return await controller.init_wallet_deposit(current_user, payload.amount_kobo)
+    """Initialize Paystack CB (cashable) wallet deposit. Send `amount_naira` (preferred, user-facing) or `amount_kobo`."""
+    amount_kobo = payload.resolved_amount_kobo()
+    if amount_kobo <= 0:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Provide amount_naira or amount_kobo")
+    logger.info("endpoint.wallet.deposit user=%s amount_naira=%s amount_kobo=%s", current_user.id, payload.amount_naira, amount_kobo)
+    return await controller.init_wallet_deposit(current_user, amount_kobo)
 
 
 @router.post("/deposit/webhook")

@@ -2,9 +2,22 @@
 
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
+
+
+from app.core.config import settings
+
 
 class PaystackDepositInitRequest(BaseModel):
-    amount_kobo: int = Field(..., ge=100, description="Deposit amount in kobo (min 100)")
+    amount_kobo: int | None = Field(None, ge=1, description="Deposit amount in kobo (₦1=100 kobo). Server enforces minimum.")
+    amount_naira: int | None = Field(None, ge=1, description="Deposit amount in Naira (converted to kobo). Prefer this for UI.")
+
+    def resolved_amount_kobo(self) -> int:
+        if self.amount_kobo is not None:
+            return int(self.amount_kobo)
+        if self.amount_naira is not None:
+            return int(self.amount_naira) * 100
+        return 0
 
 
 class PaystackDepositInitResponse(BaseModel):

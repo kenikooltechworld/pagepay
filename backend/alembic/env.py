@@ -11,7 +11,9 @@ from app.core.config import settings
 from app.core.database import Base
 
 # Import all models so their tables are registered on Base.metadata.
+from app.models import payment as _payment_models  # noqa: F401
 from app.models import user as _user_models  # noqa: F401
+from app.models import wallet as _wallet_models  # noqa: F401
 
 config = context.config
 
