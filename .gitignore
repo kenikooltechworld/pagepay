@@ -18,3 +18,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Firebase service account
+firebase-service-account.json
+app/backend/firebase-service-account.json

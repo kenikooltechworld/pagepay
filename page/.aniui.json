@@ -4,5 +4,172 @@
   "theme": "green",
   "style": "uniwind",
   "tsx": true,
-  "sdkGeneration": "v5"
+  "sdkGeneration": "v5",
+  "installed": {
+    "animate": {
+      "version": "0.8.0",
+      "hash": "9b194e57",
+      "addedAt": "2026-11-08T20:47:46.365Z"
+    },
+    "accordion": {
+      "version": "0.8.0",
+      "hash": "f36747fa",
+      "addedAt": "2026-11-08T17:45:37.203Z"
+    },
+    "theme-provider": {
+      "version": "0.8.0",
+      "hash": "4a14a670",
+      "addedAt": "2026-11-08T20:47:46.369Z"
+    },
+    "tab-bar": {
+      "version": "0.8.0",
+      "hash": "552d2ae3",
+      "addedAt": "2026-11-08T17:45:37.208Z"
+    },
+    "text": {
+      "version": "0.8.0",
+      "hash": "e1729b9b",
+      "addedAt": "2026-11-08T20:47:46.360Z"
+    },
+    "badge": {
+      "version": "0.8.0",
+      "hash": "3d0961be",
+      "addedAt": "2026-11-08T17:45:37.215Z"
+    },
+    "header": {
+      "version": "0.8.0",
+      "hash": "5989c242",
+      "addedAt": "2026-11-08T17:45:37.218Z"
+    },
+    "password-input": {
+      "version": "0.8.0",
+      "hash": "bba55d68",
+      "addedAt": "2026-11-08T23:17:13.780Z"
+    },
+    "input": {
+      "version": "0.8.0",
+      "hash": "58a24cd9",
+      "addedAt": "2026-11-08T20:47:46.367Z"
+    },
+    "form": {
+      "version": "0.8.0",
+      "hash": "a4905977",
+      "addedAt": "2026-11-08T23:17:13.796Z"
+    },
+    "label": {
+      "version": "0.8.0",
+      "hash": "1c32ae21",
+      "addedAt": "2026-11-08T23:17:13.757Z"
+    },
+    "banner": {
+      "version": "0.8.0",
+      "hash": "171f9034",
+      "addedAt": "2026-11-08T17:45:37.234Z"
+    },
+    "search-bar": {
+      "version": "0.8.0",
+      "hash": "6e5c0cc2",
+      "addedAt": "2026-11-08T17:45:37.237Z"
+    },
+    "fab": {
+      "version": "0.8.0",
+      "hash": "c0eb448a",
+      "addedAt": "2026-11-08T17:45:37.239Z"
+    },
+    "empty-state": {
+      "version": "0.8.0",
+      "hash": "2a265a86",
+      "addedAt": "2026-11-08T17:45:37.241Z"
+    },
+    "skeleton": {
+      "version": "0.8.0",
+      "hash": "4647bbd6",
+      "addedAt": "2026-11-08T20:47:46.363Z"
+    },
+    "slider": {
+      "version": "0.8.0",
+      "hash": "d9c3b812",
+      "addedAt": "2026-11-08T17:45:37.249Z"
+    },
+    "select": {
+      "version": "0.8.0",
+      "hash": "8a9729b7",
+      "addedAt": "2026-11-08T17:45:37.251Z"
+    },
+    "toggle": {
+      "version": "0.8.0",
+      "hash": "f576c283",
+      "addedAt": "2026-11-08T17:45:37.253Z"
+    },
+    "toast": {
+      "version": "0.8.0",
+      "hash": "8c5b31f6",
+      "addedAt": "2026-11-08T21:36:31.665Z"
+    },
+    "fold": {
+      "version": "0.8.0",
+      "hash": "3e2821d5",
+      "addedAt": "2026-11-08T21:36:31.667Z"
+    },
+    "dialog": {
+      "version": "0.8.0",
+      "hash": "19c97e8e",
+      "addedAt": "2026-11-08T17:45:37.260Z"
+    },
+    "textarea": {
+      "version": "0.8.0",
+      "hash": "edfe5eed",
+      "addedAt": "2026-11-08T17:45:37.265Z"
+    },
+    "tabs": {
+      "version": "0.8.0",
+      "hash": "63595405",
+      "addedAt": "2026-11-08T23:17:13.801Z"
+    },
+    "spinner": {
+      "version": "0.8.0",
+      "hash": "9c2aa542",
+      "addedAt": "2026-11-08T17:45:37.272Z"
+    },
+    "progress": {
+      "version": "0.8.0",
+      "hash": "c0ec12f4",
+      "addedAt": "2026-11-08T17:45:37.281Z"
+    },
+    "checkbox": {
+      "version": "0.8.0",
+      "hash": "9dc913d7",
+      "addedAt": "2026-11-08T23:17:13.747Z"
+    },
+    "switch": {
+      "version": "0.8.0",
+      "hash": "30f35432",
+      "addedAt": "2026-11-08T17:45:37.285Z"
+    },
+    "alert": {
+      "version": "0.8.0",
+      "hash": "5a0a8650",
+      "addedAt": "2026-11-08T17:45:37.287Z"
+    },
+    "avatar": {
+      "version": "0.8.0",
+      "hash": "e1e5042d",
+      "addedAt": "2026-11-08T17:45:37.289Z"
+    },
+    "separator": {
+      "version": "0.8.0",
+      "hash": "288090ab",
+      "addedAt": "2026-11-08T23:17:13.751Z"
+    },
+    "card": {
+      "version": "0.8.0",
+      "hash": "01af7b1d",
+      "addedAt": "2026-11-08T20:47:46.371Z"
+    },
+    "button": {
+      "version": "0.8.0",
+      "hash": "73e8c13a",
+      "addedAt": "2026-11-08T20:47:46.372Z"
+    }
+  }
 }

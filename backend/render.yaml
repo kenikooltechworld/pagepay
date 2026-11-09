@@ -1,0 +1,74 @@
+﻿services:
+  - type: web
+    name: pagepay-backend
+    runtime: docker
+    plan: free
+    # Build from the rebuilt backend (app/backend). Adjust rootDir if your Render repo root differs.
+    rootDir: app/backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      # --- Runtime / DB (Neon external; no Render-managed Postgres) ---
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false   # https://<this-service>.onrender.com
+      - key: FRONTEND_URL
+        sync: false
+      # --- Paystack (set in dashboard; webhook goes via paystack-router Worker pp_ route) ---
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_BASE_URL
+        value: https://api.paystack.co
+      # --- Auth / Google / Email ---
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      # --- Cloudflare R2 ---
+      - key: CLOUDFLARE_ACCESS_KEY
+        sync: false
+      - key: CLOUDFLARE_SECRET_ACCESS_KEY
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: CLOUDFLARE_S3_API_ENDPOINT
+        sync: false
+      - key: CLOUDFLARE_R2_PUBLIC_URL
+        sync: false
+      - key: CLOUDFLARE_BUCKET
+        sync: false
+      # --- Firebase (provide file/secret per your Render setup) ---
+      - key: FIREBASE_SERVICE_ACCOUNT_FILE
+        value: firebase-service-account.json
+      - key: FIREBASE_SERVICE_ACCOUNT_KEY
+        sync: false
+      # --- Wallet / bonuses / referrals ---
+      - key: SP_PER_NAIRA
+        value: "10"
+      - key: STUDY_UNLOCK_DEFAULT_POINTS
+        value: "50"
+      - key: WELCOME_BONUS_POINTS
+        value: "1000"
+      - key: REFERRAL_REFERRER_BONUS_SP
+        value: "100"
+      - key: REFERRAL_REFEREE_BONUS_SP
+        value: "100"
+      - key: WALLET_GRANT_SECRET
+        sync: false
+      - key: ENVIRONMENT
+        value: production

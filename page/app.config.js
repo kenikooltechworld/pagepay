@@ -86,9 +86,7 @@ module.exports = ({ config }) => {
       extra: {
         ...baseConfig.extra,
         // Dynamic environment-specific values
-        apiUrl:
-          process.env.EXPO_PUBLIC_API_URL ||
-          "https://pagepay-fff6.onrender.com",
+        apiUrl: process.env.EXPO_PUBLIC_API_URL || "",
         paystackPublicKey: process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
         eas: {
           "projectId": "b43a48ba-f084-472f-ac1c-3db5fa470326"

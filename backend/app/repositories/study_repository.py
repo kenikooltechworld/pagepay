@@ -1,0 +1,61 @@
+"""Data-access layer for study materials and assets."""
+
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.study import StudyAsset, StudyMaterial
+
+
+class StudyMaterialRepository:
+    """Repository for StudyMaterial persistence."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create(self, material: StudyMaterial) -> StudyMaterial:
+        self.db.add(material)
+        await self.db.commit()
+        await self.db.refresh(material)
+        return material
+
+    async def get_by_id(self, material_id: int, user_id: int) -> StudyMaterial | None:
+        result = await self.db.execute(
+            select(StudyMaterial).where(
+                StudyMaterial.id == material_id,
+                StudyMaterial.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_for_user(self, user_id: int) -> list[StudyMaterial]:
+        result = await self.db.execute(
+            select(StudyMaterial).where(StudyMaterial.user_id == user_id).order_by(StudyMaterial.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def delete(self, material: StudyMaterial) -> None:
+        await self.db.delete(material)
+        await self.db.commit()
+
+
+class StudyAssetRepository:
+    """Repository for StudyAsset persistence."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create(self, asset: StudyAsset) -> StudyAsset:
+        self.db.add(asset)
+        await self.db.commit()
+        await self.db.refresh(asset)
+        return asset
+
+    async def get_by_id(self, asset_id: int) -> StudyAsset | None:
+        result = await self.db.execute(select(StudyAsset).where(StudyAsset.id == asset_id))
+        return result.scalar_one_or_none()
+
+    async def list_for_material(self, material_id: int) -> list[StudyAsset]:
+        result = await self.db.execute(
+            select(StudyAsset).where(StudyAsset.material_id == material_id).order_by(StudyAsset.created_at.desc())
+        )
+        return list(result.scalars().all())

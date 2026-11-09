@@ -1,5 +1,5 @@
 # Start Expo dev server with your LAN IP for development builds
-# This script automatically detects your Wi-Fi IP and sets it for Metro bundler
+# Sets Metro bundler host and EXPO_PUBLIC_API_URL to the local Docker backend.
 
 Write-Host "Finding your Wi-Fi IP address..." -ForegroundColor Cyan
 
@@ -15,9 +15,12 @@ if (-not $ip) {
     exit 1
 }
 
+$env:REACT_NATIVE_PACKAGER_HOSTNAME = $ip
+$env:EXPO_PUBLIC_API_URL = "http://$($ip):8000"
+
 Write-Host "Found IP: $ip" -ForegroundColor Green
+Write-Host "EXPO_PUBLIC_API_URL: $env:EXPO_PUBLIC_API_URL" -ForegroundColor Green
 Write-Host "Starting Expo dev server..." -ForegroundColor Cyan
 Write-Host ""
 
-$env:REACT_NATIVE_PACKAGER_HOSTNAME = $ip
 npm start
