@@ -63,6 +63,11 @@ async def on_startup():
     logger.info("startup complete")
 
 
+@app.api_route("/", methods=["GET", "HEAD"])
+async def root():
+    return {"status": "ok", "service": "pagepay-api"}
+
+
 @app.get("/api/v1/health")
 async def health():
     return {"status": "ok"}

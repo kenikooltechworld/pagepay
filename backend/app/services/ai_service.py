@@ -38,12 +38,14 @@ def _extract_text(result: dict) -> str:
 async def call_ai(prompt: str, max_tokens: int = 4000) -> str:
     """Call Cloudflare Workers AI and return response text."""
     if not CLOUDFLARE_ACCOUNT_ID or not CLOUDFLARE_AI_API_KEY:
+        logger.error("ai.call misconfigured: missing CLOUDFLARE_ACCOUNT_ID/API_TOKEN")
         raise HTTPException(status_code=503, detail="AI service not configured")
 
     payload = {
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
     }
+    logger.info("ai.call start model=%s prompt_len=%s max_tokens=%s", CLOUDFLARE_MODEL, len(prompt or ""), max_tokens)
 
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -53,17 +55,19 @@ async def call_ai(prompt: str, max_tokens: int = 4000) -> str:
                 json=payload,
             )
             if resp.status_code != 200:
-                logger.error("Cloudflare AI failed: %s %s", resp.status_code, resp.text[:200])
+                logger.error("ai.call failed status=%s body=%s", resp.status_code, resp.text[:300])
                 raise HTTPException(status_code=502, detail="AI service unavailable")
             result = resp.json().get("result", {})
             text = _extract_text(result)
             if not text:
+                logger.error("ai.call empty response model=%s", CLOUDFLARE_MODEL)
                 raise HTTPException(status_code=502, detail="AI returned empty response")
+            logger.info("ai.call ok model=%s response_len=%s", CLOUDFLARE_MODEL, len(text))
             return text
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("AI call failed: %s", exc)
+        logger.exception("ai.call error model=%s: %s", CLOUDFLARE_MODEL, exc)
         raise HTTPException(status_code=502, detail=f"AI service error: {str(exc)[:100]}")
 
 

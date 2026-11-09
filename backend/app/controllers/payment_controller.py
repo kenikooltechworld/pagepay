@@ -111,7 +111,7 @@ class PaymentController:
     async def handle_webhook(self, request: Request) -> dict:
         raw = await request.body()
         sig = request.headers.get("X-Paystack-Signature") or request.headers.get("x-paystack-signature")
-        logger.info("paystack.webhook received bytes=%s sig_present=%s ct=%s", len(raw), bool(sig), request.headers.get("content-type"))
+        logger.info("paystack.webhook received bytes=%s sig_present=%s ct=%s x-forwarded-event=%s", len(raw), bool(sig), request.headers.get("content-type"), request.headers.get("x-forwarded-event"))
         if not verify_webhook_signature(raw, sig):
             logger.warning("paystack.webhook rejected: invalid signature")
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
@@ -124,7 +124,7 @@ class PaymentController:
         event_name = str(event.get("event") or "")
         data = event.get("data") or {}
         reference = str(data.get("reference") or "").strip()
-        logger.info("paystack.webhook event=%s reference=%s data_status=%s amount=%s", event_name, reference, data.get("status"), data.get("amount"))
+        logger.info("paystack.webhook event=%s reference=%s data_status=%s amount=%s channel=%s currency=%s", event_name, reference, data.get("status"), data.get("amount"), data.get("channel"), data.get("currency"))
 
         if event_name != "charge.success":
             logger.info("paystack.webhook ignored event=%s ref=%s", event_name, reference)
