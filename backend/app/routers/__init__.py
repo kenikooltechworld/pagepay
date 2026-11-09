@@ -1,3 +1,3 @@
-from app.routers import auth, notifications, pin, study, wallet
+from app.routers import auth, notifications, payments, payouts, pin, study, wallet
 
-__all__ = ["auth", "notifications", "pin", "study", "wallet"]
+__all__ = ["auth", "notifications", "payments", "payouts", "pin", "study", "wallet"]

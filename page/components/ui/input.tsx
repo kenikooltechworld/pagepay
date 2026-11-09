@@ -1,8 +1,8 @@
 import React from "react";
-import { View, TextInput, useColorScheme } from "react-native";
+import { View, TextInput } from "react-native";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
-import { useThemeColors } from "./theme-provider";
+import { useTheme, useThemeColors } from "./theme-provider";
 
 // Padding lives on the wrapping View, never on the raw TextInput — a TextInput
 // doesn't honor `px-*` reliably, so keeping padding on the View gives a
@@ -45,7 +45,8 @@ export const Input = React.forwardRef<
   { variant, size, className, leadingIcon, trailingIcon, style, ...props },
   ref
 ) {
-  const dark = useColorScheme() === "dark";
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === "dark";
   const colors = useThemeColors();
   const caret = colors.foreground;
   const resolvedSize = size ?? "md";

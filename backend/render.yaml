@@ -20,7 +20,7 @@
       - key: CORS_ORIGINS
         sync: false
       - key: PUBLIC_BASE_URL
-        sync: false   # https://<this-service>.onrender.com
+        sync: false   # e.g. https://pagepay.onrender.com
       - key: FRONTEND_URL
         sync: false
       # --- Paystack (set in dashboard; webhook goes via paystack-router Worker pp_ route) ---

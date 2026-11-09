@@ -1,5 +1,5 @@
 ﻿import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { View } from "react-native";
 import { Slot } from "expo-router";
 import { PortalHost } from "@rn-primitives/portal";
@@ -8,7 +8,6 @@ import { PaystackProvider } from "expo-paystack";
 import Constants from "expo-constants";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
-import { SplashOverlay } from "@/components/SplashOverlay";
 import { bootstrapPreferences, usePreferences } from "@/src/shared/lib/preferences";
 import { bindAuthUnauthenticated } from "@/src/shared/api/auth";
 import { useAuthStore } from "@/src/shared/store/auth";
@@ -30,10 +29,11 @@ const PAYSTACK_PUBLIC_KEY = __DEV__
     process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
 export default function RootLayout() {
-  const [splashAnimDone, setSplashAnimDone] = useState(false);
   const themePref = usePreferences((s) => s.theme);
+  const preferencesHydrated = usePreferences((s) => s.hydrated);
   const bootstrapAuth = useAuthStore((s) => s.bootstrap);
   const authHydrated = useAuthStore((s) => s.hydrated);
+  const isReady = preferencesHydrated && authHydrated;
 
   useEffect(() => {
     void bootstrapPreferences();
@@ -41,21 +41,25 @@ export default function RootLayout() {
     bindAuthUnauthenticated();
   }, [bootstrapAuth]);
 
+  useEffect(() => {
+    if (!isReady) return;
+    void SplashScreen.hideAsync().catch((error: unknown) => {
+      console.error("Failed to hide native splash screen", error);
+    });
+  }, [isReady]);
+
+  if (!isReady) return null;
+
   const theme =
     themePref === "sepia" ? "light" : themePref === "system" ? "system" : themePref;
-  const showSplash = !splashAnimDone || !authHydrated;
-  const ready = splashAnimDone && authHydrated;
 
   return (
     <QueryClientProvider client={queryClient}>
       <PaystackProvider publicKey={PAYSTACK_PUBLIC_KEY}>
         <ThemeProvider defaultTheme={theme} key={theme}>
           <ToastProvider>
-            <View className="flex-1">
-              {ready ? <Slot /> : null}
-              {showSplash ? (
-                <SplashOverlay onDone={() => setSplashAnimDone(true)} />
-              ) : null}
+            <View className="flex-1 bg-background">
+              <Slot />
               <PortalHost />
             </View>
           </ToastProvider>

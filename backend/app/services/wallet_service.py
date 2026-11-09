@@ -225,11 +225,14 @@ class WalletService:
         )
         return {"applied": applied, "balance_sp": self._sp(user), "ledger_id": entry.id}
 
-    async def grant_cb(self, user_id: int, amount_cb_kobo: int, reference: str) -> dict:
-        idem = f"grant_cb:{reference}"
+    async def credit_wallet_deposit(self, user_id: int, amount_cb_kobo: int, reference: str, metadata: dict | None = None) -> dict:
+        """Credit CB from a verified Paystack wallet deposit (idempotent by reference)."""
+        idem = f"wallet_deposit:{reference}"
+        logger.info("wallet.deposit credit attempt user=%s amount_cb_kobo=%s ref=%s", user_id, amount_cb_kobo, reference)
         user, entry, applied = await self._credit_cb(
-            user_id, amount_cb_kobo, "deposit_grant", reference_type="grant", reference_id=reference, idempotency_key=idem,
+            user_id, amount_cb_kobo, "wallet_deposit", reference_type="paystack", reference_id=reference, idempotency_key=idem, metadata=metadata,
         )
+        logger.info("wallet.deposit credit result user=%s ref=%s applied=%s balance_cb_kobo=%s ledger_id=%s", user_id, reference, applied, self._cb(user), entry.id)
         return {"applied": applied, "balance_cb_kobo": self._cb(user), "ledger_id": entry.id}
 
     async def grant_sp_purchase(self, user_id: int, amount_sp: int, reference: str) -> dict:

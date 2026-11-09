@@ -36,7 +36,7 @@ interface Env {
 const ROUTES: { prefix: string; url: string }[] = [
   {
     prefix: "pp_",
-    url: "https://pagepay-fff6.onrender.com/api/v1/payouts/webhook",
+    url: "https://pagepay.onrender.com/api/v1/payouts/webhook",
   },
   // {
   //   prefix: "salon_",

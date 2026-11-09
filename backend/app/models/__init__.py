@@ -1,4 +1,5 @@
 from app.core.database import Base
+from app.models.payment import Payment
 from app.models.study import StudyAsset, StudyMaterial
 from app.models.user import (
     PasswordResetToken,
@@ -28,4 +29,5 @@ __all__ = [
     "StudyAsset",
     "WalletLedger",
     "StudyUnlock",
+    "Payment",
 ]

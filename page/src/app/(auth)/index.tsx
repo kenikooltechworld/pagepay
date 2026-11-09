@@ -13,7 +13,11 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/toast";
 import { useThemeColors } from "@/components/ui/theme-provider";
 import { useLogin, useRegister } from "@/src/shared/api/auth";
-import { registerFcmToken } from "@/src/lib/firebase";
+
+async function registerFcmToken() {
+  const mod = await import("@/src/lib/firebase");
+  return mod.registerFcmToken();
+}
 
 function LoginForm() {
   const router = useRouter();

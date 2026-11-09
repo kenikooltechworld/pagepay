@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Appearance, useColorScheme as useNativeColorScheme, View } from "react-native";
+import { useColorScheme as useNativeColorScheme, View } from "react-native";
+import { Uniwind } from "uniwind";
 import { cn } from "@/lib/utils";
 
 type Theme = "light" | "dark" | "system";
@@ -26,15 +27,6 @@ export interface ThemeProviderProps {
   className?: string;
 }
 
-// Try to detect and use Uniwind's setTheme if available
-let uniwindSetTheme: ((theme: string) => void) | null = null;
-try {
-  const mod = require("uniwind");
-  if (mod?.Uniwind?.setTheme) {
-    uniwindSetTheme = (theme: string) => mod.Uniwind.setTheme(theme);
-  }
-} catch {}
-
 export function ThemeProvider({
   children,
   defaultTheme = "system",
@@ -46,21 +38,14 @@ export function ThemeProvider({
   const resolvedTheme: "light" | "dark" =
     theme === "system" ? (systemScheme === "dark" ? "dark" : "light") : theme;
 
-  const applyTheme = useCallback((resolved: "light" | "dark") => {
-    if (uniwindSetTheme) {
-      // Uniwind handles Appearance.setColorScheme internally
-      uniwindSetTheme(resolved);
-    } else {
-      // NativeWind v4/v5: set system appearance directly
-      try { Appearance.setColorScheme(resolved); } catch {}
-    }
+  const applyTheme = useCallback((nextTheme: Theme) => {
+    Uniwind.setTheme(nextTheme);
   }, []);
 
   const setTheme = useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
-    const resolved = newTheme === "system" ? (systemScheme === "dark" ? "dark" : "light") : newTheme;
-    applyTheme(resolved);
-  }, [systemScheme, applyTheme]);
+    applyTheme(newTheme);
+  }, [applyTheme]);
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
@@ -71,16 +56,13 @@ export function ThemeProvider({
     });
   }, [systemScheme, applyTheme]);
 
-  // Apply initial theme
   useEffect(() => {
-    if (defaultTheme !== "system") {
-      applyTheme(defaultTheme === "dark" ? "dark" : "light");
-    }
-  }, [defaultTheme, applyTheme]);
+    applyTheme(theme);
+  }, [theme, applyTheme]);
 
   return (
     <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, toggleTheme }}>
-      <View className={cn(resolvedTheme === "dark" ? "dark" : "", "flex-1 bg-background", className)}>
+      <View className={cn("flex-1 bg-background", className)}>
         {children}
       </View>
     </ThemeContext.Provider>
@@ -95,7 +77,7 @@ export const THEME_COLORS = {
 } as const;
 
 export function useThemeColors() {
-  const scheme = useNativeColorScheme();
-  return scheme === "dark" ? THEME_COLORS.dark : THEME_COLORS.light;
+  const { resolvedTheme } = useTheme();
+  return THEME_COLORS[resolvedTheme];
 }
 // ─── END AUTO-GENERATED THEME COLORS ───

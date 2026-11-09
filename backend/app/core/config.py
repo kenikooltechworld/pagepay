@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # Guard for pre-Paystack grant endpoints (POST /wallet/*/grant). If unset, grants are disabled.
     wallet_grant_secret: str | None = None
 
+    # --- Paystack (CB deposit funding) ---
+    paystack_secret_key: str | None = None
+    paystack_public_key: str | None = None
+    paystack_base_url: str = "https://api.paystack.co"
+    paystack_http_timeout_seconds: float = 10.0
+    paystack_callback_path: str = "/wallet"
+
     # --- Email (Resend) ---
     resend_api_key: str | None = None
     email_from: str = "PagePay <noreply@pagepay.app>"

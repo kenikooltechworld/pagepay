@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { View, TextInput, Pressable, Text, useColorScheme } from "react-native";
+import { View, TextInput, Pressable, Text } from "react-native";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
-import { useThemeColors } from "./theme-provider";
+import { useTheme, useThemeColors } from "./theme-provider";
 import { Eye, EyeOff } from "lucide-react-native";
 
 const passwordVariants = cva(
@@ -58,7 +58,8 @@ export const PasswordInput = React.forwardRef<
   const [visible, setVisible] = useState(false);
   const [value, setValue] = useState("");
   const strength = getStrength(value);
-  const dark = useColorScheme() === "dark";
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === "dark";
   const colors = useThemeColors();
   const caret = colors.foreground;
 

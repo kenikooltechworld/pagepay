@@ -1,18 +1,9 @@
-import { Redirect } from "expo-router";
-import { View, ActivityIndicator } from "react-native";
-import { useAuthStore } from "@/src/shared/store/auth";
+import { View, Text } from "react-native";
 
 export default function Index() {
-  const token = useAuthStore((s) => s.token);
-  const hydrated = useAuthStore((s) => s.hydrated);
-
-  if (!hydrated) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
-      </View>
-    );
-  }
-  if (token) return <Redirect href={"/(app)/home" as any} />;
-  return <Redirect href={"/(auth)" as any} />;
+  return (
+    <View style={{ flex: 1, backgroundColor: "#16a34a", alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ color: "#ffffff", fontSize: 24, fontWeight: "bold" }}>PagePay - App is rendering</Text>
+    </View>
+  );
 }

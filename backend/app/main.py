@@ -1,21 +1,32 @@
 """FastAPI application entrypoint."""
 
+import logging
+
 from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from app.core.database import Base, engine
+from app.core.logging_middleware import RequestLogMiddleware
 from app.core.socketio import sio
 from app.limiter import limiter
 
+# Basic logging config so INFO/ERROR show in Docker/Render logs.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
 # Import models so their tables are registered on `Base.metadata` before create_all.
+from app.models import payment as _payment_models  # noqa: F401
 from app.models import user as _user_models  # noqa: F401
 from app.models import wallet as _wallet_models  # noqa: F401
-from app.routers import auth, notifications, pin, study, wallet
+from app.routers import auth, notifications, payments, payouts, pin, study, wallet
 from app.services.fcm_service import initialize_firebase
 
 app = FastAPI(title="PagePay API")
+logger = logging.getLogger("uvicorn.error")
+
+# Request/response logging (redacts secrets/tokens/pins/passwords).
+app.add_middleware(RequestLogMiddleware)
 
 # --- Rate limiting (slowapi) ---
 app.state.limiter = limiter
@@ -27,6 +38,8 @@ app.include_router(pin.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(study.router, prefix="/api/v1")
 app.include_router(wallet.router, prefix="/api/v1")
+app.include_router(payments.router, prefix="/api/v1")
+app.include_router(payouts.router, prefix="/api/v1")
 
 
 @app.on_event("startup")
@@ -40,15 +53,14 @@ async def on_startup():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     except Exception as exc:
-        import logging
-        logging.getLogger("uvicorn.error").warning("create_all skipped/failed (likely raced): %s", exc)
+        logger.warning("create_all skipped/failed (likely raced): %s", exc)
 
     # Initialize Firebase for push notifications (best-effort).
     try:
         initialize_firebase()
     except Exception as exc:
-        import logging
-        logging.getLogger("uvicorn.error").warning("Firebase init failed: %s", exc)
+        logger.warning("Firebase init failed: %s", exc)
+    logger.info("startup complete")
 
 
 @app.get("/api/v1/health")
