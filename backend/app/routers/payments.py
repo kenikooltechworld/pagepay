@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, Request
 from app.controllers.payment_controller import PaymentController
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.payments import PaystackDepositInitRequest, PaystackDepositInitResponse, PaystackVerifyResponse
+from app.schemas.payments import (
+    PaystackDepositInitRequest,
+    PaystackDepositInitResponse,
+    PaystackPaymentStatusResponse,
+    PaystackRefundRequest,
+    PaystackVerifyResponse,
+)
 from app.services.auth_service import get_current_user
 
 logger = logging.getLogger("uvicorn.error")
@@ -34,12 +40,24 @@ async def init_paystack_deposit(
     return await controller.init_wallet_deposit(current_user, amount_kobo)
 
 
-@router.get("/paystack/verify/{reference}", response_model=PaystackVerifyResponse)
-async def verify_paystack_deposit(
+@router.get("/paystack/status/{reference}", response_model=PaystackPaymentStatusResponse)
+async def get_paystack_payment_status(
     reference: str,
     current_user: User = Depends(get_current_user),
     controller: PaymentController = Depends(get_controller),
 ):
-    """Server-verify a Paystack reference and idempotently credit CB (webhook fallback)."""
-    logger.info("endpoint.payments.verify user=%s ref=%s", current_user.id, reference)
-    return await controller.verify_reference(current_user, reference)
+    """Get payment/deposit status for the current user (success/failed/pending/refunded)."""
+    logger.info("endpoint.payments.status user=%s ref=%s", current_user.id, reference)
+    return await controller.get_payment_status(current_user, reference)
+
+
+@router.post("/paystack/refund")
+async def refund_paystack_deposit(
+    payload: PaystackRefundRequest,
+    reference: str,
+    current_user: User = Depends(get_current_user),
+    controller: PaymentController = Depends(get_controller),
+):
+    """Initiate a guarded Paystack refund for a successful wallet deposit (idempotent; reverses CB on refund webhook)."""
+    logger.info("endpoint.payments.refund user=%s ref=%s amount_kobo=%s", current_user.id, reference, payload.amount_kobo)
+    return await controller.initiate_refund(actor_user=current_user, reference=reference, amount_kobo=payload.amount_kobo, reason=payload.reason, guard_secret=payload.guard_secret)

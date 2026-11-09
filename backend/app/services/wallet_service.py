@@ -235,12 +235,21 @@ class WalletService:
         logger.info("wallet.deposit credit result user=%s ref=%s applied=%s balance_cb_kobo=%s ledger_id=%s", user_id, reference, applied, self._cb(user), entry.id)
         return {"applied": applied, "balance_cb_kobo": self._cb(user), "ledger_id": entry.id}
 
-    async def grant_sp_purchase(self, user_id: int, amount_sp: int, reference: str) -> dict:
-        idem = f"sp_purchase:{reference}"
-        user, entry, applied = await self._credit_sp(
-            user_id, amount_sp, "sp_purchase", reference_type="purchase", reference_id=reference, idempotency_key=idem,
-        )
-        return {"applied": applied, "balance_sp": self._sp(user), "ledger_id": entry.id}
+    async def debit_wallet_refund(self, user_id: int, amount_cb_kobo: int, reference: str, metadata: dict | None = None) -> dict:
+        """Reverse CB for a refunded Paystack deposit (idempotent by reference). Fails safely if insufficient balance."""
+        idem = f"wallet_refund:{reference}"
+        logger.info("wallet.refund debit attempt user=%s amount_cb_kobo=%s ref=%s", user_id, amount_cb_kobo, reference)
+        try:
+            user, entry, applied = await self._debit_cb(
+                user_id, amount_cb_kobo, "wallet_refund", reference_type="paystack_refund", reference_id=reference, idempotency_key=idem, metadata=metadata,
+            )
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_402_PAYMENT_REQUIRED:
+                logger.warning("wallet.refund debit insufficient user=%s amount_cb_kobo=%s ref=%s detail=%s", user_id, amount_cb_kobo, reference, exc.detail)
+                return {"applied": False, "reason": "insufficient_balance", "required_cb_kobo": amount_cb_kobo, "balance_cb_kobo": (await self.get_balance(user_id)).get("cashable_balance_cb_kobo")}
+            raise
+        logger.info("wallet.refund debit result user=%s ref=%s applied=%s balance_cb_kobo=%s ledger_id=%s", user_id, reference, applied, self._cb(user), entry.id)
+        return {"applied": applied, "balance_cb_kobo": self._cb(user), "ledger_id": entry.id}
 
     async def convert_cb_to_sp(self, user_id: int, amount_cb_kobo: int) -> dict:
         """Atomically debit CB (kobo) and credit SP at the configured rate."""

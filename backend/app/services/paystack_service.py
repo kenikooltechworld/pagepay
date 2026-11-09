@@ -88,6 +88,35 @@ async def verify_transaction(reference: str) -> dict[str, Any]:
     return data
 
 
+async def create_refund(*, reference: str, amount_kobo: int | None = None, merchant_note: str | None = None, customer_note: str | None = None) -> dict[str, Any]:
+    """Create a Paystack refund for a transaction (by reference). Returns data dict."""
+    url = f"{settings.paystack_base_url.rstrip('/')}/refund"
+    payload: dict[str, Any] = {"transaction": reference}
+    if amount_kobo is not None:
+        payload["amount"] = int(amount_kobo)
+    if merchant_note:
+        payload["merchant_note"] = merchant_note[:200]
+    if customer_note:
+        payload["customer_note"] = customer_note[:200]
+    logger.info("paystack.refund request reference=%s amount_kobo=%s", reference, amount_kobo)
+    try:
+        async with httpx.AsyncClient(timeout=settings.paystack_http_timeout_seconds) as client:
+            resp = await client.post(url, headers=_headers(), json=payload)
+    except httpx.HTTPError as exc:
+        logger.exception("paystack.refund network error reference=%s: %s", reference, exc)
+        raise PaystackError(f"Paystack request failed: {exc}") from exc
+    logger.info("paystack.refund response reference=%s status=%s body=%s", reference, resp.status_code, resp.text[:600])
+    if resp.status_code < 200 or resp.status_code >= 300:
+        raise PaystackError(f"Paystack HTTP {resp.status_code}: {resp.text[:300]}")
+    body = resp.json() if resp.content else {}
+    if not isinstance(body, dict) or body.get("status") is not True:
+        raise PaystackError(f"Paystack error: {body!r}")
+    data = body.get("data") or {}
+    if not isinstance(data, dict):
+        raise PaystackError(f"Paystack refund missing data: {body!r}")
+    return data
+
+
 def verify_webhook_signature(raw_body: bytes, signature_header: str | None) -> bool:
     secret = (settings.paystack_secret_key or "").strip()
     if not signature_header or not secret:

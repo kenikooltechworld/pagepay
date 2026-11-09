@@ -38,3 +38,21 @@ class PaystackVerifyResponse(BaseModel):
     status: str | None = None
     payment_status: str | None = None
     balance_cb_kobo: int | None = None
+
+
+class PaystackRefundRequest(BaseModel):
+    amount_kobo: int | None = Field(None, ge=1, description="Optional partial refund in kobo; defaults to full amount")
+    reason: str | None = Field(None, max_length=200)
+    guard_secret: str | None = Field(None, description="Required unless caller is admin (uses wallet_grant_secret)")
+
+
+class PaystackPaymentStatusResponse(BaseModel):
+    reference: str
+    status: str
+    purpose: str | None = None
+    amount_kobo: int
+    credit_amount_kobo: int | None = None
+    currency: str | None = None
+    webhook_confirmed: bool
+    created_at: str | None = None
+    confirmed_at: str | None = None
