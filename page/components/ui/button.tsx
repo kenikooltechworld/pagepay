@@ -3,7 +3,7 @@ import { Pressable, Text, ActivityIndicator } from "react-native";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { useThemeColors } from "./theme-provider";
-
+import { PagePaySpinner } from "@/components/PagePaySpinner";
 const buttonVariants = cva(
   "flex-row items-center justify-center rounded-md min-h-12 min-w-12",
   {

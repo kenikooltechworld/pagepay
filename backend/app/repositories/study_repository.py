@@ -33,9 +33,13 @@ class StudyMaterialRepository:
         )
         return list(result.scalars().all())
 
+    async def update(self, material: StudyMaterial) -> StudyMaterial:
+        await self.db.commit()
+        await self.db.refresh(material)
+        return material
+
     async def delete(self, material: StudyMaterial) -> None:
         await self.db.delete(material)
-        await self.db.commit()
 
 
 class StudyAssetRepository:
@@ -59,3 +63,11 @@ class StudyAssetRepository:
             select(StudyAsset).where(StudyAsset.material_id == material_id).order_by(StudyAsset.created_at.desc())
         )
         return list(result.scalars().all())
+
+    async def delete(self, asset: StudyAsset) -> None:
+        await self.db.delete(asset)
+
+    async def update(self, asset: StudyAsset) -> StudyAsset:
+        await self.db.commit()
+        await self.db.refresh(asset)
+        return asset

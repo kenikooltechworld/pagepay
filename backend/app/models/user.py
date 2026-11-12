@@ -121,13 +121,35 @@ class RevokedJWT(Base):
 
 
 class PasswordResetToken(Base):
-    """Single-use token for the forgot-password flow."""
+    """Single-use token for the forgot-password flow.
+
+    OTP is stored hashed (for verify-otp) so it works across gunicorn workers and restarts.
+    The raw reset token is returned to the client only after OTP verification.
+    """
 
     __tablename__ = "password_reset_tokens"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    # Bcrypt hash of the 6-digit OTP (verified before releasing reset token).
+    otp_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PinResetToken(Base):
+    """Single-use token for the forgot-PIN flow (transaction PIN reset)."""
+
+    __tablename__ = "pin_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    otp_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

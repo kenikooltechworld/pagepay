@@ -88,6 +88,7 @@ module.exports = ({ config }) => {
         // Dynamic environment-specific values
         apiUrl: process.env.EXPO_PUBLIC_API_URL || "",
         paystackPublicKey: process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
+        googleClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "",
         eas: {
           "projectId": "b43a48ba-f084-472f-ac1c-3db5fa470326"
         },

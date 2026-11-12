@@ -27,3 +27,21 @@ class PinStatusResponse(BaseModel):
     """PIN status response."""
 
     has_pin: bool
+
+
+class PinForgotVerifyOtpRequest(BaseModel):
+    """Verify OTP for PIN reset."""
+
+    otp: str = Field(min_length=6, max_length=6, pattern=r"^\d+$")
+
+
+class PinForgotVerifyOtpResponse(BaseModel):
+    ok: bool
+    reset_token: str | None = None
+
+
+class PinResetRequest(BaseModel):
+    """Reset PIN using verified reset token."""
+
+    token: str = Field(min_length=10)
+    new_pin: str = Field(min_length=4, max_length=6, pattern=r"^\d+$")

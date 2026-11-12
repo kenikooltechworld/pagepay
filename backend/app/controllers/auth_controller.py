@@ -398,7 +398,7 @@ class AuthController:
 
     async def verify_forgot_otp(self, payload: ForgotPasswordVerifyOtpRequest) -> dict:
         try:
-            raw_token = self.password_reset.verify_otp(payload)
+            raw_token = await self.password_reset.verify_otp(payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         from app.schemas.auth import ForgotPasswordVerifyOtpResponse

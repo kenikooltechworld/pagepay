@@ -1,9 +1,10 @@
-import { View, Text } from "react-native";
+﻿import { Redirect } from "expo-router";
+import { useAuthStore } from "@/src/shared/store/auth";
 
 export default function Index() {
-  return (
-    <View style={{ flex: 1, backgroundColor: "#16a34a", alignItems: "center", justifyContent: "center" }}>
-      <Text style={{ color: "#ffffff", fontSize: 24, fontWeight: "bold" }}>PagePay - App is rendering</Text>
-    </View>
-  );
+  const hydrated = useAuthStore((s) => s.hydrated);
+  const token = useAuthStore((s) => s.token);
+
+  if (!hydrated) return null;
+  return <Redirect href={token ? "/(app)/home" : "/(auth)"} />;
 }

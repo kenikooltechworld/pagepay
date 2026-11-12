@@ -3,6 +3,7 @@ from app.models.payment import Payment
 from app.models.study import StudyAsset, StudyMaterial
 from app.models.user import (
     PasswordResetToken,
+    PinResetToken,
     PointCredit,
     UserAuditLog,
     Notification,
@@ -21,6 +22,7 @@ __all__ = [
     "RefreshToken",
     "RevokedJWT",
     "PasswordResetToken",
+    "PinResetToken",
     "PointCredit",
     "UserAuditLog",
     "Notification",

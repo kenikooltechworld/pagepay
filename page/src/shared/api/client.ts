@@ -51,12 +51,30 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   });
 }
 
+export async function parseApiError(res: Response, fallback = "Request failed"): Promise<string> {
+  let data: any = {};
+  const raw = await res.text().catch(() => "");
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { detail: raw || res.statusText || fallback };
+  }
+  const detail = data?.detail;
+  if (Array.isArray(detail)) {
+    const msg = detail.map((d: any) => d?.msg || d?.message || JSON.stringify(d)).filter(Boolean).join("; ");
+    if (msg) return msg;
+  }
+  if (typeof detail === "string" && detail) return detail;
+  if (typeof data?.message === "string" && data.message) return data.message;
+  if (!res.ok) return res.statusText || fallback;
+  return fallback;
+}
+
 export async function authJson<T>(path: string, body: unknown): Promise<T> {
   const res = await apiFetch(path, {
     method: "POST",
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { detail?: string }).detail || "Request failed");
-  return data as T;
+  if (!res.ok) throw new Error(await parseApiError(res));
+  return (await res.json().catch(() => ({}))) as T;
 }
