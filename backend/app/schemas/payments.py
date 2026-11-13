@@ -1,4 +1,4 @@
-﻿"""Pydantic schemas for Paystack payments."""
+"""Pydantic schemas for Paystack payments."""
 
 from pydantic import BaseModel, Field
 
@@ -9,8 +9,9 @@ from app.core.config import settings
 
 
 class PaystackDepositInitRequest(BaseModel):
-    amount_kobo: int | None = Field(None, ge=1, description="Deposit amount in kobo (₦1=100 kobo). Server enforces minimum.")
+    amount_kobo: int | None = Field(None, ge=1, description="Deposit amount in kobo (?1=100 kobo). Server enforces minimum.")
     amount_naira: int | None = Field(None, ge=1, description="Deposit amount in Naira (converted to kobo). Prefer this for UI.")
+    callback_url: str | None = Field(None, description="Optional return/callback URL after checkout (e.g. mobile deep link). Falls back to server default.")
 
     def resolved_amount_kobo(self) -> int:
         if self.amount_kobo is not None:

@@ -78,3 +78,76 @@ export async function authJson<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) throw new Error(await parseApiError(res));
   return (await res.json().catch(() => ({}))) as T;
 }
+
+export type ApiUploadOptions = {
+  onProgress?: (loaded: number, total: number) => void;
+  timeoutMs?: number;
+};
+
+export type ApiUploadResult = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  json: () => Promise<any>;
+  text: () => Promise<string>;
+};
+
+export async function apiUpload(
+  path: string,
+  formData: FormData,
+  options: ApiUploadOptions = {},
+): Promise<ApiUploadResult> {
+  const { onProgress, timeoutMs = 120_000 } = options;
+  const token = await getToken();
+
+  return new Promise<ApiUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}${path}`, true);
+    xhr.timeout = timeoutMs;
+
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          onProgress(e.loaded, e.total);
+        }
+      };
+    }
+
+    xhr.onerror = () => {
+      if (xhr.status > 0) {
+        const body = xhr.responseText || "";
+        let detail = body;
+        try { const p = JSON.parse(body); detail = p?.detail || body; } catch {}
+        reject(new Error(detail || `HTTP ${xhr.status}`));
+        return;
+      }
+      reject(new Error("Network error during upload"));
+    };
+    xhr.ontimeout = () => reject(new Error("Upload timed out"));
+    xhr.onload = async () => {
+      if (xhr.status === 401) {
+        try {
+          await clearTokens();
+        } catch {}
+        _onUnauthenticated?.();
+      }
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        statusText: xhr.statusText || "",
+        json: () => Promise.resolve().then(() => JSON.parse(xhr.responseText || "null")),
+        text: () => Promise.resolve(xhr.responseText || ""),
+      });
+    };
+
+    try {
+      xhr.send(formData);
+    } catch (e: any) {
+      reject(new Error(e?.message || "Upload failed"));
+    }
+  });
+}

@@ -1,4 +1,4 @@
-﻿"""Paystack deposit + webhook controller."""
+"""Paystack deposit + webhook controller."""
 
 import logging
 import uuid
@@ -28,11 +28,11 @@ class PaymentController:
         self.db = db
         self.wallet = WalletService(db)
 
-    async def init_wallet_deposit(self, current_user: User, amount_kobo: int) -> dict:
-        logger.info("paystack.deposit.init start user=%s amount_kobo=%s", current_user.id, amount_kobo)
+    async def init_wallet_deposit(self, current_user: User, amount_kobo: int, callback_url_override: str | None = None) -> dict:
+        logger.info("paystack.deposit.init start user=%s amount_kobo=%s callback_override=%s", current_user.id, amount_kobo, bool(callback_url_override))
         min_kobo = max(100, int(getattr(settings, "wallet_deposit_min_kobo", 10000) or 10000))
         if amount_kobo < min_kobo:
-            raise HTTPException(status_code=400, detail=f"Minimum deposit is {min_kobo} kobo (₦{min_kobo / 100:g})")
+            raise HTTPException(status_code=400, detail=f"Minimum deposit is {min_kobo} kobo (?{min_kobo / 100:g})")
         if not (settings.paystack_secret_key or "").strip():
             logger.error("paystack.deposit.init missing PAYSTACK_SECRET_KEY")
             raise HTTPException(status_code=503, detail="Payments not configured")
@@ -40,7 +40,14 @@ class PaymentController:
             raise HTTPException(status_code=400, detail="A verified email is required for payments")
 
         reference = f"pp_wallet_{current_user.id}_{uuid.uuid4().hex[:16]}"
-        callback_url = f"{settings.public_base_url.rstrip('/')}{settings.paystack_callback_path or '/wallet'}"
+        default_callback = f"{settings.public_base_url.rstrip('/')}{settings.paystack_callback_path or '/wallet'}"
+        callback_url = (callback_url_override or "").strip() or default_callback
+        # allow app deep links (client://, exp://, expo schemes) and http(s) callbacks; reject other schemes
+        from urllib.parse import urlparse
+        scheme = (urlparse(callback_url).scheme or "").lower()
+        if scheme not in ("http", "https", "client", "exp", "exps", "pagepay"):
+            logger.warning("paystack.deposit.init rejected callback scheme=%s user=%s", scheme, current_user.id)
+            callback_url = default_callback
         metadata = {"user_id": current_user.id, "type": "wallet_deposit_cb", "credit_amount_kobo": amount_kobo}
 
         try:

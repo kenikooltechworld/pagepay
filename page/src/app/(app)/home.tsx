@@ -208,14 +208,7 @@ export default function Home() {
                   )}
                 </View>
 
-                <Button
-                  onPress={() =>
-                    toast({
-                      title: "Add money / Purchase SP",
-                      description: "Funding flow coming soon.",
-                    })
-                  }
-                >
+                <Button onPress={() => router.push("/(app)/wallet")}>
                   Add money / Purchase SP
                 </Button>
               </View>

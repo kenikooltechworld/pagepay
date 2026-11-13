@@ -23,7 +23,7 @@ def upgrade() -> None:
     op.create_table(
         "pin_reset_tokens",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.BigInteger(), nullable=False, index=True),
+        sa.Column("user_id", sa.BigInteger(), nullable=False),
         sa.Column("token_hash", sa.String(length=255), nullable=False),
         sa.Column("otp_hash", sa.String(length=255), nullable=True),
         sa.Column("otp_expires_at", sa.DateTime(), nullable=True),

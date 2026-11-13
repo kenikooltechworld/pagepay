@@ -1,4 +1,4 @@
-﻿"""Wallet HTTP routes (thin layer)."""
+"""Wallet HTTP routes (thin layer)."""
 
 import logging
 
@@ -65,8 +65,8 @@ async def initiate_wallet_deposit(
     if amount_kobo <= 0:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Provide amount_naira or amount_kobo")
-    logger.info("endpoint.wallet.deposit user=%s amount_naira=%s amount_kobo=%s", current_user.id, payload.amount_naira, amount_kobo)
-    return await controller.init_wallet_deposit(current_user, amount_kobo)
+    logger.info("endpoint.wallet.deposit user=%s amount_naira=%s amount_kobo=%s callback_url=%s", current_user.id, payload.amount_naira, amount_kobo, bool(getattr(payload, "callback_url", None)))
+    return await controller.init_wallet_deposit(current_user, amount_kobo, callback_url_override=getattr(payload, "callback_url", None))
 
 
 @router.post("/deposit/webhook")
