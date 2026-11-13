@@ -22,6 +22,7 @@ export type CurrentUser = {
 };
 
 type CurrentUserState = {
+  refresh: () => Promise<CurrentUser | null>;
   user: CurrentUser | null;
   loaded: boolean;
   loading: boolean;
@@ -38,6 +39,9 @@ export const useCurrentUserStore = create<CurrentUserState>((set, get) => ({
   error: null,
   setUser: (user) => set({ user, loaded: true }),
   clear: () => set({ user: null, loaded: false, error: null }),
+  refresh: async () => {
+    return get().fetch();
+  },
   fetch: async () => {
     if (get().loading) return get().user;
     set({ loading: true, error: null });

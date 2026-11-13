@@ -74,7 +74,7 @@ async def send_password_reset_otp_email(to: str, otp: str) -> bool:
     </html>
     """
     return await send_email(to, "Reset your PagePay password", html)
-async function send_pin_reset_otp_email(to: str, otp: str) -> bool:
+async def send_pin_reset_otp_email(to: str, otp: str) -> bool:
     """Send transaction PIN reset OTP code via email."""
 
     html = f"""
