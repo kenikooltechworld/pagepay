@@ -16,7 +16,6 @@ import { useToast } from "@/components/ui/toast";
 import { PagePay } from "@/constants/theme";
 import { useEffectiveScheme } from "@/src/shared/hooks/use-effective-scheme";
 import {
-  claimAdReward,
   convertCbToSp,
   fetchPaymentStatus,
   fetchWalletBalance,
@@ -78,8 +77,6 @@ export default function WalletScreen() {
   const [convertNaira, setConvertNaira] = useState("");
   const [pendingRef, setPendingRef] = useState<string | null>(null);
   const [pendingAuthUrl, setPendingAuthUrl] = useState<string | null>(null);
-  const [adClaimId, setAdClaimId] = useState("");
-  const [adAmountSp, setAdAmountSp] = useState("10");
   const handledRef = useRef<string | null>(null);
 
   const extractReference = useCallback((url: string | null | undefined) => {
@@ -207,15 +204,7 @@ export default function WalletScreen() {
     onError: (e: any) => toast({ title: "Convert failed", description: e?.message || "Could not convert", variant: "destructive" }),
   });
 
-  const adRewardMutation = useMutation({
-    mutationFn: async () => claimAdReward(adClaimId.trim(), Math.max(1, Math.round(Number(adAmountSp) || 0))),
-    onSuccess: async (res) => {
-      toast({ title: res.applied ? "Reward claimed" : "Already claimed", description: `Balance: ${res.balance_sp.toLocaleString()} SP`, variant: res.applied ? "success" : "default" });
-      setAdClaimId("");
-      await refreshAll();
-    },
-    onError: (e: any) => toast({ title: "Claim failed", description: e?.message || "Could not claim reward", variant: "destructive" }),
-  });
+
 
   const sp = balanceQuery.data?.service_points_sp ?? 0;
   const cbKobo = balanceQuery.data?.cashable_balance_cb_kobo ?? 0;
@@ -345,27 +334,7 @@ export default function WalletScreen() {
             </CardContent>
           </Card>
 
-          <Card className="border-border bg-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Claim ad reward (SP)</CardTitle>
-            </CardHeader>
-            <CardContent className="gap-3 pt-0">
-              <Text className="text-xs text-muted-foreground">Claim a verified ad reward by claim ID (idempotent). Use the server-issued claim ID from ad verification.</Text>
-              <Input value={adClaimId} onChangeText={setAdClaimId} placeholder="Claim ID (e.g. ssv-...)" autoCapitalize="none" />
-              <Input value={adAmountSp} onChangeText={setAdAmountSp} keyboardType="number-pad" placeholder="Amount SP" />
-              <Button
-                variant="outline"
-                onPress={() => {
-                  if (!adClaimId.trim()) return toast({ title: "Missing claim ID", description: "Enter a claim ID." });
-                  adRewardMutation.mutate();
-                }}
-                disabled={adRewardMutation.isPending}
-                icon={adRewardMutation.isPending ? <PagePaySpinner size={18} /> : undefined}
-              >
-                Claim SP reward
-              </Button>
-            </CardContent>
-          </Card>
+
 
           <Card className="border-border bg-card">
             <CardHeader className="pb-2">

@@ -1,4 +1,4 @@
-﻿"""Pydantic schemas for study endpoints."""
+"""Pydantic schemas for study endpoints."""
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Optional
@@ -49,6 +49,11 @@ class MaterialDetail(BaseModel):
     education_level: str | None = None
     content: str | None = None
     parsed_structure: dict | None = None
+    explanation_structure: dict | None = None
+    page_count: int | None = 0
+    figure_count: int | None = 0
+    has_original_file: bool = False
+    file_mime_type: str | None = None
     assets: list[dict] = []
     created_at: str
 
@@ -110,3 +115,23 @@ class EssayReviewResponse(BaseModel):
     feedback: str
     score: int | None = None
     suggestions: list[str] = []
+
+class SowUploadJobAccepted(BaseModel):
+    job_id: str
+    status: str = "queued"
+
+
+class SowUploadJobStatus(BaseModel):
+    job_id: str
+    status: str
+    material_id: int | None = None
+    error: str | None = None
+    progress: int | None = None
+    stage: str | None = None
+    updated_at: str | None = None
+
+
+class SowUploadTextRequest(BaseModel):
+    text: str = Field(..., min_length=10, max_length=50000)
+    exam_type: str | None = Field(default=None, max_length=32)
+    education_level: str | None = Field(default=None, max_length=50)

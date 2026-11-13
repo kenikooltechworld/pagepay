@@ -1,6 +1,6 @@
 from app.core.database import Base
 from app.models.payment import Payment
-from app.models.study import StudyAsset, StudyMaterial
+from app.models.study import SowUploadJob, StudyAsset, StudyMaterial
 from app.models.user import (
     PasswordResetToken,
     PinResetToken,
@@ -29,6 +29,7 @@ __all__ = [
     "UserNotificationPreference",
     "StudyMaterial",
     "StudyAsset",
+    "SowUploadJob",
     "WalletLedger",
     "StudyUnlock",
     "Payment",

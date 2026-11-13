@@ -14,6 +14,7 @@ from app.core.database import Base
 from app.models import payment as _payment_models  # noqa: F401
 from app.models import user as _user_models  # noqa: F401
 from app.models import wallet as _wallet_models  # noqa: F401
+from app.models import study as _study_models  # noqa: F401
 
 config = context.config
 

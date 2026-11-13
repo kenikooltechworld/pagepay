@@ -1,4 +1,4 @@
-import { apiFetch, apiUpload } from "@/src/shared/api/client";
+﻿import { apiFetch, apiUpload } from "@/src/shared/api/client";
 import { clearMaterialFileCache } from "./storage";
 
 export type MaterialSummary = {
@@ -30,7 +30,7 @@ export type MaterialDetail = {
   /**
    * The teaching layer: the material rewritten in plain language for a
    * beginner, with every diagram described in words. `null` when it
-   * could not be built — the faithful `parsed_structure` is still
+   * could not be built â€” the faithful `parsed_structure` is still
    * there and the app falls back to it.
    */
   explanation_structure?: Record<string, unknown> | null;
@@ -111,7 +111,7 @@ export type SowUploadResponse = {
  * `sow_upload_jobs` row, fires a background worker, and returns the
  * job id immediately. The client then polls
  * `GET /api/v1/study/sow/jobs/{job_id}` to drive its progress bar
- * through the 80→100 window and learn the resulting `material_id`.
+ * through the 80â†’100 window and learn the resulting `material_id`.
  */
 export type SowUploadJobAccepted = {
   job_id: string;
@@ -130,7 +130,7 @@ export type SowJobStatus = {
    */
   progress?: number | null;
   /**
-   * Machine-readable stage code — `queued` | `reading_pages` |
+   * Machine-readable stage code â€” `queued` | `reading_pages` |
    * `parsing_ai` | `saving` | `completed`. Translated to a label on
    * the client so the user knows *what* is happening.
    */
@@ -200,7 +200,7 @@ export type ChatRequest = {
 
 /**
  * Raised when chat is refused so the caller can distinguish the reasons.
- * A 429 from quota carries `priceSv` — what paying would cost — so the
+ * A 429 from quota carries `priceSv` â€” what paying would cost â€” so the
  * UI can offer it. A 402 is a short balance. A 429 with `paidCapped` set
  * means both the free quota and the paid cap are spent for today.
  */
@@ -281,7 +281,7 @@ export async function uploadSowImage(
 }
 
 /**
- * Upload several images as ONE material — the pages of a document.
+ * Upload several images as ONE material â€” the pages of a document.
  *
  * The whole set goes in a single request, so the progress the user
  * sees is the real byte progress of the whole upload, and the server
@@ -367,7 +367,7 @@ export async function uploadSowDocument(
  * Poll the status of an in-flight SOW upload. Calls `onTick(status)`
  * on every poll so the caller can advance its progress bar. Resolves
  * with the final `SowJobStatus` (status === "completed" | "failed")
- * or rejects after `timeoutMs`. Linear 1s polling for v1 — easy to
+ * or rejects after `timeoutMs`. Linear 1s polling for v1 â€” easy to
  * reason about and matches the project's `recent-credits` pattern.
  */
 export async function pollSowJob(
@@ -581,7 +581,7 @@ export async function sendChatMessage(
   return res.text();
 }
 
-// ── Exam Mode ────────────────────────────────────────────────────────
+// â”€â”€ Exam Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ExamQuestion = {
   id: number;
@@ -724,7 +724,7 @@ export async function fetchExamResult(sessionId: number): Promise<ExamResultDeta
   return res.json();
 }
 
-// ── Page and figure artifacts ────────────────────────────────────────
+// â”€â”€ Page and figure artifacts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The pages and the diagram crops of an uploaded material. They were
 // written to object storage when the material was uploaded, so the
@@ -743,163 +743,3 @@ export async function fetchMaterialFigures(id: number): Promise<MaterialFigure[]
   return res.json();
 }
 
-// ── Podcast (paid audio narration) ───────────────────────────────────
-
-export type AudioTopic = {
-  topic_index: number;
-  topic_name: string;
-  episodes: number;
-  char_count: number;
-  estimated_seconds: number;
-  cost_sv: number;
-};
-
-export type AudioTopicsResponse = {
-  material_id: number;
-  title: string;
-  topics: AudioTopic[];
-  levels: EducationLevel[];
-  default_level: EducationLevel;
-};
-
-export type AudioQuote = {
-  level: EducationLevel;
-  topics: AudioTopic[];
-  topic_count: number;
-  episode_count: number;
-  total_char_count: number;
-  total_cost_sv: number;
-  estimated_seconds: number;
-  balance_sv: number;
-};
-
-export type AudioEpisode = {
-  id: number;
-  topic_index: number;
-  episode_index: number;
-  total_episodes: number;
-  level: EducationLevel;
-  status: "queued" | "generating" | "ready" | "failed";
-  cost_sv: number;
-  char_count: number;
-  estimated_seconds: number;
-  actual_duration_seconds: number | null;
-  audio_url: string | null;
-  position_seconds: number;
-  completed_at: string | null;
-  refunded_at: string | null;
-  error_message: string | null;
-  created_at: string | null;
-};
-
-export type AudioBatchesResponse = {
-  material_id: number;
-  episodes: AudioEpisode[];
-  next_episode_id: number | null;
-  total_cost_sv: number;
-  refunded_sv: number;
-};
-
-export async function fetchAudioTopics(
-  materialId: number,
-): Promise<AudioTopicsResponse> {
-  const res = await apiFetch(`/api/v1/study/audio/topics/${materialId}`);
-  if (!res.ok) throw new Error("Failed to load narratable topics");
-  return res.json();
-}
-
-export async function quoteAudioNarration(
-  materialId: number,
-  payload: { topic_indexes: number[]; level?: EducationLevel },
-): Promise<AudioQuote> {
-  const res = await apiFetch(`/api/v1/study/audio/quote/${materialId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Could not price the narration");
-  }
-  return res.json();
-}
-
-export type AudioBatchCreateResult = {
-  ok: boolean;
-  error?: string;
-  detail?: string;
-  cost_sv?: number;
-  balance_sv?: number;
-  created?: number;
-  reused?: number;
-  episodes?: AudioEpisode[];
-};
-
-export async function createAudioBatches(
-  materialId: number,
-  payload: { topic_indexes: number[]; level?: EducationLevel },
-): Promise<AudioBatchCreateResult> {
-  const res = await apiFetch(`/api/v1/study/audio/batches/${materialId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.detail || "Could not start generation");
-  }
-  return data as AudioBatchCreateResult;
-}
-
-export async function fetchAudioBatches(
-  materialId: number,
-): Promise<AudioBatchesResponse> {
-  const res = await apiFetch(`/api/v1/study/audio/batches/${materialId}`);
-  if (!res.ok) throw new Error("Failed to load episodes");
-  return res.json();
-}
-
-/**
- * Ask the server for the next queued episode to be generated.
- *
- * Generation is client-driven on purpose: Render's free tier cannot be
- * relied on to run in-process background tasks, and driving it from
- * the client keeps every bit of progress in Postgres. The server
- * answers with `{ error: "generation_failed", refunded: true }` when
- * an episode fails, so the UI can say so and stop.
- */
-export async function generateNextAudioEpisode(
-  materialId: number,
-): Promise<{
-  processed: number | null;
-  topic_index?: number;
-  episode_index?: number;
-  remaining: number;
-  error?: string;
-  refunded?: boolean;
-}> {
-  const res = await apiFetch(`/api/v1/study/audio/generate-next/${materialId}`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error("Failed to generate the next episode");
-  return res.json();
-}
-
-export async function saveAudioPosition(
-  batchId: number,
-  payload: { position_seconds: number; completed?: boolean },
-): Promise<void> {
-  const res = await apiFetch(`/api/v1/study/audio/batches/${batchId}/position`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to save the playback position");
-}
-
-export async function retryAudioBatch(batchId: number): Promise<void> {
-  const res = await apiFetch(`/api/v1/study/audio/batches/${batchId}/retry`, {
-    method: "POST",
-  });
-  if (!res.ok) throw new Error("Failed to retry the episode");
-}

@@ -43,3 +43,18 @@ class StudyAsset(Base):
     content_json: Mapped[str] = mapped_column(Text)
     points_to_unlock: Mapped[int] = mapped_column(Integer, default=50)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class SowUploadJob(Base):
+    """Tracks async SOW upload/parse jobs."""
+
+    __tablename__ = "sow_upload_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)  # queued|processing|completed|failed
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    stage: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    material_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

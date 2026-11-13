@@ -1,18 +1,22 @@
 """Study controller (OOP)."""
 
+import asyncio
 import json
 import logging
+import uuid
+from datetime import datetime
 
 from fastapi import HTTPException
 
-from app.models.study import StudyAsset, StudyMaterial
+from app.models.study import SowUploadJob, StudyAsset, StudyMaterial
 from app.models.user import User
 from app.repositories.study_asset_queries import list_assets_for_material
-from app.repositories.study_repository import StudyAssetRepository, StudyMaterialRepository
+from app.repositories.study_repository import SowUploadJobRepository, StudyAssetRepository, StudyMaterialRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.services.ai_service import call_ai, parse_json_response
 from app.services.study_unlock_service import StudyUnlockService
 from app.core.config import settings
+from app.services.study_prompts import EXPLANATION_PROMPT, SOW_PARSER_PROMPT
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -121,6 +125,7 @@ class StudyController:
         self.assets = StudyAssetRepository(db)
         self.wallet_repo = WalletRepository(db)
         self.unlocks = StudyUnlockService(db)
+        self.jobs = SowUploadJobRepository(db)
 
     async def _get_owned_material(self, current_user: User, material_id: int) -> StudyMaterial:
         material = await self.materials.get_by_id(material_id, current_user.id)
@@ -219,6 +224,12 @@ class StudyController:
                 except Exception:
                     item["content"] = None
             asset_items.append(item)
+        explanation = None
+        if getattr(material, "explanation_structure", None):
+            try:
+                explanation = json.loads(material.explanation_structure)
+            except Exception:
+                explanation = None
         logger.info("study.material.get ok user=%s material_id=%s assets=%s", current_user.id, material_id, len(asset_items))
         return {
             "id": material.id,
@@ -227,6 +238,11 @@ class StudyController:
             "education_level": material.education_level,
             "content": material.content,
             "parsed_structure": parsed,
+            "explanation_structure": explanation,
+            "page_count": getattr(material, "page_count", 0) or 0,
+            "figure_count": getattr(material, "figure_count", 0) or 0,
+            "has_original_file": bool(getattr(material, "original_file_data", None)),
+            "file_mime_type": getattr(material, "file_mime_type", None),
             "assets": asset_items,
             "created_at": material.created_at.isoformat(),
         }
@@ -411,3 +427,115 @@ class StudyController:
             "feedback": result.get("feedback", "Keep trying!"),
             "suggestions": result.get("suggestions", []),
         }
+
+
+    async def _parse_structure(self, content: str) -> dict | None:
+        try:
+            resp = await call_ai(SOW_PARSER_PROMPT.format(raw_text=content[:50000]))
+            return await parse_json_response(resp)
+        except Exception as exc:
+            logger.warning("study.sow.parse failed: %s", exc)
+            return None
+
+    async def _build_explanation(self, content: str, education_level: str | None, exam_type: str | None) -> dict | None:
+        try:
+            resp = await call_ai(EXPLANATION_PROMPT.format(
+                raw_text=content[:40000],
+                education_level=education_level or "secondary",
+                subject=exam_type or "General",
+            ))
+            data = await parse_json_response(resp)
+            if isinstance(data, dict) and isinstance(data.get("content_blocks"), list):
+                return data
+        except Exception as exc:
+            logger.warning("study.explanation failed: %s", exc)
+        return None
+
+    async def _create_material_from_text(
+        self, current_user: User, title: str | None, content: str, exam_type: str | None,
+        education_level: str | None, original_file_data: bytes | None = None, file_mime_type: str | None = None, page_count: int = 0
+    ) -> StudyMaterial:
+        material = StudyMaterial(
+            user_id=current_user.id,
+            title=(title or "Untitled Material")[:500],
+            exam_type=exam_type,
+            education_level=education_level,
+            raw_input=content,
+            content=content,
+            original_file_data=original_file_data,
+            file_mime_type=file_mime_type,
+            page_count=page_count or 0,
+        )
+        await self.materials.create(material)
+        parsed = await self._parse_structure(content)
+        if parsed is not None:
+            material.parsed_structure = json.dumps(parsed)
+            if not title and isinstance(parsed, dict) and parsed.get("title"):
+                material.title = str(parsed.get("title"))[:500]
+        explanation = await self._build_explanation(content, education_level, exam_type)
+        if explanation is not None:
+            material.explanation_structure = json.dumps(explanation)
+        await self.materials.update(material)
+        return material
+
+    async def create_sow_text_job(self, current_user: User, text: str, exam_type: str | None, education_level: str | None) -> dict:
+        job = SowUploadJob(id=str(uuid.uuid4()), user_id=current_user.id, status="queued", progress=0, stage="queued", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+        await self.jobs.create(job)
+        asyncio.create_task(self._run_sow_text_job(job.id, current_user.id, text, exam_type, education_level))
+        return {"job_id": job.id, "status": "queued"}
+
+    async def _run_sow_text_job(self, job_id: str, user_id: int, text: str, exam_type: str | None, education_level: str | None) -> None:
+        from app.core.database import AsyncSessionLocal
+        try:
+            async with AsyncSessionLocal() as db:
+                ctrl = StudyController(db)
+                await ctrl.jobs.update_status(job_id, "processing", progress=20, stage="parsing")
+                user = User(id=user_id)
+                material = await ctrl._create_material_from_text(user, None, text, exam_type, education_level)
+                await ctrl.jobs.update_status(job_id, "completed", progress=100, stage="completed", material_id=material.id)
+        except Exception as exc:
+            logger.exception("study.sow_text_job failed job=%s: %s", job_id, exc)
+            try:
+                async with AsyncSessionLocal() as db:
+                    await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=str(exc)[:300])
+            except Exception:
+                pass
+
+    async def create_sow_file_job(self, current_user: User, data: bytes, filename: str, mime: str, extracted_text: str, page_count: int, title: str | None, exam_type: str | None, education_level: str | None) -> dict:
+        job = SowUploadJob(id=str(uuid.uuid4()), user_id=current_user.id, status="queued", progress=0, stage="queued", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+        await self.jobs.create(job)
+        asyncio.create_task(self._run_sow_file_job(job.id, current_user.id, data, filename, mime, extracted_text, page_count, title, exam_type, education_level))
+        return {"job_id": job.id, "status": "queued"}
+
+    async def _run_sow_file_job(self, job_id: str, user_id: int, data: bytes, filename: str, mime: str, extracted_text: str, page_count: int, title: str | None, exam_type: str | None, education_level: str | None) -> None:
+        from app.core.database import AsyncSessionLocal
+        try:
+            async with AsyncSessionLocal() as db:
+                ctrl = StudyController(db)
+                await ctrl.jobs.update_status(job_id, "processing", progress=30, stage="parsing")
+                user = User(id=user_id)
+                use_title = (title or "").strip() or (filename.rsplit(".", 1)[0] if "." in filename else filename) or "Uploaded material"
+                material = await ctrl._create_material_from_text(user, use_title, extracted_text, exam_type, education_level, original_file_data=data, file_mime_type=mime, page_count=page_count)
+                await ctrl.jobs.update_status(job_id, "completed", progress=100, stage="completed", material_id=material.id)
+        except Exception as exc:
+            logger.exception("study.sow_file_job failed job=%s: %s", job_id, exc)
+            try:
+                async with AsyncSessionLocal() as db:
+                    await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=str(exc)[:300])
+            except Exception:
+                pass
+
+    async def get_sow_job(self, current_user: User, job_id: str) -> dict:
+        job = await self.jobs.get_for_user(job_id, current_user.id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "material_id": job.material_id,
+            "error": job.error_message,
+            "progress": job.progress,
+            "stage": job.stage,
+            "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+        }
+

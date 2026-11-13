@@ -85,8 +85,8 @@ module.exports = ({ config }) => {
       plugins,
       extra: {
         ...baseConfig.extra,
-        // Dynamic environment-specific values
-        apiUrl: process.env.EXPO_PUBLIC_API_URL || "",
+        // Dynamic environment-specific values (prefer env, fall back to app.json/Render)
+        apiUrl: process.env.EXPO_PUBLIC_API_URL || baseConfig.extra?.apiUrl || "",
         paystackPublicKey: process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "",
         googleClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "",
         eas: {

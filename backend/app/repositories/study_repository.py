@@ -3,7 +3,9 @@
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.study import StudyAsset, StudyMaterial
+from datetime import datetime
+
+from app.models.study import SowUploadJob, StudyAsset, StudyMaterial
 
 
 class StudyMaterialRepository:
@@ -71,3 +73,44 @@ class StudyAssetRepository:
         await self.db.commit()
         await self.db.refresh(asset)
         return asset
+
+class SowUploadJobRepository:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create(self, job: SowUploadJob) -> SowUploadJob:
+        self.db.add(job)
+        await self.db.commit()
+        await self.db.refresh(job)
+        return job
+
+    async def get(self, job_id: str) -> SowUploadJob | None:
+        result = await self.db.execute(select(SowUploadJob).where(SowUploadJob.id == job_id))
+        return result.scalar_one_or_none()
+
+    async def get_for_user(self, job_id: str, user_id: int) -> SowUploadJob | None:
+        result = await self.db.execute(
+            select(SowUploadJob).where(SowUploadJob.id == job_id, SowUploadJob.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_status(
+        self, job_id: str, status: str, *, progress: int | None = None, stage: str | None = None,
+        material_id: int | None = None, error_message: str | None = None
+    ) -> SowUploadJob | None:
+        job = await self.get(job_id)
+        if not job:
+            return None
+        job.status = status
+        if progress is not None:
+            job.progress = progress
+        if stage is not None:
+            job.stage = stage
+        if material_id is not None:
+            job.material_id = material_id
+        if error_message is not None:
+            job.error_message = error_message
+        job.updated_at = datetime.utcnow()
+        await self.db.commit()
+        await self.db.refresh(job)
+        return job
