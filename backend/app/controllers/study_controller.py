@@ -13,7 +13,7 @@ from app.models.user import User
 from app.repositories.study_asset_queries import list_assets_for_material
 from app.repositories.study_repository import SowUploadJobRepository, StudyAssetRepository, StudyMaterialRepository
 from app.repositories.wallet_repository import WalletRepository
-from app.services.ai_service import call_ai, parse_json_response
+from app.services.ai_service import call_ai, call_ai_vision, parse_json_response
 from app.services.study_unlock_service import StudyUnlockService
 from app.core.config import settings
 from app.services.study_prompts import EXPLANATION_PROMPT, SOW_PARSER_PROMPT
@@ -501,17 +501,54 @@ class StudyController:
             except Exception:
                 pass
 
-    async def create_sow_file_job(self, current_user: User, data: bytes, filename: str, mime: str, extracted_text: str, page_count: int, title: str | None, exam_type: str | None, education_level: str | None) -> dict:
+    async def create_sow_file_job(
+        self,
+        current_user: User,
+        data: bytes,
+        filename: str,
+        mime: str,
+        title: str | None,
+        exam_type: str | None,
+        education_level: str | None,
+        selected_pages: list[int] | None = None,
+    ) -> dict:
         job = SowUploadJob(id=str(uuid.uuid4()), user_id=current_user.id, status="queued", progress=0, stage="queued", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
         await self.jobs.create(job)
-        asyncio.create_task(self._run_sow_file_job(job.id, current_user.id, data, filename, mime, extracted_text, page_count, title, exam_type, education_level))
+        asyncio.create_task(
+            self._run_sow_file_job(
+                job.id,
+                current_user.id,
+                data,
+                filename,
+                mime,
+                title,
+                exam_type,
+                education_level,
+                selected_pages,
+            )
+        )
         return {"job_id": job.id, "status": "queued"}
 
-    async def _run_sow_file_job(self, job_id: str, user_id: int, data: bytes, filename: str, mime: str, extracted_text: str, page_count: int, title: str | None, exam_type: str | None, education_level: str | None) -> None:
+    async def _run_sow_file_job(
+        self,
+        job_id: str,
+        user_id: int,
+        data: bytes,
+        filename: str,
+        mime: str,
+        title: str | None,
+        exam_type: str | None,
+        education_level: str | None,
+        selected_pages: list[int] | None,
+    ) -> None:
         from app.core.database import AsyncSessionLocal
         try:
+            from app.services.study_file_service import extract_text
+
             async with AsyncSessionLocal() as db:
                 ctrl = StudyController(db)
+                await ctrl.jobs.update_status(job_id, "processing", progress=10, stage="reading_pages")
+                extracted_text, page_count = extract_text(data, filename, mime, selected_pages)
                 await ctrl.jobs.update_status(job_id, "processing", progress=30, stage="parsing")
                 user = User(id=user_id)
                 use_title = (title or "").strip() or (filename.rsplit(".", 1)[0] if "." in filename else filename) or "Uploaded material"
@@ -521,7 +558,93 @@ class StudyController:
             logger.exception("study.sow_file_job failed job=%s: %s", job_id, exc)
             try:
                 async with AsyncSessionLocal() as db:
-                    await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=str(exc)[:300])
+                    error = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
+                    await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=error[:300])
+            except Exception:
+                pass
+
+    async def create_sow_image_job(
+        self,
+        current_user: User,
+        images: list[tuple[bytes, str, str]],
+        source_pdf: bytes,
+        title: str | None,
+        exam_type: str | None,
+        education_level: str | None,
+    ) -> dict:
+        job = SowUploadJob(id=str(uuid.uuid4()), user_id=current_user.id, status="queued", progress=0, stage="queued", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
+        await self.jobs.create(job)
+        asyncio.create_task(
+            self._run_sow_image_job(
+                job.id,
+                current_user.id,
+                images,
+                source_pdf,
+                title,
+                exam_type,
+                education_level,
+            )
+        )
+        return {"job_id": job.id, "status": "queued"}
+
+    async def _run_sow_image_job(
+        self,
+        job_id: str,
+        user_id: int,
+        images: list[tuple[bytes, str, str]],
+        source_pdf: bytes,
+        title: str | None,
+        exam_type: str | None,
+        education_level: str | None,
+    ) -> None:
+        from app.core.database import AsyncSessionLocal
+
+        async def update_job(status: str, **fields) -> None:
+            async with AsyncSessionLocal() as db:
+                await SowUploadJobRepository(db).update_status(job_id, status, **fields)
+
+        try:
+            await update_job("processing", progress=10, stage="reading_pages")
+            text_pages = []
+            for index, (data, filename, mime) in enumerate(images, start=1):
+                text = await call_ai_vision(
+                    data,
+                    mime,
+                    "Transcribe all readable text from this study page in reading order. Preserve headings, lists, equations, and table structure. Do not summarize or add information.",
+                )
+                if not text.strip():
+                    raise ValueError(f"No text could be extracted from image {index} ({filename})")
+                text_pages.append(f"[PAGE {index}: {filename}]\n{text.strip()}")
+                progress = 10 + round(index / len(images) * 20)
+                await update_job(
+                    "processing",
+                    progress=progress,
+                    stage="reading_pages",
+                )
+
+            extracted_text = "\n\n".join(text_pages)
+            await update_job("processing", progress=30, stage="parsing")
+            async with AsyncSessionLocal() as db:
+                ctrl = StudyController(db)
+                user = User(id=user_id)
+                fallback_title = images[0][1].rsplit(".", 1)[0] if images else "Uploaded material"
+                material_title = (title or "").strip() or fallback_title
+                material = await ctrl._create_material_from_text(
+                    user,
+                    material_title,
+                    extracted_text,
+                    exam_type,
+                    education_level,
+                    original_file_data=source_pdf,
+                    file_mime_type="application/pdf",
+                    page_count=len(images),
+                )
+                await ctrl.jobs.update_status(job_id, "completed", progress=100, stage="completed", material_id=material.id)
+        except Exception as exc:
+            logger.exception("study.sow_image_job failed job=%s: %s", job_id, exc)
+            try:
+                error = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
+                await update_job("failed", stage="failed", error_message=error[:300])
             except Exception:
                 pass
 
@@ -539,3 +662,8 @@ class StudyController:
             "updated_at": job.updated_at.isoformat() if job.updated_at else None,
         }
 
+    async def get_material_original_file(self, current_user: User, material_id: int) -> tuple[bytes, str | None]:
+        material = await self._get_owned_material(current_user, material_id)
+        if not material.original_file_data:
+            raise HTTPException(status_code=404, detail="Original file not found")
+        return material.original_file_data, material.file_mime_type

@@ -91,7 +91,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "https://pagepay-fff6.onrender.com",
+      "apiUrl": "https://pagepay.onrender.com",
       "router": {},
       "eas": {}
     }

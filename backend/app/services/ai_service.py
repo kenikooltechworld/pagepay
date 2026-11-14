@@ -1,5 +1,6 @@
 """AI service: Cloudflare Workers AI integration."""
 
+import base64
 import os
 import json
 import logging
@@ -69,6 +70,47 @@ async def call_ai(prompt: str, max_tokens: int = 4000) -> str:
     except Exception as exc:
         logger.exception("ai.call error model=%s: %s", CLOUDFLARE_MODEL, exc)
         raise HTTPException(status_code=502, detail=f"AI service error: {str(exc)[:100]}")
+
+
+async def call_ai_vision(image_bytes: bytes, content_type: str, prompt: str) -> str:
+    """Use Cloudflare Workers AI vision to extract study content from an image."""
+    if not CLOUDFLARE_ACCOUNT_ID or not CLOUDFLARE_AI_API_KEY:
+        logger.error("ai.vision misconfigured: missing CLOUDFLARE_ACCOUNT_ID/API_TOKEN")
+        raise HTTPException(status_code=503, detail="AI vision service not configured")
+
+    image = base64.b64encode(image_bytes).decode("ascii")
+    payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{image}"}},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+    }
+    model = "@cf/meta/llama-3.2-11b-vision-instruct"
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{CLOUDFLARE_BASE_URL}/{model}",
+                headers={"Authorization": f"Bearer {CLOUDFLARE_AI_API_KEY}"},
+                json=payload,
+            )
+            if response.status_code != 200:
+                logger.error("ai.vision failed status=%s body=%s", response.status_code, response.text[:300])
+                raise HTTPException(status_code=502, detail="AI vision service unavailable")
+            text = _extract_text(response.json().get("result", {}))
+            if not text:
+                logger.error("ai.vision empty response model=%s", model)
+                raise HTTPException(status_code=502, detail="AI vision returned empty text")
+            return text
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("ai.vision error model=%s: %s", model, exc)
+        raise HTTPException(status_code=502, detail=f"AI vision error: {str(exc)[:100]}")
 
 
 async def parse_json_response(text: str) -> dict:

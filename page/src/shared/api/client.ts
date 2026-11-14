@@ -2,13 +2,9 @@ import Constants from "expo-constants";
 import { clearTokens, getRefreshToken, getToken, setTokens } from "@/src/shared/lib/storage";
 
 const BASE_URL =
-  Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL;
+  Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL || "";
 
-if (!BASE_URL) {
-  throw new Error("EXPO_PUBLIC_API_URL is not set");
-}
-
-export const API_URL = `${BASE_URL.replace(/\/$/, "")}/api/v1`;
+export const API_URL = BASE_URL ? `${BASE_URL.replace(/\/$/, "")}/api/v1` : "";
 
 let _onUnauthenticated: (() => void) | null = null;
 export function setOnUnauthenticated(cb: (() => void) | null) {

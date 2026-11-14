@@ -49,6 +49,37 @@ export type SowJobStatus = {
   updated_at?: string | null;
 };
 
+export type PdfPreviewPage = {
+  page: number;
+  image_base64: string;
+  width: number;
+  height: number;
+  is_scan: boolean;
+};
+
+export type MaterialPage = {
+  page: number;
+  image_url: string | null;
+  width: number;
+  height: number;
+  is_scan: boolean;
+};
+
+export type MaterialPagesResponse = {
+  pages: MaterialPage[];
+  total: number;
+};
+
+export type MaterialFigure = {
+  figure_index: number;
+  page: number;
+  image_url: string | null;
+  width: number;
+  height: number;
+  description: string | null;
+  caption: string | null;
+};
+
 export type GenerateAssetInput = {
   material_id: number;
   asset_type: "mcq" | "flashcard" | "essay";
@@ -128,6 +159,7 @@ export async function uploadSowDocument(input: {
   title?: string;
   exam_type?: string;
   education_level?: string;
+  selected_pages?: number[];
   onProgress?: (loaded: number, total: number) => void;
 }): Promise<SowJobAccepted> {
   const form = new FormData();
@@ -139,12 +171,78 @@ export async function uploadSowDocument(input: {
   if (input.title) form.append("title", input.title);
   if (input.exam_type) form.append("exam_type", input.exam_type);
   if (input.education_level) form.append("education_level", input.education_level);
+  if (input.selected_pages !== undefined) form.append("selected_pages", JSON.stringify(input.selected_pages));
   const res = await apiUpload("/study/sow/upload-document", form, input.onProgress ? { onProgress: input.onProgress } : undefined);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.detail || res.statusText || "Failed to start upload");
   }
   return (await res.json()) as SowJobAccepted;
+}
+
+export async function previewSowPdf(file: {
+  uri: string;
+  name: string;
+  type?: string;
+}): Promise<{ total: number; pages: PdfPreviewPage[] }> {
+  const form = new FormData();
+  form.append("file", {
+    uri: file.uri,
+    name: file.name,
+    type: file.type || "application/pdf",
+  } as any);
+  const res = await apiUpload("/study/sow/preview-pdf", form, { timeoutMs: 300_000 });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail || res.statusText || "Failed to preview PDF");
+  }
+  return (await res.json()) as { total: number; pages: PdfPreviewPage[] };
+}
+
+export async function uploadSowImages(input: {
+  files: Array<{ uri: string; name: string; type?: string }>;
+  title?: string;
+  exam_type?: string;
+  education_level?: string;
+  onProgress?: (loaded: number, total: number) => void;
+}): Promise<SowJobAccepted> {
+  const form = new FormData();
+  for (const file of input.files) {
+    form.append("files", {
+      uri: file.uri,
+      name: file.name,
+      type: file.type || "image/jpeg",
+    } as any);
+  }
+  if (input.title) form.append("title", input.title);
+  if (input.exam_type) form.append("exam_type", input.exam_type);
+  if (input.education_level) form.append("education_level", input.education_level);
+  const res = await apiUpload(
+    "/study/sow/upload-images",
+    form,
+    input.onProgress ? { onProgress: input.onProgress } : undefined,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail || res.statusText || "Failed to upload images");
+  }
+  return (await res.json()) as SowJobAccepted;
+}
+
+export async function fetchMaterialPages(
+  id: number,
+  startPage = 1,
+  limit = 10,
+): Promise<MaterialPagesResponse> {
+  const res = await apiFetch(`/study/materials/${id}/page-images?start_page=${startPage}&limit=${limit}`);
+  if (!res.ok) throw new Error(await parseApiError(res, "Failed to load source pages"));
+  return (await res.json()) as MaterialPagesResponse;
+}
+
+export async function fetchMaterialFigures(id: number): Promise<MaterialFigure[]> {
+  const res = await apiFetch(`/study/materials/${id}/figures`);
+  if (!res.ok) throw new Error(await parseApiError(res, "Failed to load figures"));
+  return (await res.json()) as MaterialFigure[];
 }
 
 export async function getSowJob(jobId: string): Promise<SowJobStatus> {

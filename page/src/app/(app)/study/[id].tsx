@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useToast } from "@/components/ui/toast";
-import { PagePay } from "@/constants/theme";
+import { Fonts, PagePay } from "@/constants/theme";
 import { useEffectiveScheme } from "@/src/shared/hooks/use-effective-scheme";
 import { fetchWalletBalance } from "@/src/shared/api/wallet";
 import {
@@ -45,9 +45,9 @@ function Chip({
   return (
     <Pressable
       onPress={onPress}
-      className={`rounded-full border px-3 py-1.5 ${selected ? "border-foreground bg-foreground/5" : "border-border"}`}
+      className={`rounded-full border px-3 py-1.5 ${selected ? "border-primary bg-primary/10" : "border-border bg-background"}`}
     >
-      <Text className={`text-xs font-medium ${selected ? "text-foreground" : "text-muted-foreground"}`}>{label}</Text>
+      <Text className={`text-xs font-medium ${selected ? "text-primary" : "text-muted-foreground"}`}>{label}</Text>
     </Pressable>
   );
 }
@@ -60,7 +60,7 @@ function AssetContent({ asset }: { asset: AssetItem }) {
     return (
       <View className="gap-3">
         {c.questions.map((q: any, i: number) => (
-          <View key={i} className="gap-1.5 rounded-lg border border-border p-3">
+          <View key={i} className="gap-1.5 rounded-xl border border-border bg-background p-3">
             <Text className="text-sm font-semibold text-foreground">{i + 1}. {q.question}</Text>
             {Array.isArray(q.options) ? q.options.map((opt: string, oi: number) => {
               const correct = q.correct_index === oi;
@@ -81,7 +81,7 @@ function AssetContent({ asset }: { asset: AssetItem }) {
     return (
       <View className="gap-3">
         {c.flashcards.map((f: any, i: number) => (
-          <View key={i} className="gap-1 rounded-lg border border-border p-3">
+          <View key={i} className="gap-1 rounded-xl border border-border bg-background p-3">
             <Text className="text-xs font-semibold text-muted-foreground uppercase">Front</Text>
             <Text className="text-sm text-foreground">{f.front}</Text>
             <Text className="text-xs font-semibold text-muted-foreground uppercase mt-1">Back</Text>
@@ -96,7 +96,7 @@ function AssetContent({ asset }: { asset: AssetItem }) {
     return (
       <View className="gap-3">
         {c.essays.map((e: any, i: number) => (
-          <View key={i} className="gap-1.5 rounded-lg border border-border p-3">
+          <View key={i} className="gap-1.5 rounded-xl border border-border bg-background p-3">
             <Text className="text-sm font-semibold text-foreground">Q{i + 1}. {e.prompt}</Text>
             {Array.isArray(e.key_points) && e.key_points.length ? (
               <View className="gap-0.5">
@@ -124,6 +124,7 @@ function AssetContent({ asset }: { asset: AssetItem }) {
 export default function StudyMaterialDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const materialId = Number(id);
+  const isValidMaterialId = Number.isSafeInteger(materialId) && materialId > 0;
   const router = useRouter();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -159,18 +160,23 @@ export default function StudyMaterialDetail() {
   const q = useQuery({
     queryKey: detailKey,
     queryFn: () => getMaterial(materialId),
-    enabled: Number.isFinite(materialId),
+    enabled: isValidMaterialId,
   });
-  const balanceQ = useQuery({ queryKey: ["wallet", "balance"], queryFn: fetchWalletBalance });
+  const balanceQ = useQuery({
+    queryKey: ["wallet", "balance"],
+    queryFn: fetchWalletBalance,
+    enabled: isValidMaterialId,
+  });
 
   const onRefresh = useCallback(async () => {
+    if (!isValidMaterialId) return;
     setRefreshing(true);
     try {
       await Promise.all([q.refetch(), balanceQ.refetch()]);
     } finally {
       setRefreshing(false);
     }
-  }, [q, balanceQ]);
+  }, [isValidMaterialId, q, balanceQ]);
 
   const genMut = useMutation({
     mutationFn: generateAsset,
@@ -281,42 +287,94 @@ export default function StudyMaterialDetail() {
   const countNum = Math.max(1, Math.min(20, parseInt(genCount || "5", 10) || 5));
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" style={{ backgroundColor: tokens.paper }}>
       <StatusBar style="auto" />
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-        <PageHeader title="Material" showBack onBack={() => router.back()} tokens={tokens} />
+        <PageHeader title={material?.title || "Material"} showBack onBack={() => router.back()} tokens={tokens} />
         <ScrollView
           className="flex-1"
-          contentContainerClassName="px-4 py-4 gap-4 pb-10"
+          contentContainerClassName="gap-5 px-4 py-5 pb-10"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={tokens.mint} />}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {q.isLoading && !material ? (
-            <Card><CardContent className="gap-3 pt-2"><Skeleton className="h-6 w-48" /><Skeleton className="h-24 w-full" /></CardContent></Card>
+          {!isValidMaterialId ? (
+            <Card className="rounded-2xl p-4">
+              <CardContent className="items-center gap-3 py-2">
+                <View className="h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+                  <Ionicons name="alert-circle-outline" size={24} color={tokens.signal} />
+                </View>
+                <Text className="text-center text-sm text-muted-foreground">
+                  This study material link is invalid.
+                </Text>
+                <Button
+                  className="min-h-10 min-w-0 rounded-lg px-4 py-1.5"
+                  size="sm"
+                  textClassName="text-sm"
+                  onPress={() => router.replace("/(app)/study" as any)}
+                >
+                  Back to study
+                </Button>
+              </CardContent>
+            </Card>
+          ) : q.isLoading && !material ? (
+            <Card className="rounded-2xl p-4"><CardContent className="gap-3 py-0"><Skeleton className="h-6 w-48" /><Skeleton className="h-24 w-full" /></CardContent></Card>
           ) : q.error && !material ? (
-            <Card><CardContent className="gap-3 pt-2">
+            <Card className="rounded-2xl p-4"><CardContent className="gap-3 py-0">
               <Text className="text-sm text-destructive">{(q.error as Error).message}</Text>
-              <Button variant="outline" onPress={() => void onRefresh()}>Retry</Button>
+              <Button
+                className="min-h-10 min-w-0 self-start rounded-lg px-4 py-1.5"
+                size="sm"
+                textClassName="text-sm"
+                variant="outline"
+                onPress={() => void onRefresh()}
+              >
+                Retry
+              </Button>
             </CardContent></Card>
           ) : material ? (
             <>
-              <Card>
-                <CardContent className="gap-3 pt-2">
-                  <View className="flex-row items-start justify-between gap-2">
-                    <View className="flex-1 gap-1">
-                      <Text className="text-lg font-semibold text-foreground">{material.title}</Text>
+              <Card className="rounded-2xl p-4">
+                <CardContent className="gap-4 py-0">
+                  <View className="flex-row items-start gap-3">
+                    <View className="h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                      <Ionicons name="book-outline" size={21} color={tokens.mint} />
+                    </View>
+                    <View className="min-w-0 flex-1 gap-1">
+                      <Text className="text-xs font-semibold uppercase tracking-widest text-primary">Study material</Text>
+                      <Text
+                        className="text-xl font-semibold leading-7 text-foreground"
+                        style={{ fontFamily: Fonts.editorialSemiBold as string }}
+                      >
+                        {material.title}
+                      </Text>
                       <Text className="text-xs text-muted-foreground">
-                        {[material.exam_type, material.education_level].filter(Boolean).join(" · ") || "Study material"}
+                        {[material.exam_type, material.education_level].filter(Boolean).join(" · ") || "Your learning resource"}
                       </Text>
                     </View>
                     <View className="flex-row gap-2">
-                      <Pressable onPress={startEdit} hitSlop={8}><Ionicons name="create-outline" size={18} color={tokens.ink} /></Pressable>
-                      <Pressable onPress={confirmDeleteMaterial} hitSlop={8}><Ionicons name="trash-outline" size={18} color={tokens.inkMuted} /></Pressable>
+                      <Pressable
+                        onPress={startEdit}
+                        hitSlop={8}
+                        className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit material"
+                      >
+                        <Ionicons name="create-outline" size={17} color={tokens.ink} />
+                      </Pressable>
+                      <Pressable
+                        onPress={confirmDeleteMaterial}
+                        hitSlop={8}
+                        className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
+                        accessibilityRole="button"
+                        accessibilityLabel="Delete material"
+                      >
+                        <Ionicons name="trash-outline" size={17} color={tokens.inkMuted} />
+                      </Pressable>
                     </View>
                   </View>
                   {editing ? (
-                    <View className="gap-2 mt-1">
+                    <View className="gap-3 rounded-xl border border-border bg-background/70 p-3">
                       <Label>Title</Label>
                       <Input value={editTitle} onChangeText={setEditTitle} />
                       <Label>Content</Label>
@@ -332,10 +390,19 @@ export default function StudyMaterialDetail() {
                         </View>
                       </View>
                       <View className="flex-row gap-2">
-                        <Button size="sm" variant="outline" onPress={() => setEditing(false)} className="flex-1">Cancel</Button>
                         <Button
                           size="sm"
-                          className="flex-1"
+                          variant="outline"
+                          onPress={() => setEditing(false)}
+                          className="min-h-10 min-w-0 flex-1 rounded-lg px-3 py-1.5"
+                          textClassName="text-sm"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="min-h-10 min-w-0 flex-1 rounded-lg px-3 py-1.5"
+                          textClassName="text-sm"
                           onPress={() => {
                             const payload: any = {};
                             if (editTitle.trim() !== (material.title || "")) payload.title = editTitle.trim() || undefined;
@@ -356,16 +423,60 @@ export default function StudyMaterialDetail() {
                       </View>
                     </View>
                   ) : (
-                    <Text className="text-sm text-muted-foreground" numberOfLines={8}>{material.content || "No content"}</Text>
+                    <View className="gap-2 rounded-xl border border-border bg-background/70 p-3">
+                      <View className="flex-row items-center gap-2">
+                        <Ionicons name="reader-outline" size={16} color={tokens.mint} />
+                        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material overview</Text>
+                      </View>
+                      <Text className="text-sm leading-6 text-foreground">
+                        {material.content || (material.parsed_structure
+                          ? JSON.stringify(material.parsed_structure, null, 2)
+                          : "No content")}
+                      </Text>
+                      <View className="flex-row gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          className="min-h-9 min-w-0 flex-1 rounded-lg px-3 py-1"
+                          textClassName="text-xs"
+                          onPress={() => router.push(`/(app)/study/${materialId}/reader` as never)}
+                          icon={<Ionicons name="school-outline" size={14} color={tokens.mintText} />}
+                        >
+                          Read material
+                        </Button>
+                        {material.has_original_file ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-9 min-w-0 flex-1 rounded-lg px-3 py-1"
+                            textClassName="text-xs"
+                            onPress={() => router.push(`/(app)/study/${materialId}/file-viewer` as never)}
+                            icon={<Ionicons name="document-text-outline" size={14} color={tokens.mint} />}
+                          >
+                            Original pages
+                          </Button>
+                        ) : null}
+                      </View>
+                    </View>
                   )}
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="gap-3 pt-2">
+              <Card className="rounded-2xl p-4">
+                <CardContent className="gap-4 py-0">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-base font-semibold text-foreground">Generate asset</Text>
-                    <Text className="text-xs text-muted-foreground">Balance: {sp} SP</Text>
+                    <View className="gap-1">
+                      <Text
+                        className="text-lg font-semibold text-foreground"
+                        style={{ fontFamily: Fonts.editorialSemiBold as string }}
+                      >
+                        Build study assets
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">Create practice material from this upload.</Text>
+                    </View>
+                    <View className="flex-row items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5">
+                      <Ionicons name="wallet-outline" size={14} color={tokens.mint} />
+                      <Text className="text-xs font-semibold text-foreground">{sp} SP</Text>
+                    </View>
                   </View>
                   <View className="gap-2">
                     <Label>Type</Label>
@@ -394,43 +505,129 @@ export default function StudyMaterialDetail() {
                     <Input value={genTopic} onChangeText={setGenTopic} placeholder="Focus topic..." />
                   </View>
                   <Button
+                    className="min-h-10 min-w-0 self-start rounded-lg px-4 py-1.5"
+                    size="sm"
+                    textClassName="text-sm"
                     onPress={() => genMut.mutate({ material_id: materialId, asset_type: genType, count: countNum, topic: genTopic.trim() || null, difficulty: genDifficulty })}
                     disabled={genMut.isPending}
-                    icon={genMut.isPending ? <PagePaySpinner size={20} /> : undefined}
+                    icon={genMut.isPending ? <PagePaySpinner size={16} /> : undefined}
                   >
                     {genMut.isPending ? "Generating..." : "Generate"}
                   </Button>
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="gap-3 pt-2">
-                  <Text className="text-base font-semibold text-foreground">Assets ({material.assets.length})</Text>
+              <Card className="rounded-2xl p-4">
+                <CardContent className="gap-4 py-0">
+                  <View className="flex-row items-end justify-between">
+                    <View className="gap-1">
+                      <Text
+                        className="text-lg font-semibold text-foreground"
+                        style={{ fontFamily: Fonts.editorialSemiBold as string }}
+                      >
+                        Your study assets
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">Generated for this material.</Text>
+                    </View>
+                    <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {material.assets.length} {material.assets.length === 1 ? "asset" : "assets"}
+                    </Text>
+                  </View>
                   {material.assets.length === 0 ? (
-                    <Text className="text-sm text-muted-foreground">No assets yet. Generate one above.</Text>
+                    <View className="items-center gap-2 rounded-xl border border-dashed border-border bg-background/70 px-4 py-6">
+                      <Ionicons name="layers-outline" size={24} color={tokens.inkMuted} />
+                      <Text className="text-center text-sm text-muted-foreground">
+                        No assets yet. Generate your first practice set above.
+                      </Text>
+                    </View>
                   ) : (
                     <View className="gap-3">
                       {material.assets.map((a) => (
-                        <View key={a.id} className="gap-2 rounded-xl border border-border p-3">
+                        <View key={a.id} className="gap-3 rounded-xl border border-border bg-background/70 p-3">
                           <View className="flex-row items-center justify-between">
-                            <View className="flex-1 gap-0.5">
-                              <Text className="text-sm font-semibold text-foreground uppercase">{a.asset_type}{a.topic ? ` · ${a.topic}` : ""}</Text>
-                              <Text className="text-xs text-muted-foreground">
-                                {a.unlocked ? "Unlocked" : `Locked · ${a.points_to_unlock} SP`}
-                              </Text>
+                            <View className="flex-1 flex-row items-center gap-3">
+                              <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                                <Ionicons
+                                  name={a.asset_type === "mcq" ? "list-outline" : a.asset_type === "flashcard" ? "albums-outline" : "create-outline"}
+                                  size={18}
+                                  color={tokens.mint}
+                                />
+                              </View>
+                              <View className="flex-1 gap-1">
+                                <Text className="text-sm font-semibold text-foreground uppercase">{a.asset_type}{a.topic ? ` · ${a.topic}` : ""}</Text>
+                                <Text className="text-xs text-muted-foreground">
+                                  {a.unlocked ? "Ready to study" : `Locked · ${a.points_to_unlock} SP`}
+                                </Text>
+                              </View>
                             </View>
                             <View className="flex-row items-center gap-2">
                               {!a.unlocked ? (
-                                <Button size="sm" onPress={() => unlockMut.mutate(a.id)} disabled={unlockMut.isPending}>
+                                <Button
+                                  className="min-h-10 min-w-0 rounded-lg px-3 py-1.5"
+                                  size="sm"
+                                  textClassName="text-sm"
+                                  onPress={() => unlockMut.mutate(a.id)}
+                                  disabled={unlockMut.isPending}
+                                  icon={unlockMut.isPending ? <PagePaySpinner size={16} /> : undefined}
+                                >
                                   Unlock
                                 </Button>
                               ) : null}
+                              <Pressable
+                                onPress={() => {
+                                  setEditingAssetId(a.id);
+                                  setEditAssetTopic(a.topic || "");
+                                }}
+                                hitSlop={8}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Edit ${a.asset_type} topic`}
+                              >
+                                <Ionicons name="create-outline" size={18} color={tokens.inkMuted} />
+                              </Pressable>
                               <Pressable onPress={() => confirmDeleteAsset(a)} hitSlop={8}>
                                 <Ionicons name="trash-outline" size={18} color={tokens.inkMuted} />
                               </Pressable>
                             </View>
                           </View>
-                          {a.unlocked ? <AssetContent asset={a} /> : (
+                          {editingAssetId === a.id ? (
+                            <View className="gap-2 rounded-lg border border-border bg-background p-3">
+                              <Label>Asset topic</Label>
+                              <Input
+                                value={editAssetTopic}
+                                onChangeText={setEditAssetTopic}
+                                placeholder="Optional topic"
+                                editable={!updateAssetMut.isPending}
+                              />
+                              <View className="flex-row gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="min-h-10 min-w-0 rounded-lg px-3 py-1.5"
+                                  textClassName="text-sm"
+                                  onPress={() => {
+                                    setEditingAssetId(null);
+                                    setEditAssetTopic("");
+                                  }}
+                                  disabled={updateAssetMut.isPending}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="min-h-10 min-w-0 rounded-lg px-3 py-1.5"
+                                  textClassName="text-sm"
+                                  onPress={() => updateAssetMut.mutate({
+                                    id: a.id,
+                                    topic: editAssetTopic.trim() || null,
+                                  })}
+                                  disabled={updateAssetMut.isPending}
+                                  icon={updateAssetMut.isPending ? <PagePaySpinner size={16} /> : undefined}
+                                >
+                                  Save topic
+                                </Button>
+                              </View>
+                            </View>
+                          ) : a.unlocked ? <AssetContent asset={a} /> : (
                             <Text className="text-xs text-muted-foreground">Unlock to view generated content.</Text>
                           )}
                         </View>
@@ -440,10 +637,24 @@ export default function StudyMaterialDetail() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardContent className="gap-3 pt-2">
-                  <Text className="text-base font-semibold text-foreground">Essay review</Text>
-                  <Text className="text-xs text-muted-foreground">Submit your essay for AI feedback. Optionally target a generated essay question.</Text>
+              <Card className="rounded-2xl p-4">
+                <CardContent className="gap-4 py-0">
+                  <View className="flex-row items-start gap-3">
+                    <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                      <Ionicons name="create-outline" size={19} color={tokens.mint} />
+                    </View>
+                    <View className="flex-1 gap-1">
+                      <Text
+                        className="text-lg font-semibold text-foreground"
+                        style={{ fontFamily: Fonts.editorialSemiBold as string }}
+                      >
+                        Essay review
+                      </Text>
+                      <Text className="text-xs leading-5 text-muted-foreground">
+                        Get feedback on your writing, with the option to target a generated question.
+                      </Text>
+                    </View>
+                  </View>
                   <View className="gap-2">
                     <Label>Target essay asset (optional)</Label>
                     <View className="flex-row flex-wrap gap-2">
@@ -482,6 +693,9 @@ export default function StudyMaterialDetail() {
                     <Input value={essayText} onChangeText={setEssayText} multiline placeholder="Write your essay (min 10 chars)..." style={{ minHeight: 140, textAlignVertical: "top" }} />
                   </View>
                   <Button
+                    className="min-h-10 min-w-0 self-start rounded-lg px-4 py-1.5"
+                    size="sm"
+                    textClassName="text-sm"
                     onPress={() => {
                       setReview(null);
                       const useAsset = selectedEssayAsset ? selectedEssayAsset.id : undefined;
@@ -494,12 +708,12 @@ export default function StudyMaterialDetail() {
                       });
                     }}
                     disabled={essayMut.isPending || essayText.trim().length < 10}
-                    icon={essayMut.isPending ? <PagePaySpinner size={20} /> : undefined}
+                    icon={essayMut.isPending ? <PagePaySpinner size={16} /> : undefined}
                   >
                     {essayMut.isPending ? "Reviewing..." : "Submit for review"}
                   </Button>
                     {review ? (
-                    <View className="gap-2 rounded-xl border border-border p-3">
+                    <View className="gap-2 rounded-xl border border-border bg-background/70 p-3">
                       <Text className="text-sm font-semibold text-foreground">
                         Result: {review.correct ? "Correct" : "Needs work"}{review.score != null ? ` · ${review.score}/100` : ""}
                       </Text>

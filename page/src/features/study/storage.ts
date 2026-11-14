@@ -40,6 +40,7 @@ export type UploadDraft = {
   originalUri: string;
   name: string;
   mimeType: string;
+  title?: string | null;
   examType: string | null;
   educationLevel: string | null;
   /** Converted page images (PDF preview pages saved to disk). */
@@ -527,57 +528,57 @@ export async function savePdfUploadDraft(params: {
   originalFile: { uri: string; name: string; type: string };
   pages: Array<{ page: number; image_base64: string; width?: number; height?: number }>;
   selectedPages: number[];
+  title?: string | null;
   examType: string | null;
   educationLevel: string | null;
 }): Promise<UploadDraft> {
   const id = randomId();
   const dir = ensureDraftDir(id);
-
-  // Persist the original picked file into the draft dir (best effort).
-  let originalUri = params.originalFile.uri;
   try {
     const safeName = (params.originalFile.name || "source.pdf").replace(/[^a-zA-Z0-9._-]+/g, "_");
     const dest = `${dir}${safeName}`;
     await FileSystemLegacy.copyAsync({ from: params.originalFile.uri, to: dest });
-    originalUri = dest;
-  } catch (e) {
-    console.warn("[draft] original copy failed, keeping picker uri", e);
-  }
-
-  // Persist converted page images (base64 PNG -> file).
-  const pages: DraftPage[] = [];
-  for (const p of params.pages || []) {
-    try {
-      if (!p?.image_base64) continue;
-      const pageUri = `${dir}page-${p.page}.png`;
-      await FileSystemLegacy.writeAsStringAsync(pageUri, p.image_base64, {
+    const pages: DraftPage[] = [];
+    for (const page of params.pages || []) {
+      if (!page?.image_base64) {
+        throw new Error(`Missing preview image for PDF page ${page?.page ?? "unknown"}`);
+      }
+      const pageUri = `${dir}page-${page.page}.png`;
+      await FileSystemLegacy.writeAsStringAsync(pageUri, page.image_base64, {
         encoding: FileSystemLegacy.EncodingType.Base64,
       });
-      pages.push({ page: p.page, uri: pageUri, width: p.width, height: p.height });
-    } catch (e) {
-      console.warn("[draft] failed to write page", p?.page, e);
+      pages.push({ page: page.page, uri: pageUri, width: page.width, height: page.height });
     }
-  }
 
-  const draft: UploadDraft = {
-    id,
-    kind: "pdf",
-    originalUri,
-    name: params.originalFile.name,
-    mimeType: params.originalFile.type || "application/pdf",
-    examType: params.examType ?? null,
-    educationLevel: params.educationLevel ?? null,
-    pages,
-    selectedPages: params.selectedPages?.length ? [...params.selectedPages] : pages.map((p) => p.page),
-    totalPages: pages.length,
-    status: "draft",
-    error: null,
-    jobId: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  await putUploadDraft(draft);
-  return draft;
+    const draft: UploadDraft = {
+      id,
+      kind: "pdf",
+      originalUri: dest,
+      name: params.originalFile.name,
+      mimeType: params.originalFile.type || "application/pdf",
+      title: params.title ?? null,
+      examType: params.examType ?? null,
+      educationLevel: params.educationLevel ?? null,
+      pages,
+      selectedPages: params.selectedPages?.length ? [...params.selectedPages] : pages.map((page) => page.page),
+      totalPages: pages.length,
+      status: "draft",
+      error: null,
+      jobId: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await putUploadDraft(draft);
+    return draft;
+  } catch (error) {
+    try {
+      const directory = new FileSystem.Directory(dir);
+      if (directory.exists) directory.delete();
+    } catch (cleanupError) {
+      console.warn("[draft] failed to clean incomplete draft", cleanupError);
+    }
+    throw error instanceof Error ? error : new Error("Could not save the PDF upload draft");
+  }
 }
 
 /** Read a draft page image back as base64 (for retry upload if needed). */

@@ -2,11 +2,7 @@ import { io, type Socket } from "socket.io-client";
 import Constants from "expo-constants";
 
 const SOCKET_URL =
-  Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL;
-
-if (!SOCKET_URL) {
-  throw new Error("EXPO_PUBLIC_API_URL is not set");
-}
+  Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL || "";
 
 let socket: Socket | null = null;
 

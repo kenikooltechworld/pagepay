@@ -98,6 +98,11 @@ export type MaterialPage = {
   is_scan: boolean;
 };
 
+export type MaterialPagesResponse = {
+  pages: MaterialPage[];
+  total: number;
+};
+
 export type SowUploadResponse = {
   material_id: number;
   title: string;
@@ -265,7 +270,7 @@ export async function uploadSowImage(
   }
 
   const res = await apiUpload(
-    "/api/v1/study/sow/upload-image",
+    "/study/sow/upload-image",
     form,
     onProgress ? { onProgress } : undefined,
   );
@@ -316,7 +321,7 @@ export async function uploadSowImages(
   }
 
   const res = await apiUpload(
-    "/api/v1/study/sow/upload-images",
+    "/study/sow/upload-images",
     form,
     onProgress ? { onProgress } : undefined,
   );
@@ -343,12 +348,12 @@ export async function uploadSowDocument(
   if (education_level) {
     form.append("education_level", education_level);
   }
-  if (selected_pages && selected_pages.length > 0) {
+  if (selected_pages !== undefined && selected_pages !== null) {
     form.append("selected_pages", JSON.stringify(selected_pages));
   }
 
   const res = await apiUpload(
-    "/api/v1/study/sow/upload-document",
+    "/study/sow/upload-document",
     form,
     onProgress ? { onProgress } : undefined,
   );
@@ -379,7 +384,7 @@ export async function pollSowJob(
   const deadline = Date.now() + timeoutMs;
   let last: SowJobStatus | null = null;
   while (Date.now() < deadline) {
-    const res = await apiFetch(`/api/v1/study/sow/jobs/${jobId}`);
+    const res = await apiFetch(`/study/sow/jobs/${jobId}`);
     if (!res.ok) {
       throw new Error("Failed to fetch upload status");
     }
@@ -726,20 +731,16 @@ export async function fetchExamResult(sessionId: number): Promise<ExamResultDeta
 
 // â”€â”€ Page and figure artifacts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// The pages and the diagram crops of an uploaded material. They were
-// written to object storage when the material was uploaded, so the
-// phone loads them from the CDN instead of pulling a base64 blob of
-// every page through the API.
+// The original source is rendered into bounded page batches by the API.
 
-export async function fetchMaterialPages(id: number): Promise<MaterialPage[]> {
-  const res = await apiFetch(`/api/v1/study/materials/${id}/page-images`);
+export async function fetchMaterialPages(id: number, startPage = 1, limit = 10): Promise<MaterialPagesResponse> {
+  const res = await apiFetch(`/study/materials/${id}/page-images?start_page=${startPage}&limit=${limit}`);
   if (!res.ok) throw new Error("Failed to load pages");
   return res.json();
 }
 
 export async function fetchMaterialFigures(id: number): Promise<MaterialFigure[]> {
-  const res = await apiFetch(`/api/v1/study/materials/${id}/figures`);
+  const res = await apiFetch(`/study/materials/${id}/figures`);
   if (!res.ok) throw new Error("Failed to load figures");
   return res.json();
 }
-
