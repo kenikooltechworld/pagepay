@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useToast } from "@/components/ui/toast";
+import { RichText } from "@/components/study/RichText";
+import { SpecialBlockCard, type ContentBlock as StudyContentBlock } from "@/components/study/SpecialBlockCard";
 import { Fonts, PagePay } from "@/constants/theme";
 import { useEffectiveScheme } from "@/src/shared/hooks/use-effective-scheme";
 import { fetchWalletBalance } from "@/src/shared/api/wallet";
@@ -32,6 +34,82 @@ import {
 
 const ASSET_TYPES = ["mcq", "flashcard", "essay"] as const;
 const DIFFICULTIES = ["easy", "medium", "hard"] as const;
+
+type JsonObject = Record<string, unknown>;
+
+function asObject(value: unknown): JsonObject | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonObject
+    : null;
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function previewBlock(value: unknown, index: number, tokens: (typeof PagePay)["light"]) {
+  const source = asObject(value);
+  if (!source) return null;
+  const type = asString(source.type);
+  const text = asString(source.text);
+  if (type === "heading") {
+    return (
+      <Text key={index} className="text-base font-semibold text-foreground" style={{ fontFamily: Fonts.editorialSemiBold as string }}>
+        {text}
+      </Text>
+    );
+  }
+  if (type === "body") {
+    return <RichText key={index} color={tokens.inkMuted} fontSize={14} lineHeight={22}>{text}</RichText>;
+  }
+  if (type === "list" || type === "numbered_list" || type === "recap") {
+    return (
+      <View key={index} className="gap-1.5">
+        {type === "recap" ? <Text className="text-xs font-semibold uppercase tracking-wide text-primary">Key takeaways</Text> : null}
+        {asStringList(source.items).slice(0, 3).map((item, itemIndex) => (
+          <View key={`${index}-${itemIndex}`} className="flex-row gap-2">
+            <Text className="text-sm text-primary">{type === "numbered_list" ? `${itemIndex + 1}.` : "•"}</Text>
+            <RichText color={tokens.inkMuted} fontSize={13} lineHeight={20}>{item}</RichText>
+          </View>
+        ))}
+      </View>
+    );
+  }
+  if (type === "figure") {
+    return (
+      <View key={index} className="gap-1 rounded-xl border border-border bg-background/70 p-3">
+        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {asString(source.caption) || "Figure"}
+        </Text>
+        {text ? <Text className="text-sm leading-5 text-foreground">{text}</Text> : null}
+      </View>
+    );
+  }
+  if (["tip", "warning", "calculation", "code", "quote", "formula", "statement", "definition", "table"].includes(type)) {
+    const block: StudyContentBlock = {
+      type,
+      text,
+      label: asString(source.label),
+      level: typeof source.level === "number" ? source.level : undefined,
+      items: asStringList(source.items),
+      steps: asStringList(source.steps),
+      language: asString(source.language),
+      attribution: asString(source.attribution),
+      description: asString(source.description),
+      term: asString(source.term),
+      headers: asStringList(source.headers),
+      rows: Array.isArray(source.rows)
+        ? source.rows.map((row) => asStringList(row))
+        : [],
+    };
+    return <SpecialBlockCard key={index} block={block} tokens={tokens} index={index} />;
+  }
+  return text ? <RichText key={index} color={tokens.inkMuted} fontSize={14} lineHeight={22}>{text}</RichText> : null;
+}
 
 function Chip({
   label,
@@ -285,6 +363,10 @@ export default function StudyMaterialDetail() {
 
   const sp = balanceQ.data?.service_points_sp ?? 0;
   const countNum = Math.max(1, Math.min(20, parseInt(genCount || "5", 10) || 5));
+  const explanationStructure = asObject(material?.explanation_structure);
+  const explanationBlocks = Array.isArray(explanationStructure?.content_blocks)
+    ? explanationStructure.content_blocks
+    : [];
 
   return (
     <View className="flex-1 bg-background" style={{ backgroundColor: tokens.paper }}>
@@ -319,7 +401,7 @@ export default function StudyMaterialDetail() {
             </Card>
           ) : q.isLoading && !material ? (
             <Card className="rounded-2xl p-4"><CardContent className="gap-3 py-0"><Skeleton className="h-6 w-48" /><Skeleton className="h-24 w-full" /></CardContent></Card>
-          ) : q.error && !material ? (
+          ) : q.error ? (
             <Card className="rounded-2xl p-4"><CardContent className="gap-3 py-0">
               <Text className="text-sm text-destructive">{(q.error as Error).message}</Text>
               <Button
@@ -428,11 +510,18 @@ export default function StudyMaterialDetail() {
                         <Ionicons name="reader-outline" size={16} color={tokens.mint} />
                         <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Material overview</Text>
                       </View>
-                      <Text className="text-sm leading-6 text-foreground">
-                        {material.content || (material.parsed_structure
-                          ? JSON.stringify(material.parsed_structure, null, 2)
-                          : "No content")}
-                      </Text>
+                      {explanationBlocks.length ? (
+                        <View className="gap-3">
+                          {explanationBlocks.slice(0, 3).map((block, index) => previewBlock(block, index, tokens))}
+                          {explanationBlocks.length > 3 ? (
+                            <Text className="text-xs text-muted-foreground">Open the reader to see the complete formatted material.</Text>
+                          ) : null}
+                        </View>
+                      ) : (
+                        <Text className="text-sm leading-6 text-destructive">
+                          The server returned no formatted explanation for this material.
+                        </Text>
+                      )}
                       <View className="flex-row gap-2 pt-1">
                         <Button
                           size="sm"

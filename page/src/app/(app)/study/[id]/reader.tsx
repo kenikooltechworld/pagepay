@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
+import { RichText } from "@/components/study/RichText";
+import { SpecialBlockCard, type ContentBlock as StudyContentBlock } from "@/components/study/SpecialBlockCard";
 import { Fonts, PagePay } from "@/constants/theme";
-import { fetchMaterialFigures, getMaterial } from "@/src/shared/api/study";
+import { fetchMaterialFigures, getMaterial, type MaterialFigure } from "@/src/shared/api/study";
 import { useEffectiveScheme } from "@/src/shared/hooks/use-effective-scheme";
 
 type JsonObject = Record<string, unknown>;
@@ -31,7 +33,43 @@ function textList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function ContentBlock({ value, index }: { value: unknown; index: number }) {
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringRows(value: unknown): string[][] {
+  if (!Array.isArray(value)) return [];
+  return value.map((row) => textList(row));
+}
+
+function toStudyContentBlock(block: JsonObject): StudyContentBlock {
+  return {
+    type: asText(block.type),
+    text: asText(block.text),
+    level: asNumber(block.level),
+    items: textList(block.items),
+    label: asText(block.label),
+    steps: textList(block.steps),
+    language: asText(block.language),
+    attribution: asText(block.attribution),
+    description: asText(block.description),
+    term: asText(block.term),
+    headers: textList(block.headers),
+    rows: stringRows(block.rows),
+  };
+}
+
+function ContentBlock({
+  value,
+  index,
+  figures,
+  tokens,
+}: {
+  value: unknown;
+  index: number;
+  figures: MaterialFigure[];
+  tokens: (typeof PagePay)["light"];
+}) {
   const block = asObject(value);
   if (!block) return null;
   const type = asText(block.type);
@@ -39,71 +77,61 @@ function ContentBlock({ value, index }: { value: unknown; index: number }) {
   const items = textList(block.items);
 
   if (type === "heading") {
+    const level = asNumber(block.level) ?? 2;
     return (
       <Text
-        className="text-lg font-semibold text-foreground"
+        className={`font-semibold text-foreground ${level === 1 ? "text-xl" : level === 3 ? "text-base" : "text-lg"}`}
         style={{ fontFamily: Fonts.editorialSemiBold as string }}
       >
         {text}
       </Text>
     );
   }
+  if (type === "body") {
+    return <RichText color={tokens.ink} fontSize={15} lineHeight={24}>{text}</RichText>;
+  }
   if (type === "list" || type === "numbered_list" || type === "recap") {
     return (
       <View className="gap-2 rounded-xl border border-border bg-background/70 p-3">
         {type === "recap" ? <Text className="text-xs font-semibold uppercase tracking-wide text-primary">Key takeaways</Text> : null}
         {items.map((item, itemIndex) => (
-          <Text key={`${index}-${itemIndex}`} className="text-sm leading-6 text-foreground">
-            {type === "numbered_list" ? `${itemIndex + 1}. ` : "• "}{item}
-          </Text>
+          <View key={`${index}-${itemIndex}`} className="flex-row gap-2">
+            <Text className="text-sm leading-6 text-primary">
+              {type === "numbered_list" ? `${itemIndex + 1}.` : "•"}
+            </Text>
+            <RichText color={tokens.ink} fontSize={14} lineHeight={22}>{item}</RichText>
+          </View>
         ))}
       </View>
     );
   }
-  if (type === "tip" || type === "warning" || type === "definition") {
-    const label = type === "tip" ? "Study tip" : type === "warning" ? "Important" : "Definition";
+  if (type === "figure") {
+    const requestedIndex = asNumber(block.figure_index);
+    const figure = requestedIndex
+      ? figures.find((item) => item.figure_index === requestedIndex - 1)
+        ?? figures.find((item) => item.figure_index === requestedIndex)
+      : undefined;
+    const page = asNumber(block.page) ?? figure?.page;
+    const caption = asText(block.caption) || figure?.caption || "";
+    const description = text || figure?.description || "";
     return (
-      <View className="gap-1 rounded-xl border border-primary/20 bg-primary/5 p-3">
-        <Text className="text-xs font-semibold uppercase tracking-wide text-primary">{label}</Text>
-        <Text className="text-sm leading-6 text-foreground">{text}</Text>
-      </View>
+      <Card className="overflow-hidden rounded-xl p-2">
+        <CardContent className="gap-2 py-0">
+          {figure?.image_url ? (
+            <Image source={{ uri: figure.image_url }} contentFit="contain" style={{ width: "100%", height: 220 }} />
+          ) : null}
+          {caption ? <Text className="text-sm font-semibold text-foreground">{caption}</Text> : null}
+          {description ? <Text className="text-sm leading-6 text-muted-foreground">{description}</Text> : null}
+          {!caption && !description && page ? <Text className="text-xs text-muted-foreground">Figure from page {page}</Text> : null}
+        </CardContent>
+      </Card>
     );
   }
-  if (text) return <Text className="text-sm leading-6 text-foreground">{text}</Text>;
+  if (["tip", "warning", "calculation", "code", "quote", "formula", "statement", "definition", "table"].includes(type)) {
+    return <SpecialBlockCard block={toStudyContentBlock(block)} tokens={tokens} index={index} />;
+  }
+  if (text) return <RichText color={tokens.ink} fontSize={15} lineHeight={24}>{text}</RichText>;
   return null;
-}
-
-function ParsedOutline({ structure }: { structure: JsonObject | null }) {
-  if (!structure) return null;
-  const topics = Array.isArray(structure.topics) ? structure.topics : [];
-  const summary = asText(structure.summary);
-  return (
-    <View className="gap-4">
-      {summary ? <Text className="text-sm leading-6 text-foreground">{summary}</Text> : null}
-      {topics.map((value, index) => {
-        const topic = asObject(value);
-        if (!topic) return null;
-        const subtopics = textList(topic.subtopics);
-        const points = textList(topic.key_points);
-        return (
-          <View key={`topic-${index}`} className="gap-2 rounded-xl border border-border bg-background/70 p-3">
-            <Text className="text-base font-semibold text-foreground">{asText(topic.name) || `Topic ${index + 1}`}</Text>
-            {subtopics.map((item, itemIndex) => (
-              <Text key={`subtopic-${itemIndex}`} className="text-sm leading-5 text-muted-foreground">• {item}</Text>
-            ))}
-            {points.length ? (
-              <View className="gap-1 border-t border-border pt-2">
-                <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Key points</Text>
-                {points.map((item, itemIndex) => (
-                  <Text key={`point-${itemIndex}`} className="text-sm leading-5 text-foreground">• {item}</Text>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        );
-      })}
-    </View>
-  );
 }
 
 export default function StudyMaterialReader() {
@@ -127,8 +155,18 @@ export default function StudyMaterialReader() {
   });
   const material = materialQ.data;
   const explanation = asObject(material?.explanation_structure);
-  const parsed = asObject(material?.parsed_structure);
   const blocks = Array.isArray(explanation?.content_blocks) ? explanation.content_blocks : [];
+  const referencedFigureIndexes = new Set<number>();
+  for (const value of blocks) {
+    const block = asObject(value);
+    const figureIndex = asNumber(block?.figure_index);
+    if (asText(block?.type) === "figure" && figureIndex && figureIndex > 0) {
+      referencedFigureIndexes.add(figureIndex - 1);
+    }
+  }
+  const additionalFigures = (figuresQ.data ?? []).filter(
+    (figure) => !referencedFigureIndexes.has(figure.figure_index),
+  );
 
   return (
     <View className="flex-1 bg-background" style={{ backgroundColor: tokens.paper }}>
@@ -179,14 +217,22 @@ export default function StudyMaterialReader() {
               {mode === "explained" ? (
                 blocks.length ? (
                   <View className="gap-3">
-                    {blocks.map((block, index) => <ContentBlock key={`block-${index}`} value={block} index={index} />)}
+                    {blocks.map((block, index) => (
+                      <ContentBlock
+                        key={`block-${index}`}
+                        value={block}
+                        index={index}
+                        figures={figuresQ.data ?? []}
+                        tokens={tokens}
+                      />
+                    ))}
                   </View>
-                ) : parsed ? (
-                  <ParsedOutline structure={parsed} />
                 ) : (
-                  <Card className="rounded-2xl p-4">
+                  <Card className="rounded-2xl border-destructive/30 p-4">
                     <CardContent className="py-0">
-                      <Text className="text-sm leading-6 text-foreground">{material.content || "No readable content was saved for this material."}</Text>
+                      <Text className="text-sm leading-6 text-destructive">
+                        The server returned no formatted explanation for this material.
+                      </Text>
                     </CardContent>
                   </Card>
                 )
@@ -207,11 +253,11 @@ export default function StudyMaterialReader() {
                   </CardContent>
                 </Card>
               ) : null}
-              {mode === "explained" && (figuresQ.data?.length ?? 0) > 0 ? (
+              {mode === "explained" && additionalFigures.length > 0 ? (
                 <Card className="rounded-2xl p-3">
                   <CardContent className="gap-3 py-0">
                     <Text className="text-sm font-semibold text-foreground">Figures and diagrams</Text>
-                    {figuresQ.data?.map((figure) => (
+                    {additionalFigures.map((figure) => (
                       <View key={figure.figure_index} className="gap-2 rounded-xl border border-border bg-background/70 p-2">
                         {figure.image_url ? (
                           <Image source={{ uri: figure.image_url }} contentFit="contain" style={{ width: "100%", height: 220 }} />

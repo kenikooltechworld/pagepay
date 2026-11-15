@@ -32,20 +32,7 @@ import { RichText } from "@/components/study/RichText";
 import { Fonts } from "@/constants/theme";
 
 export type ContentBlock = {
-  type:
-    | "heading"
-    | "body"
-    | "list"
-    | "numbered_list"
-    | "tip"
-    | "warning"
-    | "calculation"
-    | "code"
-    | "quote"
-    | "formula"
-    | "statement"
-    | "definition"
-    | "table";
+  type: string;
   text?: string;
   level?: number;
   style?: string;

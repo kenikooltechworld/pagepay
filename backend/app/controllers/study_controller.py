@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
 
@@ -19,6 +20,131 @@ from app.core.config import settings
 from app.services.study_prompts import EXPLANATION_PROMPT, SOW_PARSER_PROMPT
 
 logger = logging.getLogger("uvicorn.error")
+
+_EXPLANATION_BLOCK_FIELDS = {
+    "heading": ({"text"}, {"level"}),
+    "body": ({"text"}, set()),
+    "list": ({"items"}, set()),
+    "numbered_list": ({"items"}, set()),
+    "tip": ({"text"}, {"items", "label"}),
+    "warning": ({"text"}, {"items", "label"}),
+    "calculation": (set(), {"text", "steps", "description", "label"}),
+    "code": ({"text"}, {"language", "label"}),
+    "quote": ({"text"}, {"attribution", "label"}),
+    "formula": ({"text"}, {"description", "label"}),
+    "statement": ({"text"}, {"label"}),
+    "definition": ({"term", "text"}, {"label"}),
+    "table": ({"headers", "rows"}, {"label"}),
+    "figure": ({"figure_index"}, {"page", "caption", "text"}),
+    "recap": ({"items"}, {"label"}),
+}
+
+
+def _chunk_explanation_source(text: str, max_chunk_chars: int = 1500) -> list[dict[str, str]]:
+    """Split extracted text into stable citation units without dropping long paragraphs."""
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+    pieces: list[str] = []
+    for paragraph in paragraphs:
+        remaining = paragraph
+        while len(remaining) > max_chunk_chars:
+            split_at = remaining.rfind(" ", 0, max_chunk_chars + 1)
+            if split_at <= 0:
+                split_at = max_chunk_chars
+            pieces.append(remaining[:split_at].strip())
+            remaining = remaining[split_at:].strip()
+        if remaining:
+            pieces.append(remaining)
+
+    chunks: list[dict[str, str]] = []
+    current = ""
+    for piece in pieces:
+        if current and len(current) + len(piece) + 2 > max_chunk_chars:
+            chunks.append({"id": f"c{len(chunks) + 1}", "text": current})
+            current = piece
+        else:
+            current = f"{current}\n\n{piece}" if current else piece
+    if current:
+        chunks.append({"id": f"c{len(chunks) + 1}", "text": current})
+    return chunks
+
+
+def _validate_explanation_blocks(
+    blocks: list[object], source_ids: set[str]
+) -> tuple[list[dict], list[str]]:
+    valid: list[dict] = []
+    errors: list[str] = []
+    for index, value in enumerate(blocks):
+        if not isinstance(value, dict):
+            errors.append(f"block[{index}]: not an object")
+            continue
+        block_type = value.get("type")
+        if not isinstance(block_type, str) or block_type not in _EXPLANATION_BLOCK_FIELDS:
+            errors.append(f"block[{index}]: unknown type {block_type!r}")
+            continue
+        required, optional = _EXPLANATION_BLOCK_FIELDS[block_type]
+        missing = [field for field in required if field not in value or value[field] is None]
+        if missing:
+            errors.append(f"block[{index}] ({block_type}): missing {missing}")
+            continue
+
+        clean = {
+            key: field_value
+            for key, field_value in value.items()
+            if key in required | optional
+        }
+        shape_error = None
+        for field in ("text", "term", "label", "language", "attribution", "description", "caption"):
+            if field in clean and not isinstance(clean[field], str):
+                shape_error = f"{field} must be a string"
+                break
+        for field in ("items", "steps", "headers"):
+            if field in clean and (
+                not isinstance(clean[field], list)
+                or any(not isinstance(item, str) for item in clean[field])
+            ):
+                shape_error = f"{field} must be an array of strings"
+                break
+        if "rows" in clean and (
+            not isinstance(clean["rows"], list)
+            or any(
+                not isinstance(row, list) or any(not isinstance(cell, str) for cell in row)
+                for row in clean["rows"]
+            )
+        ):
+            shape_error = "rows must be an array of string arrays"
+        if block_type == "heading" and "level" in clean and clean["level"] not in (1, 2, 3):
+            shape_error = "heading level must be 1, 2, or 3"
+        if block_type == "figure" and (
+            type(clean["figure_index"]) is not int or clean["figure_index"] < 1
+        ):
+            shape_error = "figure_index must be a positive integer"
+        if block_type == "figure" and "page" in clean and (
+            type(clean["page"]) is not int or clean["page"] < 1
+        ):
+            shape_error = "page must be a positive integer"
+        if block_type == "calculation" and not clean.get("text") and not clean.get("steps"):
+            shape_error = "calculation requires text or steps"
+        if shape_error:
+            errors.append(f"block[{index}] ({block_type}): {shape_error}")
+            continue
+
+        refs = value.get("source_refs")
+        if isinstance(refs, list):
+            clean["source_refs"] = [ref for ref in refs if isinstance(ref, str) and ref in source_ids]
+        elif isinstance(refs, str) and refs in source_ids:
+            clean["source_refs"] = [refs]
+        clean["type"] = block_type
+        valid.append(clean)
+    return valid, errors
+
+
+def _job_error_message(exc: Exception) -> str:
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    message = str(exc).strip()
+    return message or exc.__class__.__name__
+
 
 # AI prompts
 MCQ_PROMPT = """Generate {count} multiple-choice questions from the following study material.
@@ -144,15 +270,13 @@ class StudyController:
 
     async def upload_material(self, current_user: User, title: str, content: str, exam_type: str | None, education_level: str | None) -> dict:
         logger.info("study.material.upload start user=%s title=%r exam_type=%s education_level=%s content_len=%s", current_user.id, title, exam_type, education_level, len(content or ""))
-        material = StudyMaterial(
-            user_id=current_user.id,
-            title=title,
-            exam_type=exam_type,
-            education_level=education_level,
-            raw_input=content,
-            content=content,
+        material = await self._create_material_from_text(
+            current_user,
+            title,
+            content,
+            exam_type,
+            education_level,
         )
-        await self.materials.create(material)
         logger.info("study.material.upload ok user=%s material_id=%s", current_user.id, material.id)
         return {
             "id": material.id,
@@ -176,18 +300,16 @@ class StudyController:
     ) -> dict:
         use_title = (title or "").strip() or (filename.rsplit(".", 1)[0] if "." in filename else filename) or "Uploaded material"
         logger.info("study.material.upload_file start user=%s filename=%r mime=%s bytes=%s pages=%s", current_user.id, filename, mime, len(data), page_count)
-        material = StudyMaterial(
-            user_id=current_user.id,
-            title=use_title[:500],
-            exam_type=exam_type,
-            education_level=education_level,
-            raw_input=extracted_text,
-            content=extracted_text,
+        material = await self._create_material_from_text(
+            current_user,
+            use_title,
+            extracted_text,
+            exam_type,
+            education_level,
             original_file_data=data,
             file_mime_type=mime,
-            page_count=page_count or 0,
+            page_count=page_count,
         )
-        await self.materials.create(material)
         logger.info("study.material.upload_file ok user=%s material_id=%s", current_user.id, material.id)
         return {
             "id": material.id,
@@ -200,12 +322,45 @@ class StudyController:
     async def get_material(self, current_user: User, material_id: int) -> dict:
         logger.info("study.material.get user=%s material_id=%s", current_user.id, material_id)
         material = await self._get_owned_material(current_user, material_id)
+        explanation = None
+        if material.explanation_structure:
+            try:
+                explanation = json.loads(material.explanation_structure)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Stored formatted explanation is invalid JSON.",
+                ) from exc
+        if isinstance(explanation, dict) and isinstance(explanation.get("content_blocks"), list):
+            source_ids = {
+                chunk["id"]
+                for chunk in _chunk_explanation_source(material.content or "")
+            }
+            blocks, _ = _validate_explanation_blocks(explanation["content_blocks"], source_ids)
+            if len(blocks) >= 3:
+                explanation = {
+                    "content_blocks": blocks,
+                    "source_refs_present": any("source_refs" in block for block in blocks),
+                }
+            else:
+                explanation = None
+        if explanation is None:
+            explanation = await self._build_explanation(
+                material.content,
+                material.education_level,
+                material.exam_type,
+            )
+            material.explanation_structure = json.dumps(explanation)
+            await self.materials.update(material)
         parsed = None
         if material.parsed_structure:
             try:
                 parsed = json.loads(material.parsed_structure)
-            except Exception:
-                parsed = None
+            except json.JSONDecodeError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Stored parsed material is invalid JSON.",
+                ) from exc
         assets = await list_assets_for_material(self.db, material_id)
         asset_items = []
         for a in assets:
@@ -224,12 +379,6 @@ class StudyController:
                 except Exception:
                     item["content"] = None
             asset_items.append(item)
-        explanation = None
-        if getattr(material, "explanation_structure", None):
-            try:
-                explanation = json.loads(material.explanation_structure)
-            except Exception:
-                explanation = None
         logger.info("study.material.get ok user=%s material_id=%s assets=%s", current_user.id, material_id, len(asset_items))
         return {
             "id": material.id,
@@ -429,53 +578,95 @@ class StudyController:
         }
 
 
-    async def _parse_structure(self, content: str) -> dict | None:
+    async def _parse_structure(self, content: str) -> dict:
+        response = await call_ai(SOW_PARSER_PROMPT.replace("{raw_text}", content[:50000]))
         try:
-            resp = await call_ai(SOW_PARSER_PROMPT.format(raw_text=content[:50000]))
-            return await parse_json_response(resp)
-        except Exception as exc:
-            logger.warning("study.sow.parse failed: %s", exc)
-            return None
+            parsed = await parse_json_response(response)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not parse extracted study material: {exc}",
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(
+                status_code=502,
+                detail="Could not parse extracted study material: AI response must be a JSON object.",
+            )
+        return parsed
 
-    async def _build_explanation(self, content: str, education_level: str | None, exam_type: str | None) -> dict | None:
-        try:
-            resp = await call_ai(EXPLANATION_PROMPT.format(
-                raw_text=content[:40000],
-                education_level=education_level or "secondary",
-                subject=exam_type or "General",
-            ))
-            data = await parse_json_response(resp)
-            if isinstance(data, dict) and isinstance(data.get("content_blocks"), list):
-                return data
-        except Exception as exc:
-            logger.warning("study.explanation failed: %s", exc)
-        return None
+    async def _build_explanation(self, content: str, education_level: str | None, exam_type: str | None) -> dict:
+        if not content or not content.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot format study material because no text was extracted.",
+            )
+        chunks = _chunk_explanation_source(content[:40000])
+        if not chunks:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot format study material because no text was extracted.",
+            )
+        source_ids = {chunk["id"] for chunk in chunks}
+        source_context = "\n\n".join(f"[{chunk['id']}] {chunk['text']}" for chunk in chunks)
+        prompt = EXPLANATION_PROMPT.replace(
+            "{education_level}", education_level or "secondary"
+        ).replace(
+            "{subject}", exam_type or "General"
+        ).replace(
+            "{raw_text}", source_context
+        )
+        errors: list[str] = []
+        for attempt in range(2):
+            attempt_prompt = prompt
+            if attempt and errors:
+                attempt_prompt += (
+                    "\n\nCorrect these validation errors and return corrected JSON only:\n"
+                    + "\n".join(f"- {error}" for error in errors[:8])
+                )
+            response = await call_ai(attempt_prompt)
+            try:
+                data = await parse_json_response(response)
+            except ValueError as exc:
+                errors = [f"response was not valid JSON: {exc}"]
+                continue
+            if not isinstance(data, dict) or not isinstance(data.get("content_blocks"), list):
+                errors = ["response must be an object with a content_blocks array"]
+                continue
+            blocks, errors = _validate_explanation_blocks(data["content_blocks"], source_ids)
+            if len(blocks) >= 3:
+                return {
+                    "content_blocks": blocks,
+                    "source_refs_present": any("source_refs" in block for block in blocks),
+                }
+            errors = errors or ["response must contain at least three valid content blocks"]
+        details = "; ".join(errors[:8])
+        logger.error("study.explanation invalid blocks after retry errors=%s", details)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not format extracted study material after retry: {details}",
+        )
 
     async def _create_material_from_text(
         self, current_user: User, title: str | None, content: str, exam_type: str | None,
         education_level: str | None, original_file_data: bytes | None = None, file_mime_type: str | None = None, page_count: int = 0
     ) -> StudyMaterial:
+        parsed = await self._parse_structure(content)
+        explanation = await self._build_explanation(content, education_level, exam_type)
+        material_title = (title or "").strip() or str(parsed.get("title") or "Untitled Material")
         material = StudyMaterial(
             user_id=current_user.id,
-            title=(title or "Untitled Material")[:500],
+            title=material_title[:500],
             exam_type=exam_type,
             education_level=education_level,
             raw_input=content,
             content=content,
+            parsed_structure=json.dumps(parsed),
+            explanation_structure=json.dumps(explanation),
             original_file_data=original_file_data,
             file_mime_type=file_mime_type,
             page_count=page_count or 0,
         )
         await self.materials.create(material)
-        parsed = await self._parse_structure(content)
-        if parsed is not None:
-            material.parsed_structure = json.dumps(parsed)
-            if not title and isinstance(parsed, dict) and parsed.get("title"):
-                material.title = str(parsed.get("title"))[:500]
-        explanation = await self._build_explanation(content, education_level, exam_type)
-        if explanation is not None:
-            material.explanation_structure = json.dumps(explanation)
-        await self.materials.update(material)
         return material
 
     async def create_sow_text_job(self, current_user: User, text: str, exam_type: str | None, education_level: str | None) -> dict:
@@ -497,9 +688,9 @@ class StudyController:
             logger.exception("study.sow_text_job failed job=%s: %s", job_id, exc)
             try:
                 async with AsyncSessionLocal() as db:
-                    await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=str(exc)[:300])
+                    await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=_job_error_message(exc)[:300])
             except Exception:
-                pass
+                logger.exception("study.sow_text_job failed to record failure job=%s", job_id)
 
     async def create_sow_file_job(
         self,
@@ -558,10 +749,10 @@ class StudyController:
             logger.exception("study.sow_file_job failed job=%s: %s", job_id, exc)
             try:
                 async with AsyncSessionLocal() as db:
-                    error = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
+                    error = _job_error_message(exc)
                     await SowUploadJobRepository(db).update_status(job_id, "failed", stage="failed", error_message=error[:300])
             except Exception:
-                pass
+                logger.exception("study.sow_file_job failed to record failure job=%s", job_id)
 
     async def create_sow_image_job(
         self,
@@ -643,10 +834,10 @@ class StudyController:
         except Exception as exc:
             logger.exception("study.sow_image_job failed job=%s: %s", job_id, exc)
             try:
-                error = getattr(exc, "detail", None) or str(exc) or exc.__class__.__name__
+                error = _job_error_message(exc)
                 await update_job("failed", stage="failed", error_message=error[:300])
             except Exception:
-                pass
+                logger.exception("study.sow_image_job failed to record failure job=%s", job_id)
 
     async def get_sow_job(self, current_user: User, job_id: str) -> dict:
         job = await self.jobs.get_for_user(job_id, current_user.id)
