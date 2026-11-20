@@ -724,10 +724,10 @@ class StudyController:
 
         # Best-effort interactive lesson generation (teaching flow)
         try:
-            m_for_lesson = await _load(material_id)
-            if m_for_lesson:
-                async with AsyncSessionLocal() as db:
-                    ctrl = StudyController(db)
+            async with AsyncSessionLocal() as db:
+                ctrl = StudyController(db)
+                m_for_lesson = await ctrl.materials.get_by_id(material_id, current_user.id)
+                if m_for_lesson:
                     await ctrl._generate_and_store_lesson(m_for_lesson, parsed)
         except Exception as exc:
             logger.warning(
@@ -735,7 +735,13 @@ class StudyController:
                 current_user.id, material_id, _job_error_message(exc),
             )
             try:
-                await _save(material_id, lambda m: (setattr(m, "lesson_status", "failed"), setattr(m, "lesson_error", _job_error_message(exc)[:300])))
+                async with AsyncSessionLocal() as db:
+                    repo = StudyMaterialRepository(db)
+                    m = await repo.get_by_id(material_id, current_user.id)
+                    if m:
+                        m.lesson_status = "failed"
+                        m.lesson_error = _job_error_message(exc)[:300]
+                        await repo.update(m)
             except Exception:
                 logger.warning("study.material.lesson status save failed material_id=%s", material_id)
 
