@@ -671,6 +671,24 @@ class StudyController:
             page_count=page_count or 0,
         )
         await self.materials.create(material)
+        material_id = material.id
+
+        # Best-effort enrichment after persist: reload material in a fresh DB session for each step
+        # so a closed/stale connection or AI timeout cannot poison the upload/session.
+        from app.core.database import AsyncSessionLocal
+
+        async def _load(mid: int) -> StudyMaterial | None:
+            async with AsyncSessionLocal() as db:
+                return await StudyMaterialRepository(db).get_by_id(mid, current_user.id)
+
+        async def _save(mid: int, updater) -> None:
+            async with AsyncSessionLocal() as db:
+                repo = StudyMaterialRepository(db)
+                m = await repo.get_by_id(mid, current_user.id)
+                if not m:
+                    return
+                updater(m)
+                await repo.update(m)
 
         parsed = None
         try:
@@ -678,12 +696,17 @@ class StudyController:
         except Exception as exc:
             logger.warning(
                 "study.material.parse failed user=%s material_id=%s: %s",
-                current_user.id, material.id, _job_error_message(exc),
+                current_user.id, material_id, _job_error_message(exc),
             )
         if parsed is not None:
-            material.parsed_structure = json.dumps(parsed)
-            if (not title or not str(title).strip()) and isinstance(parsed, dict) and parsed.get("title"):
-                material.title = str(parsed.get("title"))[:500]
+            def _apply_parsed(m: StudyMaterial):
+                m.parsed_structure = json.dumps(parsed)
+                if (not title or not str(title).strip()) and isinstance(parsed, dict) and parsed.get("title"):
+                    m.title = str(parsed.get("title"))[:500]
+            try:
+                await _save(material_id, _apply_parsed)
+            except Exception as exc:
+                logger.warning("study.material.parse save failed material_id=%s: %s", material_id, _job_error_message(exc))
 
         explanation = None
         try:
@@ -691,22 +714,33 @@ class StudyController:
         except Exception as exc:
             logger.warning(
                 "study.material.explanation failed user=%s material_id=%s: %s",
-                current_user.id, material.id, _job_error_message(exc),
+                current_user.id, material_id, _job_error_message(exc),
             )
         if explanation is not None:
-            material.explanation_structure = json.dumps(explanation)
-
-        await self.materials.update(material)
+            try:
+                await _save(material_id, lambda m: setattr(m, "explanation_structure", json.dumps(explanation)))
+            except Exception as exc:
+                logger.warning("study.material.explanation save failed material_id=%s: %s", material_id, _job_error_message(exc))
 
         # Best-effort interactive lesson generation (teaching flow)
         try:
-            await self._generate_and_store_lesson(material, parsed)
+            m_for_lesson = await _load(material_id)
+            if m_for_lesson:
+                async with AsyncSessionLocal() as db:
+                    ctrl = StudyController(db)
+                    await ctrl._generate_and_store_lesson(m_for_lesson, parsed)
         except Exception as exc:
             logger.warning(
                 "study.material.lesson failed user=%s material_id=%s: %s",
-                current_user.id, material.id, _job_error_message(exc),
+                current_user.id, material_id, _job_error_message(exc),
             )
-        return material
+            try:
+                await _save(material_id, lambda m: (setattr(m, "lesson_status", "failed"), setattr(m, "lesson_error", _job_error_message(exc)[:300])))
+            except Exception:
+                logger.warning("study.material.lesson status save failed material_id=%s", material_id)
+
+        final = await _load(material_id)
+        return final or material
 
     async def create_sow_text_job(self, current_user: User, text: str, exam_type: str | None, education_level: str | None) -> dict:
         job = SowUploadJob(id=str(uuid.uuid4()), user_id=current_user.id, status="queued", progress=0, stage="queued", created_at=datetime.utcnow(), updated_at=datetime.utcnow())
