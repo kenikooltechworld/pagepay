@@ -30,6 +30,9 @@ export type MaterialDetail = {
   figure_count?: number | null;
   has_original_file?: boolean;
   file_mime_type?: string | null;
+  lesson_status?: string | null;
+  lesson_error?: string | null;
+  has_lesson?: boolean;
   assets: AssetItem[];
   created_at: string;
 };
@@ -256,7 +259,7 @@ export async function pollSowJob(
   opts: { intervalMs?: number; timeoutMs?: number; onTick?: (s: SowJobStatus) => void } = {},
 ): Promise<SowJobStatus> {
   const intervalMs = opts.intervalMs ?? 1200;
-  const timeoutMs = opts.timeoutMs ?? 180000;
+  const timeoutMs = opts.timeoutMs ?? 600000; // 10 min, AI processing can take time
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const status = await getSowJob(jobId);
@@ -350,4 +353,65 @@ export async function submitEssay(input: {
   });
   if (!res.ok) throw new Error(await parseApiError(res, "Failed to submit essay"));
   return (await res.json()) as EssayReviewResponse;
+}
+
+
+// --- interactive lesson ---
+
+export type LessonProgress = {
+  current_segment: number;
+  segment_states: Record<string, any>;
+  completed: boolean;
+};
+
+export type LessonResponse = {
+  material_id: number;
+  lesson_status?: string | null;
+  lesson_error?: string | null;
+  lesson: any | null;
+  progress: LessonProgress;
+};
+
+export type LessonCheckResponse = {
+  correct: boolean | null;
+  feedback: string;
+  misconception?: string | null;
+  can_continue: boolean;
+  model_answer?: string | null;
+};
+
+export async function getLesson(materialId: number): Promise<LessonResponse> {
+  const res = await apiFetch(`/study/materials/${materialId}/lesson`);
+  if (!res.ok) throw new Error(await parseApiError(res, "Failed to load lesson"));
+  return (await res.json()) as LessonResponse;
+}
+
+export async function generateLesson(materialId: number): Promise<LessonResponse> {
+  const res = await apiFetch(`/study/materials/${materialId}/lesson/generate`, { method: "POST" });
+  if (!res.ok) throw new Error(await parseApiError(res, "Failed to generate lesson"));
+  return (await res.json()) as LessonResponse;
+}
+
+export async function updateLessonProgress(
+  materialId: number,
+  input: { current_segment: number; segment_states?: Record<string, any>; completed?: boolean }
+): Promise<LessonResponse> {
+  const res = await apiFetch(`/study/materials/${materialId}/lesson/progress`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await parseApiError(res, "Failed to save progress"));
+  return (await res.json()) as LessonResponse;
+}
+
+export async function checkLessonAnswer(
+  materialId: number,
+  input: { segment_index: number; item_type: "check" | "guided" | "independent"; answer: string }
+): Promise<LessonCheckResponse> {
+  const res = await apiFetch(`/study/materials/${materialId}/lesson/check`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await parseApiError(res, "Failed to check answer"));
+  return (await res.json()) as LessonCheckResponse;
 }

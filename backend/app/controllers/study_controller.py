@@ -9,15 +9,15 @@ from datetime import datetime
 
 from fastapi import HTTPException
 
-from app.models.study import SowUploadJob, StudyAsset, StudyMaterial
+from app.models.study import SowUploadJob, StudyAsset, StudyLessonProgress, StudyMaterial
 from app.models.user import User
 from app.repositories.study_asset_queries import list_assets_for_material
-from app.repositories.study_repository import SowUploadJobRepository, StudyAssetRepository, StudyMaterialRepository
+from app.repositories.study_repository import SowUploadJobRepository, StudyAssetRepository, StudyLessonProgressRepository, StudyMaterialRepository
 from app.repositories.wallet_repository import WalletRepository
 from app.services.ai_service import call_ai, call_ai_vision, parse_json_response
 from app.services.study_unlock_service import StudyUnlockService
 from app.core.config import settings
-from app.services.study_prompts import EXPLANATION_PROMPT, SOW_PARSER_PROMPT
+from app.services.study_prompts import EXPLANATION_PROMPT, LESSON_CHECK_PROMPT, LESSON_GENERATION_PROMPT, SOW_PARSER_PROMPT
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -252,6 +252,7 @@ class StudyController:
         self.wallet_repo = WalletRepository(db)
         self.unlocks = StudyUnlockService(db)
         self.jobs = SowUploadJobRepository(db)
+        self.lesson_progress = StudyLessonProgressRepository(db)
 
     async def _get_owned_material(self, current_user: User, material_id: int) -> StudyMaterial:
         material = await self.materials.get_by_id(material_id, current_user.id)
@@ -380,6 +381,8 @@ class StudyController:
                     item["content"] = None
             asset_items.append(item)
         logger.info("study.material.get ok user=%s material_id=%s assets=%s", current_user.id, material_id, len(asset_items))
+        lesson_status = getattr(material, "lesson_status", None)
+        has_lesson = bool(getattr(material, "lesson_structure", None))
         return {
             "id": material.id,
             "title": material.title,
@@ -392,6 +395,9 @@ class StudyController:
             "figure_count": getattr(material, "figure_count", 0) or 0,
             "has_original_file": bool(getattr(material, "original_file_data", None)),
             "file_mime_type": getattr(material, "file_mime_type", None),
+            "lesson_status": lesson_status,
+            "lesson_error": getattr(material, "lesson_error", None),
+            "has_lesson": has_lesson,
             "assets": asset_items,
             "created_at": material.created_at.isoformat(),
         }
@@ -650,9 +656,7 @@ class StudyController:
         self, current_user: User, title: str | None, content: str, exam_type: str | None,
         education_level: str | None, original_file_data: bytes | None = None, file_mime_type: str | None = None, page_count: int = 0
     ) -> StudyMaterial:
-        parsed = await self._parse_structure(content)
-        explanation = await self._build_explanation(content, education_level, exam_type)
-        material_title = (title or "").strip() or str(parsed.get("title") or "Untitled Material")
+        material_title = (title or "").strip() or "Untitled Material"
         material = StudyMaterial(
             user_id=current_user.id,
             title=material_title[:500],
@@ -660,13 +664,48 @@ class StudyController:
             education_level=education_level,
             raw_input=content,
             content=content,
-            parsed_structure=json.dumps(parsed),
-            explanation_structure=json.dumps(explanation),
+            parsed_structure=None,
+            explanation_structure=None,
             original_file_data=original_file_data,
             file_mime_type=file_mime_type,
             page_count=page_count or 0,
         )
         await self.materials.create(material)
+
+        parsed = None
+        try:
+            parsed = await self._parse_structure(content)
+        except Exception as exc:
+            logger.warning(
+                "study.material.parse failed user=%s material_id=%s: %s",
+                current_user.id, material.id, _job_error_message(exc),
+            )
+        if parsed is not None:
+            material.parsed_structure = json.dumps(parsed)
+            if (not title or not str(title).strip()) and isinstance(parsed, dict) and parsed.get("title"):
+                material.title = str(parsed.get("title"))[:500]
+
+        explanation = None
+        try:
+            explanation = await self._build_explanation(content, education_level, exam_type)
+        except Exception as exc:
+            logger.warning(
+                "study.material.explanation failed user=%s material_id=%s: %s",
+                current_user.id, material.id, _job_error_message(exc),
+            )
+        if explanation is not None:
+            material.explanation_structure = json.dumps(explanation)
+
+        await self.materials.update(material)
+
+        # Best-effort interactive lesson generation (teaching flow)
+        try:
+            await self._generate_and_store_lesson(material, parsed)
+        except Exception as exc:
+            logger.warning(
+                "study.material.lesson failed user=%s material_id=%s: %s",
+                current_user.id, material.id, _job_error_message(exc),
+            )
         return material
 
     async def create_sow_text_job(self, current_user: User, text: str, exam_type: str | None, education_level: str | None) -> dict:
@@ -858,3 +897,220 @@ class StudyController:
         if not material.original_file_data:
             raise HTTPException(status_code=404, detail="Original file not found")
         return material.original_file_data, material.file_mime_type
+
+
+    # --- interactive lesson ---
+
+    async def _generate_and_store_lesson(self, material: StudyMaterial, parsed: dict | None = None) -> dict | None:
+        material.lesson_status = "generating"
+        material.lesson_error = None
+        await self.materials.update(material)
+        try:
+            parsed_obj = parsed
+            if parsed_obj is None and material.parsed_structure:
+                try:
+                    parsed_obj = json.loads(material.parsed_structure)
+                except Exception:
+                    parsed_obj = None
+            raw_text = (material.content or material.raw_input or "")
+            prompt = LESSON_GENERATION_PROMPT.format(
+                education_level=material.education_level or "secondary",
+                subject=material.exam_type or "General",
+                parsed=json.dumps(parsed_obj or {}, ensure_ascii=False)[:12000],
+                raw_text=raw_text[:30000],
+            )
+            last_err = None
+            lesson = None
+            for attempt in range(2):
+                use_prompt = prompt
+                if attempt == 1:
+                    # retry: compact, fewer segments, to avoid truncation
+                    use_prompt = prompt + "\n\nIMPORTANT: Return compact JSON only. Limit to 3-4 segments total. Keep each field concise so the full response fits in one message."
+                response = await call_ai(use_prompt, max_tokens=6000)
+                try:
+                    lesson = await parse_json_response(response)
+                except Exception as exc:
+                    last_err = exc
+                    logger.warning("study.lesson.parse attempt=%s material_id=%s failed: %s", attempt + 1, material.id, _job_error_message(exc))
+                    lesson = None
+                    continue
+                if not isinstance(lesson, dict):
+                    last_err = ValueError("Lesson response must be a JSON object")
+                    lesson = None
+                    continue
+                segments = lesson.get("segments")
+                if not isinstance(segments, list) or not segments:
+                    last_err = ValueError("Lesson must contain at least one segment")
+                    lesson = None
+                    continue
+                lesson["segments"] = [s for s in segments if isinstance(s, dict)][:8]
+                if not lesson["segments"]:
+                    last_err = ValueError("Lesson segments are invalid")
+                    lesson = None
+                    continue
+                break
+            if lesson is None:
+                raise last_err or ValueError("Lesson generation failed")
+
+            if not isinstance(lesson.get("intro"), dict):
+                lesson["intro"] = {
+                    "title": material.title or "Lesson",
+                    "goals": ["Understand the key ideas in this material."],
+                    "why_it_matters": "This helps you learn and apply the topic.",
+                    "prior_knowledge": [],
+                    "overview": "We will go through the material in short, interactive parts.",
+                }
+            if not isinstance(lesson.get("outro"), dict):
+                lesson["outro"] = {
+                    "summary": ["Review the key points from each part."],
+                    "common_pitfalls": [],
+                    "next_steps": "Practice with questions or review the original material.",
+                }
+            for i, seg in enumerate(lesson["segments"]):
+                seg.setdefault("index", i)
+                seg.setdefault("title", f"Part {i + 1}")
+            material.lesson_structure = json.dumps(lesson, ensure_ascii=False)
+            material.lesson_status = "ready"
+            material.lesson_error = None
+            await self.materials.update(material)
+            logger.info("study.lesson.ready material_id=%s segments=%s", material.id, len(lesson["segments"]))
+            return lesson
+        except Exception as exc:
+            material.lesson_status = "failed"
+            material.lesson_error = _job_error_message(exc)[:300]
+            await self.materials.update(material)
+            logger.warning("study.lesson.generate failed material_id=%s: %s", material.id, material.lesson_error)
+            return None
+
+    async def get_lesson(self, current_user: User, material_id: int) -> dict:
+        material = await self._get_owned_material(current_user, material_id)
+        lesson = None
+        if material.lesson_structure:
+            try:
+                lesson = json.loads(material.lesson_structure)
+            except Exception:
+                lesson = None
+        progress_row = await self.lesson_progress.get_or_create(current_user.id, material_id)
+        try:
+            states = json.loads(progress_row.segment_states) if progress_row.segment_states else {}
+            if not isinstance(states, dict):
+                states = {}
+        except Exception:
+            states = {}
+        return {
+            "material_id": material.id,
+            "lesson_status": getattr(material, "lesson_status", None),
+            "lesson_error": getattr(material, "lesson_error", None),
+            "lesson": lesson,
+            "progress": {
+                "current_segment": progress_row.current_segment or 0,
+                "segment_states": states,
+                "completed": bool(progress_row.completed),
+            },
+        }
+
+    async def generate_lesson_endpoint(self, current_user: User, material_id: int) -> dict:
+        material = await self._get_owned_material(current_user, material_id)
+        if not (material.content or material.raw_input):
+            raise HTTPException(status_code=422, detail="Material has no extracted content to build a lesson from.")
+        lesson = await self._generate_and_store_lesson(material)
+        if lesson is None:
+            raise HTTPException(status_code=502, detail=material.lesson_error or "Lesson generation failed. Please try again.")
+        return await self.get_lesson(current_user, material_id)
+
+    async def update_lesson_progress(
+        self,
+        current_user: User,
+        material_id: int,
+        current_segment: int,
+        segment_states: dict | None,
+        completed: bool | None,
+    ) -> dict:
+        await self._get_owned_material(current_user, material_id)
+        row = await self.lesson_progress.get_or_create(current_user.id, material_id)
+        states = None
+        if segment_states is not None:
+            states = segment_states
+        else:
+            try:
+                states = json.loads(row.segment_states) if row.segment_states else {}
+            except Exception:
+                states = {}
+        if current_segment < 0:
+            current_segment = 0
+        await self.lesson_progress.update(
+            row, current_segment=current_segment, segment_states=states, completed=completed
+        )
+        return await self.get_lesson(current_user, material_id)
+
+    async def check_lesson_answer(
+        self, current_user: User, material_id: int, segment_index: int, item_type: str, answer: str
+    ) -> dict:
+        material = await self._get_owned_material(current_user, material_id)
+        lesson = None
+        if material.lesson_structure:
+            try:
+                lesson = json.loads(material.lesson_structure)
+            except Exception:
+                lesson = None
+        if not lesson or not isinstance(lesson.get("segments"), list):
+            raise HTTPException(status_code=404, detail="Lesson is not available for this material yet.")
+        segments = lesson["segments"]
+        if segment_index < 0 or segment_index >= len(segments):
+            raise HTTPException(status_code=400, detail="Invalid lesson segment.")
+        seg = segments[segment_index] if isinstance(segments[segment_index], dict) else {}
+        micro_goal = seg.get("micro_goal") or seg.get("title") or ""
+        if item_type == "guided":
+            item = seg.get("guided_practice") or {}
+            question = item.get("prompt") or ""
+            expected = item.get("solution") or ""
+            key_points = item.get("hint") or ""
+            misconceptions = "[]"
+        elif item_type == "independent":
+            item = seg.get("independent_practice") or {}
+            question = item.get("prompt") or ""
+            expected = item.get("rubric") or ""
+            key_points = json.dumps(expected, ensure_ascii=False) if isinstance(expected, list) else str(expected)
+            misconceptions = "[]"
+        else:
+            item = seg.get("check") or {}
+            question = item.get("question") or ""
+            expected = item.get("expected_answer") or ""
+            kp = item.get("key_points") or []
+            key_points = json.dumps(kp, ensure_ascii=False) if isinstance(kp, list) else str(kp)
+            misconceptions = json.dumps(item.get("misconceptions") or [], ensure_ascii=False)
+
+        prompt = LESSON_CHECK_PROMPT.format(
+            education_level=material.education_level or "secondary",
+            subject=material.exam_type or "General",
+            micro_goal=micro_goal,
+            item_type=item_type,
+            question=question,
+            expected_answer=json.dumps(expected, ensure_ascii=False) if not isinstance(expected, str) else expected,
+            key_points=key_points,
+            misconceptions=misconceptions,
+            answer=answer or "",
+        )
+        resp = await call_ai(prompt, max_tokens=1200)
+        try:
+            data = await parse_json_response(resp)
+        except Exception:
+            model_answer = expected if isinstance(expected, str) else json.dumps(expected, ensure_ascii=False)
+            return {
+                "correct": True if (answer or "").strip() else False,
+                "feedback": "Good effort. Compare your answer with the model answer and key points for this step.",
+                "misconception": None,
+                "can_continue": bool((answer or "").strip()),
+                "model_answer": model_answer,
+            }
+        model_answer = data.get("model_answer")
+        if not model_answer:
+            model_answer = expected if isinstance(expected, str) else json.dumps(expected, ensure_ascii=False)
+        return {
+            "correct": data.get("correct"),
+            "feedback": data.get("feedback") or "Review the model answer and try to address the key points.",
+            "misconception": data.get("misconception"),
+            "can_continue": bool(data.get("can_continue")),
+            "model_answer": model_answer,
+        }
+

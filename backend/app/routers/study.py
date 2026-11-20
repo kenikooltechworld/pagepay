@@ -20,6 +20,10 @@ from app.schemas.study import (
     EssayReviewResponse,
     GenerateAssetRequest,
     GenerateAssetResponse,
+    LessonCheckRequest,
+    LessonCheckResponse,
+    LessonProgressUpdate,
+    LessonResponse,
     MaterialDetail,
     MaterialSummary,
     MaterialUpdateRequest,
@@ -430,3 +434,57 @@ async def get_sow_job(
     controller: StudyController = Depends(get_controller),
 ):
     return await controller.get_sow_job(current_user, job_id)
+
+
+# --- interactive lesson ---
+
+
+@router.get("/materials/{material_id}/lesson", response_model=LessonResponse)
+@limiter.limit("120/minute")
+async def get_lesson(
+    request: Request,
+    material_id: int,
+    current_user: User = Depends(get_current_user),
+    controller: StudyController = Depends(get_controller),
+):
+    return await controller.get_lesson(current_user, material_id)
+
+
+@router.post("/materials/{material_id}/lesson/generate", response_model=LessonResponse)
+@limiter.limit("10/hour")
+async def generate_lesson(
+    request: Request,
+    material_id: int,
+    current_user: User = Depends(get_current_user),
+    controller: StudyController = Depends(get_controller),
+):
+    return await controller.generate_lesson_endpoint(current_user, material_id)
+
+
+@router.post("/materials/{material_id}/lesson/progress", response_model=LessonResponse)
+@limiter.limit("120/minute")
+async def update_lesson_progress(
+    request: Request,
+    material_id: int,
+    payload: LessonProgressUpdate,
+    current_user: User = Depends(get_current_user),
+    controller: StudyController = Depends(get_controller),
+):
+    return await controller.update_lesson_progress(
+        current_user, material_id, payload.current_segment, payload.segment_states, payload.completed
+    )
+
+
+@router.post("/materials/{material_id}/lesson/check", response_model=LessonCheckResponse)
+@limiter.limit("60/hour")
+async def check_lesson_answer(
+    request: Request,
+    material_id: int,
+    payload: LessonCheckRequest,
+    current_user: User = Depends(get_current_user),
+    controller: StudyController = Depends(get_controller),
+):
+    return await controller.check_lesson_answer(
+        current_user, material_id, payload.segment_index, payload.item_type, payload.answer
+    )
+

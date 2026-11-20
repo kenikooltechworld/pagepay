@@ -142,7 +142,7 @@ export async function claimAdReward(claim_id: string, amount_sp: number): Promis
 
 export function formatKoboAsNaira(kobo: number): string {
   const naira = kobo / 100;
-  return `?${naira.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `₦${naira.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function formatTransactionSource(source: string): string {

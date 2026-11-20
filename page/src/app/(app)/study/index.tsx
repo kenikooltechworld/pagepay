@@ -149,9 +149,10 @@ export default function StudyIndex() {
   const runJob = async (jobId: string, successTitle: string) => {
     const final = await pollSowJob(jobId, {
       onTick: (s) => setJob(s),
+      timeoutMs: 600000,
     });
     if (final.status === "failed") {
-      throw new Error(final.error || "Processing failed");
+      throw new Error(final.error || "Processing failed. Please try again.");
     }
     setJob(final);
     toast({ title: successTitle, variant: "success" });

@@ -3,9 +3,10 @@
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import json
 from datetime import datetime
 
-from app.models.study import SowUploadJob, StudyAsset, StudyMaterial
+from app.models.study import SowUploadJob, StudyAsset, StudyLessonProgress, StudyMaterial
 
 
 class StudyMaterialRepository:
@@ -114,3 +115,50 @@ class SowUploadJobRepository:
         await self.db.commit()
         await self.db.refresh(job)
         return job
+
+
+class StudyLessonProgressRepository:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def get(self, user_id: int, material_id: int) -> StudyLessonProgress | None:
+        result = await self.db.execute(
+            select(StudyLessonProgress).where(
+                StudyLessonProgress.user_id == user_id,
+                StudyLessonProgress.material_id == material_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_or_create(self, user_id: int, material_id: int) -> StudyLessonProgress:
+        row = await self.get(user_id, material_id)
+        if row:
+            return row
+        row = StudyLessonProgress(
+            user_id=user_id,
+            material_id=material_id,
+            current_segment=0,
+            segment_states=json.dumps({}),
+            completed=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row
+
+    async def update(
+        self, row: StudyLessonProgress, *, current_segment: int | None = None,
+        segment_states: dict | None = None, completed: bool | None = None
+    ) -> StudyLessonProgress:
+        if current_segment is not None:
+            row.current_segment = current_segment
+        if segment_states is not None:
+            row.segment_states = json.dumps(segment_states)
+        if completed is not None:
+            row.completed = completed
+        row.updated_at = datetime.utcnow()
+        await self.db.commit()
+        await self.db.refresh(row)
+        return row

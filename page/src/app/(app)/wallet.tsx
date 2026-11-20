@@ -48,7 +48,7 @@ function TxRow({ entry, tokens }: { entry: LedgerEntry; tokens: any }) {
           {formatTransactionSource(entry.source)}
         </Text>
         <Text className="text-xs text-muted-foreground">
-          {entry.currency} · {entry.reference_type ? formatTransactionSource(entry.reference_type) : "ledger"} · {fmtDate(entry.created_at)}
+          {entry.currency} ï¿½ {entry.reference_type ? formatTransactionSource(entry.reference_type) : "ledger"} ï¿½ {fmtDate(entry.created_at)}
         </Text>
         {entry.reference_id ? (
           <Text className="text-[11px] text-muted-foreground" numberOfLines={1}>
@@ -265,7 +265,7 @@ export default function WalletScreen() {
                       <Text className="text-xs text-muted-foreground">non-cashable</Text>
                     </View>
                   </View>
-                  <Text className="text-xs text-muted-foreground">Rate: {spPerNaira} SP / ?1 · Unlock default: {unlockDefault} SP</Text>
+                  <Text className="text-xs text-muted-foreground">Rate: {spPerNaira} SP / â‚¦1 Â· Unlock default: {unlockDefault} SP</Text>
                 </View>
               )}
             </CardContent>
@@ -276,15 +276,15 @@ export default function WalletScreen() {
               <CardTitle className="text-lg">Add money (Paystack)</CardTitle>
             </CardHeader>
             <CardContent className="gap-3 pt-0">
-              <Text className="text-xs text-muted-foreground">Enter amount in Naira. You’ll complete payment in Paystack checkout, then verify to credit CB.</Text>
+              <Text className="text-xs text-muted-foreground">Enter amount in Naira. Youï¿½ll complete payment in Paystack checkout, then verify to credit CB.</Text>
               <View className="flex-row gap-2 flex-wrap">
                 {[100, 200, 500, 1000, 2000].map((v) => (
                   <Pressable key={v} onPress={() => setAmountNaira(String(v))} className={`px-3 py-2 rounded-full border ${String(v)===amountNaira?"border-primary bg-muted/40":"border-border"}`}>
-                    <Text className="text-xs text-foreground">?{v}</Text>
+                    <Text className="text-xs text-foreground">â‚¦{v}</Text>
                   </Pressable>
                 ))}
               </View>
-              <Input value={amountNaira} onChangeText={setAmountNaira} keyboardType="number-pad" placeholder="Amount (?)" />
+              <Input value={amountNaira} onChangeText={setAmountNaira} keyboardType="number-pad" placeholder="Amount (â‚¦)" />
               <Button
                 onPress={() => {
                   if (parsedNaira < 1) return toast({ title: "Enter amount", description: "Enter a valid amount in Naira." });
@@ -293,7 +293,7 @@ export default function WalletScreen() {
                 disabled={depositMutation.isPending}
                 icon={depositMutation.isPending ? <PagePaySpinner size={18} /> : undefined}
               >
-                {depositMutation.isPending ? "Starting checkout..." : `Pay ?${parsedNaira || 0}`}
+                {depositMutation.isPending ? "Starting checkout..." : `Pay â‚¦${parsedNaira || 0}`}
               </Button>
 
               {pendingRef ? (
@@ -306,7 +306,7 @@ export default function WalletScreen() {
                     <Button variant="outline" size="sm" onPress={() => verifyMutation.mutate(pendingRef)} disabled={verifyMutation.isPending} icon={verifyMutation.isPending ? <PagePaySpinner size={16} /> : undefined}>Verify payment</Button>
                     <Button variant="ghost" size="sm" onPress={() => { setPendingRef(null); setPendingAuthUrl(null); }}>Clear</Button>
                   </View>
-                  <Text className="text-[11px] text-muted-foreground">After paying, tap “Verify payment” (webhook may also credit automatically). Status auto-refreshes while pending.</Text>
+                  <Text className="text-[11px] text-muted-foreground">After paying, tap ï¿½Verify paymentï¿½ (webhook may also credit automatically). Status auto-refreshes while pending.</Text>
                 </View>
               ) : null}
             </CardContent>
@@ -314,12 +314,12 @@ export default function WalletScreen() {
 
           <Card className="border-border bg-card">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Convert CB ? SP</CardTitle>
+              <CardTitle className="text-lg">Convert CB â†’ SP</CardTitle>
             </CardHeader>
             <CardContent className="gap-3 pt-0">
-              <Text className="text-xs text-muted-foreground">Convert cashable balance to service points at {spPerNaira} SP/?. SP is used to unlock study assets.</Text>
+              <Text className="text-xs text-muted-foreground">Convert cashable balance to service points at {spPerNaira} SP/â‚¦. SP is used to unlock study assets.</Text>
               <Input value={convertNaira} onChangeText={setConvertNaira} keyboardType="decimal-pad" placeholder="Amount in Naira (e.g. 50)" />
-              <Text className="text-xs text-muted-foreground">You’ll convert {formatKoboAsNaira(convertKobo)} ? ~{convertPreviewSp.toLocaleString()} SP</Text>
+              <Text className="text-xs text-muted-foreground">Youï¿½ll convert {formatKoboAsNaira(convertKobo)} â†’ ~{convertPreviewSp.toLocaleString()} SP</Text>
               <Button
                 variant="secondary"
                 onPress={() => {

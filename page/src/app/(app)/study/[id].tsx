@@ -522,13 +522,23 @@ export default function StudyMaterialDetail() {
                           The server returned no formatted explanation for this material.
                         </Text>
                       )}
-                      <View className="flex-row gap-2 pt-1">
+                      <View className="flex-row flex-wrap gap-2 pt-1">
                         <Button
                           size="sm"
                           className="min-h-9 min-w-0 flex-1 rounded-lg px-3 py-1"
                           textClassName="text-xs"
+                          onPress={() => router.push(`/(app)/study/${materialId}/lesson` as never)}
+                          icon={<Ionicons name="sparkles-outline" size={14} color={tokens.mintText} />}
+                        >
+                          {material.has_lesson ? "Continue lesson" : "Start lesson"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="min-h-9 min-w-0 flex-1 rounded-lg px-3 py-1"
+                          textClassName="text-xs"
                           onPress={() => router.push(`/(app)/study/${materialId}/reader` as never)}
-                          icon={<Ionicons name="school-outline" size={14} color={tokens.mintText} />}
+                          icon={<Ionicons name="school-outline" size={14} color={tokens.mint} />}
                         >
                           Read material
                         </Button>
@@ -545,6 +555,12 @@ export default function StudyMaterialDetail() {
                           </Button>
                         ) : null}
                       </View>
+                      {material.lesson_status === "failed" && material.lesson_error ? (
+                        <Text className="text-xs text-amber-600">Lesson build issue: {material.lesson_error}</Text>
+                      ) : null}
+                      {material.lesson_status === "generating" ? (
+                        <Text className="text-xs text-muted-foreground">Interactive lesson is being prepared…</Text>
+                      ) : null}
                     </View>
                   )}
                 </CardContent>
